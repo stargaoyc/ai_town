@@ -6,3 +6,6 @@ node_modules
 target
 data
 .venv
+*.pyc
+__pycache__
+.tanstack
