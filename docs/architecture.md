@@ -78,7 +78,7 @@
 │  └───────────────────────────┘  └─────────────┘  └───────────────────┘    │
 │  └────────────────────────────────────────────────────────────────────────┐ │
 │  │              可观测性 (OpenTelemetry + Langfuse)                       │ │
-│  │   链路追踪(Jaeger)  │  指标(Prometheus+Grafana)  │  日志(Loki+Promtail) │ │
+│  │   链路追踪(Jaeger)  │  指标(Prometheus+Grafana)  │  日志(Loki+Alloy)   │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -182,7 +182,7 @@
 | 组件库 | shadcn/ui | 最新 | 可定制 Radix 基础组件 |
 | 样式 | Tailwind CSS | v4 | 原子化 CSS |
 | Lint | oxlint | 最新 | Rust 内核极速 lint |
-| 格式化 | Prettier | 3.x | 配合 oxlint |
+| 格式化 | oxfmt | 最新 | Rust 内核（替代 Prettier） |
 | 包管理 | pnpm | 11 | 硬链接节省磁盘 |
 | 图表 | Recharts | 3.x | 数据可视化 |
 | 动效 | Framer Motion | 12.x | 二次元风格动效 |
@@ -204,7 +204,7 @@
 | 链路追踪 | OpenTelemetry + Jaeger | 最新 | 分布式 Trace |
 | LLM 追踪 | Langfuse | 3.x | Prompt/Token/Cost 审计 |
 | 指标 | Prometheus + Grafana | 最新 | 时序指标与告警 |
-| **日志聚合** | **Loki + Promtail** | **3.x** | **结构化日志聚合，与 Grafana 统一面板** |
+| **日志聚合** | **Loki + Grafana Alloy** | **3.x** | **结构化日志聚合，与 Grafana 统一面板** |
 | 采集器 | OTel Collector | 最新 | OTLP 接收/批处理/导出 |
 
 ---

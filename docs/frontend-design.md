@@ -19,11 +19,71 @@
 | 组件库 | shadcn/ui | 最新 | Radix UI 基础 + 可定制 |
 | 样式 | Tailwind CSS | v4 | 原子化 CSS，零运行时 |
 | Lint | oxlint | 最新 | Rust 内核极速 lint（替代 ESLint） |
-| 格式化 | Prettier | 3.x | 配合 oxlint |
+| 格式化 | oxfmt | 最新 | Rust 内核极速格式化（替代 Prettier） |
+| 目标语法 | ES2024 | — | 使用最新 ECMAScript 特性（如 `Set.prototype.intersection`） |
 | 图表 | Recharts | 3.x | 数据可视化 |
 | 动效 | Framer Motion | 12.x | 二次元风格过渡动效 |
 | 图标 | Lucide React | 最新 | 现代图标库 |
 | 包管理 | pnpm | 11 | 硬链接节省磁盘 |
+
+### ES2024 特性示例
+
+启用 ES2024 目标后，可使用最新 ECMAScript 特性：
+
+```typescript
+// Set 方法（ES2024）
+const activeChars = new Set(['yuina', 'koharu']);
+const cafeVisitors = new Set(['yuina', 'rin']);
+const intersection = activeChars.intersection(cafeVisitors); // Set {'yuina'}
+
+// Promise.withResolvers（ES2024）
+const { promise, resolve, reject } = Promise.withResolvers<string>();
+// 无需包装 new Promise((resolve, reject) => { ... })
+```
+
+`tsconfig.json` 配置：
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "bundler"
+  }
+}
+```
+
+### oxlint + oxfmt 配置
+
+oxlint 与 oxfmt 使用同一配置文件（oxlint.json 或 biome.json），共享规则：
+
+```json
+// oxlint.json
+{
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "style": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    "correctness": {
+      "noUnusedVariables": "error"
+    },
+    "style": {
+      "noShoutyConstants": "warn"
+    }
+  }
+}
+```
+
+运行命令：
+
+```bash
+oxlint src/            # lint
+oxfmt src/             # 格式化（替代 prettier --write）
+oxfmt --check src/     # 检查格式（CI 用）
+```
 
 ### React Compiler 说明
 
@@ -414,26 +474,38 @@ pnpm dev                    # Vite 开发服务器
 ### 8.2 Lint 与格式化
 
 ```bash
-pnpm lint                   # oxlint
-pnpm format                 # Prettier
+pnpm lint                   # oxlint + oxfmt --check
+pnpm format                 # oxfmt src/
 pnpm typecheck              # tsc --noEmit
 ```
 
-`oxlint.config.json` 示例：
+`oxlint.json` 示例（oxlint + oxfmt 共用）：
 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/oxlint/oxlint/main/schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "style": "warn",
+    "perf": "warn"
+  },
   "rules": {
-    "no-unused-vars": "warn",
-    "react/exhaustive-deps": "off",
-    "react-hooks/rules-of-hooks": "error"
+    "correctness": {
+      "noUnusedVariables": "error"
+    },
+    "react": {
+      "exhaustiveDeps": "off"
+    },
+    "reactHooks": {
+      "rulesOfHooks": "error"
+    }
   },
   "ignorePatterns": ["dist", "node_modules", "src/api/types.ts"]
 }
 ```
 
-> React Compiler 启用后，`react/exhaustive-deps` 可关闭——编译器已保证依赖正确性。
+> React Compiler 启用后，`exhaustiveDeps` 可关闭——编译器已保证依赖正确性。oxfmt 会自动遵循 oxlint.json 的配置。
 
 ### 8.3 构建
 

@@ -29,8 +29,8 @@
 └─────────────────────────────┬───────────────────────────────────┘
                               │ OTLP / HTTP          │ stdout
 ┌─────────────────────────────▼─────────┐ ┌──────────▼──────────┐
-│        OTel Collector                 │ │   Promtail          │
-│   接收 → 批处理 → 采样 → 导出         │ │  采集容器日志        │
+│        OTel Collector                 │ │   Grafana Alloy     │
+│   接收 → 批处理 → 采样 → 导出         │ │  统一采集日志/指标   │
 └─────────────────────────────┬─────────┘ └──────────┬──────────┘
                               │                      │
         ┌─────────────────────┼──────────┐           │
@@ -60,7 +60,7 @@
 | Jaeger | 分布式链路追踪存储与查询 | 最新 |
 | Langfuse | LLM 调用观测（与 Jaeger 互补） | 3.x |
 | Prometheus | 指标采集与存储（拉取模式） | 最新 |
-| Promtail | 容器日志采集，推送到 Loki | 最新 |
+| Grafana Alloy | 统一可观测性收集器（取代 Promtail），采集日志/指标/Trace | 最新 |
 | **Loki** | **日志聚合存储，LogQL 查询** | **3.x** |
 | Grafana | 统一可视化面板，Trace/Metrics/Logs 联动 | 12.x |
 
@@ -124,11 +124,13 @@ logger.info("action_executed",
 
 ---
 
-## 五、日志体系（Loki + Promtail）
+## 五、日志体系（Loki + Grafana Alloy）
+
+> **Grafana Alloy** 是新一代可观测性收集器，统一取代 Promtail、Prometheus Agent、OTel Collector，支持日志/指标/Trace 统一采集与推送。
 
 ### 5.1 结构化 JSON 日志
 
-应用输出到 stdout，Promtail 采集后推送 Loki：
+应用输出到 stdout，Alloy 采集后推送 Loki：
 
 ```json
 {
@@ -155,43 +157,72 @@ logger.info("action_executed",
 | `ERROR` | 错误（Action 失败、模块异常） |
 | `CRITICAL` | 系统级故障（DB 不可用） |
 
-### 5.3 Promtail 采集配置
+### 5.3 Grafana Alloy 采集配置
 
 ```yaml
-# promtail.yml
-server:
-  http_listen_port: 9080
+# alloy.config.alloy (Alloy 使用 .alloy 扩展名)
+// 日志采集 → Loki
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
 
-positions:
-  filename: /tmp/positions.yaml
+// Docker 容器日志发现
+discovery.docker "backend" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name = "label"
+    values = ["com.docker.compose.service=backend"]
+  }
+}
 
-clients:
-  - url: http://loki:3100/loki/api/v1/push
+// 日志管道：JSON 解析 → 标签提取 → Loki 推送
+loki.source.docker "backend_logs" {
+  forward_to = [loki.process.backend_pipeline.receiver]
 
-scrape_configs:
-  - job_name: backend
-    docker_sd_configs:
-      - host: unix:///var/run/docker.sock
-        filters:
-          - name: label
-            values: ["com.docker.compose.service=backend"]
-    pipeline_stages:
-      - json:
-          expressions:
-            level: level
-            trace_id: trace_id
-            logger: logger
-            character_id: character_id
-      - labels:
-          level:
-          logger:
-      - structured_metadata:
-          trace_id:
-          character_id:
-    relabel_configs:
-      - source_labels: ['__meta_docker_container_name']
-        target_label: 'service'
+  discovery = discovery.docker.backend
+}
+
+loki.process "backend_pipeline" {
+  forward_to = [loki.write.default.receiver]
+
+  // JSON 解析
+  stage.json {
+    expressions = {
+      level = "level"
+      trace_id = "trace_id"
+      logger = "logger"
+      character_id = "character_id"
+    }
+  }
+
+  // 提取为标签
+  stage.labels {
+    values = {
+      level = "level"
+      logger = "logger"
+    }
+  }
+
+  // 结构化元数据（Loki 3.x）
+  stage.static_labels {
+    values = {
+      service = "backend"
+    }
+  }
+
+  // 结构化元数据写入
+  stage.loki_metadata {
+    values = {
+      trace_id = "trace_id"
+      character_id = "character_id"
+    }
+  }
+}
 ```
+
+> Alloy 配置使用 HCL-like 语法（`.alloy` 文件），相比 Promtail YAML 更模块化，支持管道组合与多输出。详见 Grafana Alloy 官方文档。
 
 ### 5.4 LogQL 查询示例
 

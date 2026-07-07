@@ -53,7 +53,7 @@
 | OTel Collector | `otel/opentelemetry-collector-contrib` | 4318 | 收集器 |
 | Langfuse | `langfuse/langfuse:3` | 3001 | LLM 追踪 |
 | **Loki** | **`grafana/loki:3.x`** | **3100** | **日志聚合** |
-| **Promtail** | **`grafana/promtail`** | **9080** | **日志采集** |
+| **Grafana Alloy** | **`grafana/alloy`** | **12345** | **统一可观测性收集器** |
 
 ---
 
@@ -210,21 +210,15 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/datasources:/etc/grafana/provisioning/datasources
 
-  # 日志聚合
-  loki:
-    image: grafana/loki:3.x
-    command: -config.file=/etc/loki/local-config.yaml
-    ports: ["3100:3100"]
-    volumes: [loki_data:/loki]
-
-  promtail:
-    image: grafana/promtail
+  # 统一可观测性收集器（取代 Promtail）
+  alloy:
+    image: grafana/alloy:latest
     volumes:
-      - /var/log:/var/log
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - ./promtail.yml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
-    depends_on: [loki]
+      - ./alloy.config.alloy:/etc/alloy/config.alloy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    ports: ["12345:12345"]
+    depends_on: [loki, prometheus]
 
   langfuse:
     image: langfuse/langfuse:3
