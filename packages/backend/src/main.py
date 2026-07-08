@@ -18,9 +18,10 @@ API 路由：
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -37,6 +38,14 @@ from src.db.repositories import (
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
+from src.modules import (
+    CharacterImporter,
+    DurationCalculator,
+    MovementSystem,
+    RelationGraph,
+    ScheduleSystem,
+    SceneLoader,
+)
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
 try:
@@ -70,6 +79,7 @@ async def lifespan(app: FastAPI):
     5. Character Tick Engine（如果可用）
     """
     global redis, world_engine, character_engine, registry, llm, prompts
+    global scene_loader, schedule_system, duration_calculator, movement_system
 
     logger.info("ai_town_backend_starting")
 
@@ -135,6 +145,25 @@ async def lifespan(app: FastAPI):
             "character_tick_engine_not_available",
             message="CharacterTickEngine module not found, character tick loop disabled",
         )
+
+    # 6. 初始化 Phase 2 模块
+    try:
+        scene_loader = SceneLoader(redis)
+        # 尝试加载场景配置（文件可能不存在）
+        scenes_path = Path("configs/scenes.yaml")
+        map_path = Path("configs/world-map.yaml")
+        if scenes_path.exists() and map_path.exists():
+            await scene_loader.load_from_files(scenes_path, map_path)
+            logger.info("scene_loader_initialized", scenes=len(scene_loader.get_all_scenes()))
+        else:
+            logger.warning("scene_config_not_found", path=str(scenes_path))
+
+        schedule_system = ScheduleSystem()
+        duration_calculator = DurationCalculator()
+        movement_system = MovementSystem(scene_loader)
+        logger.info("phase2_modules_initialized")
+    except Exception as e:
+        logger.error("phase2_init_failed", error=str(e), exc_info=True)
 
     yield
 
@@ -562,5 +591,361 @@ async def get_admin_status():
         "llm": {
             "initialized": llm is not None,
             "model": settings.model_chat,
+        },
+        "phase2": {
+            "scene_loader": scene_loader is not None,
+            "schedule_system": schedule_system is not None,
+            "duration_calculator": duration_calculator is not None,
+            "movement_system": movement_system is not None,
+            "scenes_loaded": len(scene_loader.get_all_scenes()) if scene_loader else 0,
+        },
+    }
+
+
+# === Phase 2 API：角色卡导入 ===
+
+
+@app.post("/api/v1/admin/characters/import")
+async def import_character_card(yaml_file: UploadFile = File(...)):
+    """导入角色卡 YAML 文件
+
+    Args:
+        yaml_file: YAML 文件上传
+
+    Returns:
+        创建的角色信息
+    """
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis not connected")
+
+    import yaml
+
+    content = await yaml_file.read()
+    try:
+        data = yaml.safe_load(content.decode("utf-8"))
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"YAML 解析失败: {e}")
+
+    async with db.session() as session:
+        importer = CharacterImporter(session, redis)
+        try:
+            character = await importer.import_from_dict(data)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"角色卡校验失败: {e}")
+
+    return {
+        "message": "角色导入成功",
+        "character": {
+            "id": str(character.id),
+            "name": character.name,
+            "age": character.age,
+            "occupation": character.occupation,
+        },
+    }
+
+
+@app.post("/api/v1/admin/characters/import-batch")
+async def import_characters_batch(directory: str = "configs/characters"):
+    """批量导入角色卡目录
+
+    Args:
+        directory: 角色卡目录路径（默认 configs/characters）
+
+    Returns:
+        导入结果统计
+    """
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis not connected")
+
+    async with db.session() as session:
+        importer = CharacterImporter(session, redis)
+        try:
+            characters = await importer.import_directory(directory)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "message": f"批量导入完成: {len(characters)} 个角色",
+        "characters": [
+            {"id": str(c.id), "name": c.name} for c in characters
+        ],
+        "total": len(characters),
+    }
+
+
+# === Phase 2 API：小镇场景 ===
+
+
+@app.get("/api/v1/town/scenes")
+async def list_scenes():
+    """获取所有场景列表"""
+    if not scene_loader:
+        raise HTTPException(status_code=503, detail="Scene loader not initialized")
+
+    scenes = scene_loader.get_all_scenes()
+    return {
+        "data": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "type": s.type.value,
+                "open_hours": s.open_hours,
+                "capacity": s.capacity,
+                "activities": s.activities,
+                "workday_only": s.workday_only,
+            }
+            for s in scenes.values()
+        ],
+        "total": len(scenes),
+    }
+
+
+@app.get("/api/v1/town/scenes/{scene_id}")
+async def get_scene_detail(scene_id: str):
+    """获取场景详情（含实时状态）"""
+    if not scene_loader:
+        raise HTTPException(status_code=503, detail="Scene loader not initialized")
+
+    scene = scene_loader.get_scene(scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    crowdedness = await scene_loader.get_crowdedness(scene_id)
+    present_chars = await scene_loader.get_present_characters(scene_id)
+
+    return {
+        "scene": {
+            "id": scene.id,
+            "name": scene.name,
+            "type": scene.type.value,
+            "open_hours": scene.open_hours,
+            "capacity": scene.capacity,
+            "activities": scene.activities,
+            "workday_only": scene.workday_only,
+        },
+        "runtime": {
+            "crowdedness": crowdedness,
+            "present_characters": present_chars,
+            "present_count": len(present_chars),
+        },
+    }
+
+
+# === Phase 2 API：移动系统 ===
+
+
+@app.post("/api/v1/characters/{character_id}/move")
+async def move_character(character_id: str, to_scene: str, hour: int | None = None):
+    """角色移动到指定场景
+
+    Args:
+        character_id: 角色 ID
+        to_scene: 目标场景 ID
+        hour: 当前小时（用于开放判断），默认从世界状态获取
+    """
+    if not movement_system or not redis:
+        raise HTTPException(status_code=503, detail="Movement system not initialized")
+
+    try:
+        cid = UUID(character_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    # 获取角色当前位置
+    current_state = await redis.hgetall(f"char:{cid}:state")
+    from_scene = current_state.get("location", "home")
+
+    # 获取当前小时（如果未提供）
+    if hour is None:
+        world_state = await redis.hgetall("world:state")
+        world_time = world_state.get("time", "08:00")
+        try:
+            hour = int(world_time.split(":")[0])
+        except (ValueError, IndexError):
+            hour = 8
+
+    # 执行移动
+    result = await movement_system.execute_move(
+        str(cid), from_scene, to_scene, hour=hour
+    )
+
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.reason)
+
+    # 更新角色位置
+    await redis.hset(f"char:{cid}:state", "location", to_scene)
+
+    return {
+        "success": True,
+        "from": from_scene,
+        "to": to_scene,
+        "duration_minutes": result.total_minutes,
+        "path": result.path,
+    }
+
+
+# === Phase 2 API：作息系统 ===
+
+
+@app.get("/api/v1/characters/{character_id}/schedule")
+async def get_character_schedule(character_id: str, hour: int | None = None):
+    """获取角色作息状态
+
+    Args:
+        character_id: 角色 ID
+        hour: 查询的小时（默认当前小时）
+    """
+    if not schedule_system:
+        raise HTTPException(status_code=503, detail="Schedule system not initialized")
+
+    try:
+        cid = UUID(character_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    # 获取角色 traits
+    async with db.session() as session:
+        repo = CharacterRepository(session)
+        char_data = await repo.get_by_id(cid)
+
+    if not char_data:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    schedule_type = schedule_system.get_schedule_from_traits(char_data.traits or {})
+
+    if hour is None:
+        world_state = await redis.hgetall("world:state") if redis else {}
+        world_time = world_state.get("time", "08:00")
+        try:
+            hour = int(world_time.split(":")[0])
+        except (ValueError, IndexError):
+            hour = 8
+
+    level = schedule_system.get_activity_level(schedule_type, hour)
+    is_sleeping = schedule_system.is_sleeping(schedule_type, hour)
+    regen_rate = schedule_system.get_stamina_regen_rate(schedule_type, hour)
+
+    return {
+        "character_id": character_id,
+        "schedule_type": schedule_type,
+        "hour": hour,
+        "activity_level": level.value,
+        "is_sleeping": is_sleeping,
+        "stamina_regen_rate": regen_rate,
+    }
+
+
+# === Phase 2 API：角色关系 ===
+
+
+@app.get("/api/v1/characters/{character_id}/relations")
+async def get_character_relations(character_id: str):
+    """获取角色的所有关系"""
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis not connected")
+
+    try:
+        cid = UUID(character_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    async with db.session() as session:
+        graph = RelationGraph(session, redis)
+        relations = await graph.get_all_relations(cid)
+
+    return {
+        "data": [
+            {
+                "target_id": str(r.target_id),
+                "relationship_type": r.relationship_type,
+                "strength": r.strength,
+                "last_interaction_at": r.last_interaction_at.isoformat() if r.last_interaction_at else None,
+                "notes": r.notes,
+            }
+            for r in relations
+        ],
+        "total": len(relations),
+    }
+
+
+@app.post("/api/v1/characters/{character_id}/relations/{target_id}/interact")
+async def record_interaction(
+    character_id: str,
+    target_id: str,
+    strength_delta: int = 0,
+    notes: str | None = None,
+):
+    """记录角色间互动（更新关系）"""
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis not connected")
+
+    try:
+        cid = UUID(character_id)
+        tid = UUID(target_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    async with db.session() as session:
+        graph = RelationGraph(session, redis)
+        try:
+            snap_a, snap_b = await graph.update_on_interaction(
+                cid, tid, strength_delta, notes
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "a_to_b": {
+            "relationship_type": snap_a.relationship_type,
+            "strength": snap_a.strength,
+        },
+        "b_to_a": {
+            "relationship_type": snap_b.relationship_type,
+            "strength": snap_b.strength,
+        },
+    }
+
+
+# === Phase 2 API：动态耗时 ===
+
+
+@app.get("/api/v1/duration/calculate")
+async def calculate_duration(
+    base_duration: int,
+    weather: str = "sunny",
+    is_outdoor: bool = True,
+    crowdedness: float = 0.0,
+    stamina: int = 100,
+    mood: str = "calm",
+):
+    """计算动态耗时
+
+    Args:
+        base_duration: 基础耗时（分钟）
+        weather: 天气
+        is_outdoor: 是否户外
+        crowdedness: 拥挤度 0-1
+        stamina: 体力 0-100
+        mood: 情绪
+    """
+    if not duration_calculator:
+        raise HTTPException(status_code=503, detail="Duration calculator not initialized")
+
+    modifiers = duration_calculator.compute_modifiers(
+        weather, is_outdoor, crowdedness, stamina, mood
+    )
+    actual = duration_calculator.calculate_duration(
+        base_duration, weather, is_outdoor, crowdedness, stamina, mood
+    )
+
+    return {
+        "base_duration": base_duration,
+        "actual_duration": actual,
+        "modifiers": {
+            "weather": modifiers.weather,
+            "crowdedness": modifiers.crowdedness,
+            "stamina": modifiers.stamina,
+            "mood": modifiers.mood,
+            "total": modifiers.total_multiplier(),
         },
     }
