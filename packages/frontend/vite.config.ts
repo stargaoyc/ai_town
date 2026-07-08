@@ -1,21 +1,23 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
-import { TanStackRouterVite } from '@tanstack/router-vite-plugin';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import path from 'node:path';
 
 export default defineConfig({
   plugins: [
-    // TanStack Router 自动路由和代码分割
-    TanStackRouterVite({ autoCodeSplitting: true }),
-    // React 插件，内置 Babel 配置用于 React Compiler
-    react({
-      babel: {
-        plugins: [
-          // 直接使用 babel-plugin-react-compiler，无需预设
-          ['babel-plugin-react-compiler', { target: '19' }], // 对应 React 19
-        ],
-      },
+    // TanStack Router 自动路由和代码分割（必须在 react() 之前）
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+    }),
+    // React 插件（v6 移除了内置 Babel，改用 oxc）
+    react(),
+    // React Compiler 1.0 — 通过 @rolldown/plugin-babel 运行 Babel 插件
+    babel({
+      include: /\.[jt]sx?$/,
+      presets: [reactCompilerPreset({ target: '19' })],
     }),
     // Tailwind CSS Vite 插件（V4 版本）
     tailwindcss(),
