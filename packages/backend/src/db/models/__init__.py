@@ -10,6 +10,7 @@ from src.db.models.relation import Relation
 from src.db.models.reflection import Reflection
 from src.db.models.reflection_source import ReflectionSource
 from src.db.models.world_event import WorldEvent
+from src.db.models.world_snapshot import WorldSnapshot
 from src.db.models.conversation import Conversation, Message
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "Reflection",
     "ReflectionSource",
     "WorldEvent",
+    "WorldSnapshot",
     "Conversation",
     "Message",
 ]

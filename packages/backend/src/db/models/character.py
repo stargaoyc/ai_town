@@ -41,6 +41,9 @@ class Character(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, server_default="now()", comment="创建时间"
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, server_default="now()", onupdate="now()", comment="更新时间（触发器自动维护）"
+    )
 
     # 关联
     state: Mapped["CharacterState | None"] = relationship(back_populates="character", uselist=False)

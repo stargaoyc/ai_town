@@ -11,6 +11,11 @@
 - HNSW 索引在父表创建，自动传播到所有子分区（含未来新增）
 - materialized 标志区分原始日志与向量化记忆
 
+⚠️ 引用完整性（v3）：
+- memory_episodes 是分区表，无法建立外键引用 characters 表
+- 应用层 Repository 在 create 时显式校验 character_id 存在性
+- 防止孤儿记忆数据（应用层 Bug / 手动修复 / 批量删除角色场景）
+
 混合排序公式：
     final_score = sim_score * 0.6 + importance * 0.05 - time_decay
 详见 architecture.md §5.7
@@ -21,7 +26,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
-from src.db.models import MemoryEpisode
+from src.db.models import Character, MemoryEpisode
 from src.db.repositories.base import BaseRepository
 
 logger = get_logger()
@@ -38,7 +43,23 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
 
         ⚠️ 新增记忆时 materialized=false，embedding=NULL。
         embedding 由异步 worker 批量生成，不阻塞 Tick 循环。
+
+        ⚠️ 引用完整性校验：memory_episodes 是分区表，无法建立外键
+        引用 characters 表。此处显式校验 character_id 是否存在，
+        防止孤儿记忆数据。
         """
+        # 校验 character_id 存在性（分区表无外键，应用层兜底）
+        exists = await self.session.scalar(
+            select(func.count())
+            .select_from(Character)
+            .where(Character.id == episode.character_id)
+        )
+        if not exists:
+            raise ValueError(
+                f"character_id {episode.character_id} does not exist, "
+                f"cannot create memory episode (orphan data prevention)"
+            )
+
         self.session.add(episode)
         await self.session.flush()
         return episode

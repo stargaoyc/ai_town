@@ -1,21 +1,29 @@
-"""数据库性能与完整性优化（v2）
+"""数据库性能与完整性优化（v3）
 
-基于生产环境审查反馈的系统性改进：
+基于三轮生产环境审查反馈的系统性改进。
 
 致命问题修复：
 1. personality 迁移使用 COALESCE 防御 NULL（原代码 NULL || jsonb = NULL）
 2. HNSW 索引在父表创建（自动传播所有子分区，避免运维噩梦）
-3. 数据迁移锁警告（大表需用 pg_repack 或蓝绿迁移）
+3. 删除死代码 check_partition_exists 触发器（PG 分区路由在 BEFORE INSERT 之前执行）
 
 架构级修复：
-4. 删除 DEFAULT 分区，改为 RAISE EXCEPTION 触发器（强制运维介入）
-5. 删除 world_snapshots 表，仅保留 world_events 差分表
+4. 删除 DEFAULT 分区（PG 原生报错已足够清晰，无需自定义触发器）
+5. 保留 world_snapshots 表 + 新增 world_events 差分表（事件溯源 + 快照闭环）
 6. HASH 分区改为 16 个（2 的幂，扩展性更好）
 7. 彻底删除 personality 列（不保留废弃列）
+8. reflection_sources 增加复合外键引用 memory_episodes(id, character_id)
 
-索引优化：
-8. 覆盖索引移除 content 字段（避免索引膨胀）
-9. character_states 增加 updated_at 自动更新触发器
+性能优化：
+9. 覆盖索引移除 content 字段（避免索引膨胀）
+10. character_states fillfactor=85 + autovacuum 调优（高频更新表）
+11. 通用 updated_at 触发器覆盖所有表（characters/character_states/plans）
+12. characters/plans 补充 updated_at 字段
+
+工程化改进：
+13. COMMENT ON TABLE/COLUMN 元数据注释
+14. pre_create_partitions() 分区自动预创建函数
+15. downgrade 简化为 raise exception（只升级不降级原则）
 
 Revision ID: 0002_optimize
 Revises: 0001_init
@@ -31,7 +39,7 @@ import sqlalchemy as sa
 revision: str = "0002_optimize"
 down_revision: Union[str, None] = "0001_init"
 branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+depends_on: Union[Sequence[str], None] = None
 
 
 def upgrade() -> None:
@@ -136,11 +144,18 @@ def upgrade() -> None:
     """)
 
     # ============================================================
-    # 改进 4: 删除 DEFAULT 分区 + RAISE EXCEPTION 触发器
+    # 改进 4: 删除 DEFAULT 分区（不创建死代码触发器）
     # ============================================================
     # 问题：DEFAULT 分区兜底 → 慢查询定时炸弹
-    # 方案：删除 DEFAULT 分区，改为 BEFORE INSERT 触发器抛异常
-    #       强制运维预创建分区，不要"兜底"
+    # 方案：删除 DEFAULT 分区即可。
+    #
+    # ⚠️ v2 曾创建 check_partition_exists() BEFORE INSERT 触发器，但这是死代码：
+    #    PostgreSQL 声明式分区的分区路由发生在 BEFORE INSERT 触发器之前。
+    #    若分区不存在，PG 直接抛 "no partition of relation found" 错误，
+    #    根本不会执行到该触发器。
+    #    v3 已删除该触发器，PG 原生报错已足够清晰。
+    #
+    # 分区预创建由 pre_create_partitions() 函数处理（见本脚本末尾）。
 
     op.execute("""
         -- 删除 action_records 的 DEFAULT 分区
@@ -148,55 +163,18 @@ def upgrade() -> None:
 
         -- 删除 messages 的 DEFAULT 分区
         DROP TABLE IF EXISTS messages_default;
-
-        -- 创建分区检查函数：若分区不存在则抛异常
-        CREATE OR REPLACE FUNCTION check_partition_exists()
-        RETURNS TRIGGER AS $$
-        DECLARE
-            partition_name TEXT;
-        BEGIN
-            -- 对于按月分区的表，检查目标分区是否存在
-            IF TG_TABLE_NAME = 'action_records' THEN
-                partition_name := 'action_records_' ||
-                    to_char(NEW.created_at, 'YYYY_MM');
-            ELSIF TG_TABLE_NAME = 'messages' THEN
-                partition_name := 'messages_' ||
-                    to_char(NEW.created_at, 'YYYY_MM');
-            ELSE
-                RETURN NEW;
-            END IF;
-
-            -- 检查分区是否存在
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_class WHERE relname = partition_name
-            ) THEN
-                RAISE EXCEPTION
-                    'Partition % does not exist for table %. '
-                    'Run partition pre-creation task or create manually: '
-                    'CREATE TABLE % PARTITION OF % FOR VALUES FROM (...)',
-                    partition_name, TG_TABLE_NAME, partition_name, TG_TABLE_NAME;
-            END IF;
-
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
-
-        -- 在分区表上创建触发器（BEFORE INSERT）
-        CREATE TRIGGER trg_action_partition_check
-            BEFORE INSERT ON action_records
-            FOR EACH ROW EXECUTE FUNCTION check_partition_exists();
-
-        CREATE TRIGGER trg_messages_partition_check
-            BEFORE INSERT ON messages
-            FOR EACH ROW EXECUTE FUNCTION check_partition_exists();
     """)
 
     # ============================================================
-    # 改进 5: 删除 world_snapshots，仅保留 world_events
+    # 改进 5: 保留 world_snapshots + 新增 world_events 差分表
     # ============================================================
-    # 问题：world_snapshots 与 world_events 双写冗余
-    # 方案：删除 world_snapshots，回放从 world_events 重建
-    op.execute("DROP TABLE IF EXISTS world_snapshots;")
+    # 架构：事件溯源 + 定期快照（闭环）
+    # - world_events: 每 N Tick 记录差分事件（高频，仅状态变化时写入）
+    # - world_snapshots: 每 1000 Tick 存一次完整快照（低频，冷启动用）
+    # - 冷启动：加载最新快照 → 回放之后的增量事件 → 恢复状态
+    #
+    # ⚠️ v2 曾删除 world_snapshots 仅保留 world_events，但这导致冷启动
+    #    需从头回放所有事件，启动时间随运行时长线性增长，不可接受。
 
     op.create_table(
         "world_events",
@@ -228,32 +206,33 @@ def upgrade() -> None:
     """)
 
     # ============================================================
-    # 改进 6: reflection_sources 中间表（替代 UUID[] 无外键）
+    # 改进 11: 补充 updated_at 字段 + 通用自动更新触发器
     # ============================================================
-    op.create_table(
-        "reflection_sources",
-        sa.Column("reflection_id", sa.UUID,
-                  sa.ForeignKey("reflections.id", ondelete="CASCADE"),
-                  primary_key=True),
-        sa.Column("memory_id", sa.UUID,
-                  primary_key=True,
-                  comment="memory_episodes.id（应用层保证存在）"),
-        sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
-    )
-    op.create_index("idx_refl_sources_memory", "reflection_sources", ["memory_id"])
+    # 问题：仅 character_states 有 updated_at 触发器，characters/plans 缺失
+    # 方案：为 characters/plans 补充 updated_at 字段，创建通用触发器函数
 
-    # ============================================================
-    # 改进 8+9: character_states 乐观锁 + updated_at 触发器
-    # ============================================================
+    # 补充 characters.updated_at
     op.add_column(
-        "character_states",
-        sa.Column("version", sa.Integer, nullable=False, server_default="1",
-                  comment="乐观锁版本号")
+        "characters",
+        sa.Column("updated_at", sa.TIMESTAMPTZ, server_default=sa.text("now()"),
+                  comment="更新时间")
     )
 
-    # updated_at 自动更新触发器
+    # 补充 plans.updated_at
+    op.add_column(
+        "plans",
+        sa.Column("updated_at", sa.TIMESTAMPTZ, server_default=sa.text("now()"),
+                  comment="更新时间")
+    )
+
+    # 通用 updated_at 自动更新触发器（替换原 character_states 专用函数）
     op.execute("""
-        CREATE OR REPLACE FUNCTION update_character_states_updated_at()
+        -- 删除旧的 character_states 专用触发器函数
+        DROP TRIGGER IF EXISTS trg_character_states_updated_at ON character_states;
+        DROP FUNCTION IF EXISTS update_character_states_updated_at();
+
+        -- 创建通用 updated_at 触发器函数
+        CREATE OR REPLACE FUNCTION update_updated_at()
         RETURNS TRIGGER AS $$
         BEGIN
             NEW.updated_at = now();
@@ -261,16 +240,82 @@ def upgrade() -> None:
         END;
         $$ LANGUAGE plpgsql;
 
+        -- 应用到所有带 updated_at 的表
+        CREATE TRIGGER trg_characters_updated_at
+            BEFORE UPDATE ON characters
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
         CREATE TRIGGER trg_character_states_updated_at
             BEFORE UPDATE ON character_states
-            FOR EACH ROW EXECUTE FUNCTION update_character_states_updated_at();
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+        CREATE TRIGGER trg_plans_updated_at
+            BEFORE UPDATE ON plans
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
     """)
 
     # ============================================================
-    # 改进 3: 覆盖索引（移除 content，避免索引膨胀）
+    # 改进 6: reflection_sources 中间表 + 复合外键
+    # ============================================================
+    # 问题：v2 的 reflection_sources.memory_id 无外键（分区表复合主键限制）
+    # 方案：增加 memory_character_id，与 memory_id 组成复合外键
+    #       引用 memory_episodes(id, character_id) ON DELETE CASCADE
+    #       PostgreSQL 12+ 支持分区表作为外键父表
+    op.create_table(
+        "reflection_sources",
+        sa.Column("reflection_id", sa.UUID,
+                  sa.ForeignKey("reflections.id", ondelete="CASCADE"),
+                  primary_key=True, comment="反思 ID"),
+        sa.Column("memory_id", sa.UUID,
+                  primary_key=True, comment="记忆 ID"),
+        sa.Column("memory_character_id", sa.UUID,
+                  primary_key=True, comment="记忆所属角色 ID（分区键，外键组成部分）"),
+        sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()"),
+                  comment="创建时间"),
+        sa.ForeignKeyConstraint(
+            ["memory_id", "memory_character_id"],
+            ["memory_episodes.id", "memory_episodes.character_id"],
+            ondelete="CASCADE",
+            name="fk_reflection_sources_memory",
+        ),
+    )
+    op.create_index("idx_refl_sources_memory", "reflection_sources",
+                    ["memory_id", "memory_character_id"])
+
+    # ============================================================
+    # 改进 8: character_states 乐观锁 + fillfactor + autovacuum
+    # ============================================================
+    op.add_column(
+        "character_states",
+        sa.Column("version", sa.Integer, nullable=False, server_default="1",
+                  comment="乐观锁版本号")
+    )
+
+    # 高频更新表优化：fillfactor=85 预留页面空闲空间，提升 HOT 更新比例
+    # autovacuum 调优：更早触发清理，减少死元组堆积
+    op.execute("""
+        -- fillfactor=85：预留 15% 空间供 HOT 更新（减少索引膨胀）
+        ALTER TABLE character_states SET (fillfactor = 85);
+
+        -- autovacuum 调优：高频更新表需要更频繁清理
+        ALTER TABLE character_states SET (
+            autovacuum_vacuum_scale_factor = 0.05,
+            autovacuum_analyze_scale_factor = 0.02
+        );
+
+        -- 重建表以应用 fillfactor（REPACK 或重建索引）
+        -- 注意：fillfactor 仅对新写入的页面生效，已有数据需 VACUUM FULL 或 pg_repack
+        VACUUM FULL ANALYZE character_states;
+    """)
+
+    # ============================================================
+    # 改进 9: 覆盖索引（移除 content，避免索引膨胀）
     # ============================================================
     # 问题：INCLUDE (content) 会导致索引体积膨胀（content 可能 2000 字）
     # 方案：仅包含轻量字段，content 走主键回表
+    #
+    # 注意：不使用 BRIN 索引。按月范围分区已通过分区裁剪限制扫描范围，
+    #       BRIN 在单月千万级以内数据无收益，反而增加写入维护开销。
     op.execute("""
         -- messages.user_id 覆盖索引（仅轻量字段）
         CREATE INDEX idx_msg_user_time_cover
@@ -283,57 +328,139 @@ def upgrade() -> None:
         INCLUDE (role, character_id, platform);
     """)
 
+    # ============================================================
+    # 改进 13: COMMENT ON 元数据注释
+    # ============================================================
+    op.execute("""
+        -- characters 表注释
+        COMMENT ON TABLE characters IS '角色档案表 - 存储角色静态属性（由角色卡 YAML 导入）';
+        COMMENT ON COLUMN characters.id IS '角色 ID（UUID v7，时间有序）';
+        COMMENT ON COLUMN characters.name IS '角色名';
+        COMMENT ON COLUMN characters.traits IS '特征字典（含 personality/hobby/schedule/mbti 等）';
+        COMMENT ON COLUMN characters.is_active IS '是否参与世界运行';
+        COMMENT ON COLUMN characters.created_at IS '创建时间';
+        COMMENT ON COLUMN characters.updated_at IS '更新时间（触发器自动维护）';
+
+        -- character_states 表注释
+        COMMENT ON TABLE character_states IS '角色实时状态表 - PG 镜像（Redis 为主要读写源）';
+        COMMENT ON COLUMN character_states.character_id IS '角色 ID（主键 + 外键）';
+        COMMENT ON COLUMN character_states.stamina IS '体力 0-100，影响可执行 Action';
+        COMMENT ON COLUMN character_states.satiety IS '饱腹度 0-100，低于阈值触发饥饿';
+        COMMENT ON COLUMN character_states.mood IS '情绪（happy/calm/sad/anxious 等）';
+        COMMENT ON COLUMN character_states.money IS '金钱，影响购物类 Action';
+        COMMENT ON COLUMN character_states.current_action IS '当前动作 JSON: {action_id, params, end_time}';
+        COMMENT ON COLUMN character_states.version IS '乐观锁版本号（防止并发覆盖）';
+        COMMENT ON COLUMN character_states.updated_at IS '更新时间（触发器自动维护）';
+
+        -- memory_episodes 表注释
+        COMMENT ON TABLE memory_episodes IS '记忆片段表 - HASH 分区（16 分区）+ 父表 HNSW 索引';
+        COMMENT ON COLUMN memory_episodes.character_id IS '所属角色（分区键，无外键，应用层保证）';
+        COMMENT ON COLUMN memory_episodes.embedding IS '向量嵌入（materialized=false 时为 NULL）';
+        COMMENT ON COLUMN memory_episodes.importance IS '重要性 1-10，影响检索排序权重';
+        COMMENT ON COLUMN memory_episodes.is_reflected IS '是否已被反思消化';
+        COMMENT ON COLUMN memory_episodes.materialized IS 'embedding 是否已生成（异步 worker 处理）';
+        COMMENT ON COLUMN memory_episodes.source_type IS '来源：action/conversation/reflection/event';
+
+        -- world_events 表注释
+        COMMENT ON TABLE world_events IS '世界变更事件表 - 差分记录（事件溯源）';
+        COMMENT ON COLUMN world_events.tick_id IS 'Tick 序号';
+        COMMENT ON COLUMN world_events.event_type IS '事件类型：time/weather/scene/resource/event';
+        COMMENT ON COLUMN world_events.payload IS '变更内容（仅差分，非全量）';
+
+        -- world_snapshots 表注释
+        COMMENT ON TABLE world_snapshots IS '世界快照表 - 冷启动恢复用（每 1000 Tick 存一次）';
+        COMMENT ON COLUMN world_snapshots.tick_id IS '快照对应的 Tick 序号';
+        COMMENT ON COLUMN world_snapshots.world_time IS '虚拟世界时间';
+        COMMENT ON COLUMN world_snapshots.weather IS '天气状态';
+        COMMENT ON COLUMN world_snapshots.locations IS '所有场景状态 JSON';
+        COMMENT ON COLUMN world_snapshots.resources IS '资源状态 JSON';
+        COMMENT ON COLUMN world_snapshots.active_events IS '活跃事件列表 JSON';
+
+        -- reflection_sources 表注释
+        COMMENT ON TABLE reflection_sources IS '反思来源中间表 - 反思与记忆的多对多关联';
+        COMMENT ON COLUMN reflection_sources.memory_id IS '记忆 ID（复合外键引用 memory_episodes）';
+        COMMENT ON COLUMN reflection_sources.memory_character_id IS '记忆所属角色 ID（复合外键组成部分）';
+
+        -- plans 表注释
+        COMMENT ON TABLE plans IS '计划表 - 角色的长期/短期规划';
+        COMMENT ON COLUMN plans.type IS '计划类型：long_term/short_term';
+        COMMENT ON COLUMN plans.status IS '状态：active/completed/abandoned';
+        COMMENT ON COLUMN plans.priority IS '优先级 1-5，影响 LLM 决策权重';
+        COMMENT ON COLUMN plans.progress IS '进度 0-100';
+    """)
+
+    # ============================================================
+    # 改进 14: 分区自动预创建函数
+    # ============================================================
+    # 问题：按月分区表忘记预创建下月分区 → 月初写入全部报错
+    # 方案：提供 PL/pgSQL 函数，应用启动时调用，预创建未来 N 个月的分区
+    op.execute("""
+        CREATE OR REPLACE FUNCTION pre_create_partitions(months_ahead INT DEFAULT 3)
+        RETURNS VOID AS $$
+        DECLARE
+            i INT;
+            target_month DATE;
+            partition_name TEXT;
+            start_date DATE;
+            end_date DATE;
+        BEGIN
+            -- action_records 按月分区
+            FOR i IN 0..months_ahead LOOP
+                target_month := date_trunc('month', CURRENT_DATE + (i || ' months')::interval)::date;
+                start_date := target_month;
+                end_date := target_month + INTERVAL '1 month';
+                partition_name := 'action_records_' || to_char(target_month, 'YYYY_MM');
+
+                IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = partition_name) THEN
+                    EXECUTE format(
+                        'CREATE TABLE %I PARTITION OF action_records FOR VALUES FROM (%L) TO (%L)',
+                        partition_name, start_date, end_date
+                    );
+                    RAISE NOTICE 'Created partition: %', partition_name;
+                END IF;
+            END LOOP;
+
+            -- messages 按月分区（若表存在分区结构）
+            FOR i IN 0..months_ahead LOOP
+                target_month := date_trunc('month', CURRENT_DATE + (i || ' months')::interval)::date;
+                start_date := target_month;
+                end_date := target_month + INTERVAL '1 month';
+                partition_name := 'messages_' || to_char(target_month, 'YYYY_MM');
+
+                IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = partition_name) THEN
+                    BEGIN
+                        EXECUTE format(
+                            'CREATE TABLE %I PARTITION OF messages FOR VALUES FROM (%L) TO (%L)',
+                            partition_name, start_date, end_date
+                        );
+                        RAISE NOTICE 'Created partition: %', partition_name;
+                    EXCEPTION WHEN OTHERS THEN
+                        -- messages 表可能不是分区表，跳过
+                        RAISE NOTICE 'Skipped messages partition: %', partition_name;
+                    END;
+                END IF;
+            END LOOP;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        -- 执行一次：预创建未来 3 个月的分区
+        SELECT pre_create_partitions(3);
+    """)
+
 
 def downgrade() -> None:
+    """⚠️ 生产环境遵循「只升级不降级」原则，通过备份恢复而非回滚迁移。
+
+    原因：
+    1. personality 列回滚会永久丢失数据（无法从 traits 反向提取）
+    2. memory_episodes 分区回滚会丢失分区结构、索引参数
+    3. world_events/world_snapshots 回滚后业务逻辑直接异常
+    4. 数据迁移是不可逆的物理操作
+
+    如需回滚，请使用 pg_dump 备份恢复：
+        pg_restore --dbname=ai_town --clean --if-exists backup.dump
     """
-    ⚠️ downgrade 风险极高，建议通过备份恢复而非回滚迁移。
-    """
-    # 回滚覆盖索引
-    op.execute("DROP INDEX IF EXISTS idx_msg_conv_time_cover;")
-    op.execute("DROP INDEX IF EXISTS idx_msg_user_time_cover;")
-
-    # 回滚 character_states 触发器 + version
-    op.execute("DROP TRIGGER IF EXISTS trg_character_states_updated_at ON character_states;")
-    op.execute("DROP FUNCTION IF EXISTS update_character_states_updated_at();")
-    op.drop_column("character_states", "version")
-
-    # 回滚 reflection_sources
-    op.drop_table("reflection_sources")
-
-    # 回滚 personality 列（无法恢复数据，仅重建列）
-    op.execute("ALTER TABLE characters ADD COLUMN personality JSONB DEFAULT '[]';")
-
-    # 回滚 world_events + 重建 world_snapshots
-    op.drop_table("world_events")
-    op.create_table(
-        "world_snapshots",
-        sa.Column("id", sa.UUID, primary_key=True, server_default=sa.text("uuidv7()")),
-        sa.Column("tick_id", sa.BigInteger),
-        sa.Column("state", sa.JSONB),
-        sa.Column("captured_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+    raise RuntimeError(
+        "Downgrade not supported. Use backup restore instead. "
+        "See docstring for details."
     )
-
-    # 回滚 DEFAULT 分区 + 删除触发器
-    op.execute("DROP TRIGGER IF EXISTS trg_action_partition_check ON action_records;")
-    op.execute("DROP TRIGGER IF EXISTS trg_messages_partition_check ON messages;")
-    op.execute("DROP FUNCTION IF EXISTS check_partition_exists();")
-    op.execute("""
-        CREATE TABLE action_records_default PARTITION OF action_records DEFAULT;
-        CREATE TABLE messages_default PARTITION OF messages DEFAULT;
-    """)
-
-    # 回滚 memory_episodes 分区改造（风险极高）
-    op.execute("""
-        CREATE TABLE memory_episodes_rollback AS
-        SELECT id, character_id, content, embedding, importance, timestamp,
-               action_id, location, related_characters, is_reflected, source_type
-        FROM memory_episodes;
-
-        DROP TABLE memory_episodes;
-        ALTER TABLE memory_episodes_rollback RENAME TO memory_episodes;
-
-        CREATE INDEX idx_mem_embedding_hnsw ON memory_episodes
-            USING hnsw (embedding vector_cosine_ops)
-            WITH (m = 16, ef_construction = 64);
-        CREATE INDEX idx_mem_char_time ON memory_episodes (character_id, timestamp DESC);
-    """)

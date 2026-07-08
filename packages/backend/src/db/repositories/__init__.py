@@ -15,7 +15,7 @@ from src.db.repositories.memory_repo import MemoryRepository
 from src.db.repositories.plan_repo import PlanRepository
 from src.db.repositories.reflection_repo import ReflectionRepository
 from src.db.repositories.relation_repo import RelationRepository
-from src.db.repositories.snapshot_repo import WorldEventRepository
+from src.db.repositories.snapshot_repo import WorldEventRepository, WorldSnapshotRepository
 
 __all__ = [
     "BaseRepository",
@@ -26,4 +26,5 @@ __all__ = [
     "RelationRepository",
     "ReflectionRepository",
     "WorldEventRepository",
+    "WorldSnapshotRepository",
 ]

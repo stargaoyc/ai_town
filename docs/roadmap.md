@@ -110,16 +110,16 @@ Phase 5: 前端 Dashboard
 
 ## 五、Phase 2.5：性能与数据完整性优化 🔄 当前
 
-> 基于 11 项数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) 迁移脚本。
+> 基于三轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v3 迁移脚本。
 
-### 任务清单
+### 第一轮审查（v1 → v2）
 
 | # | 问题 | 严重度 | 解决方案 | 状态 |
 |---|------|--------|----------|------|
 | 1 | 全局 HNSW + character_id 过滤 → 召回率崩塌 | 致命 | HASH 分区（16 分区）+ 父表 HNSW | ✅ |
 | 2 | Action:Memory 1:1 写放大 → Tick 阻塞 | 高 | materialized 标志 + 异步 embedding worker | ✅ |
-| 3 | DEFAULT 分区兜底 → 慢查询定时炸弹 | 中 | 删除 DEFAULT + RAISE EXCEPTION 触发器 | ✅ |
-| 4 | world_snapshots 全量 JSONB → IO 灾难 | 高 | 降频 10 分钟 + world_events 差分表 | ✅ |
+| 3 | DEFAULT 分区兜底 → 慢查询定时炸弹 | 中 | 删除 DEFAULT 分区 | ✅ |
+| 4 | world_snapshots 全量 JSONB → IO 灾难 | 高 | world_events 差分事件表 | ✅ |
 | 5 | personality TEXT[] 与 traits JSONB 冗余 | 中 | 统一到 traits.personality | ✅ |
 | 6 | reflections.source_memory_ids 无外键 | 中 | reflection_sources 中间表 | ✅ |
 | 7 | messages 分区键缺陷 | 中 | conversation_id 覆盖索引 | ✅ |
@@ -128,13 +128,46 @@ Phase 5: 前端 Dashboard
 | 10 | messages.user_id 索引覆盖 | 低 | INCLUDE 覆盖索引 | ✅ |
 | 11 | HNSW ef_construction=64 偏低 | 中 | 提升至 128 | ✅ |
 
-### 新增文件
+### 第二轮审查（v2 → v2.1）
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 12 | personality 迁移 NULL || jsonb = NULL | 致命 | COALESCE 防御 | ✅ |
+| 13 | 手动子分区索引 → 运维噩梦 | 高 | HNSW 索引在父表创建（自动传播） | ✅ |
+| 14 | DEFAULT 分区静默写入 | 中 | 删除 DEFAULT 分区 | ✅ |
+| 15 | character_states 并发覆盖 | 高 | 乐观锁 version 字段 | ✅ |
+| 16 | 覆盖索引 INCLUDE(content) 膨胀 | 中 | 移除 content，仅轻量字段 | ✅ |
+
+### 第三轮审查（v2.1 → v3）
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 17 | check_partition_exists 触发器是死代码（PG 分区路由在 BEFORE INSERT 之前执行） | 致命 | 删除触发器，PG 原生报错足够清晰 | ✅ |
+| 18 | reflection_sources.memory_id 无外键（悬空引用） | 高 | 增加 memory_character_id + 复合外键 ON DELETE CASCADE | ✅ |
+| 19 | 事件溯源缺快照闭环（冷启动随时间线性变慢） | 高 | 恢复 world_snapshots 表（每 1000 Tick 快照） | ✅ |
+| 20 | character_states fillfactor=100 → HOT 更新失败 → 膨胀 | 中 | fillfactor=85 + autovacuum 调优 | ✅ |
+| 21 | updated_at 触发器仅 character_states 有 | 中 | 通用 update_updated_at() 覆盖 characters/character_states/plans | ✅ |
+| 22 | characters/plans 缺 updated_at 字段 | 中 | 补充 updated_at 字段 | ✅ |
+| 23 | BRIN 索引与月分区重复优化 | 低 | 不使用 BRIN，分区裁剪 + B-tree 足够 | ✅ |
+| 24 | 缺少 COMMENT 元数据注释 | 中 | COMMENT ON TABLE/COLUMN 全覆盖 | ✅ |
+| 25 | 分区预创建只有约束无自动化 | 中 | pre_create_partitions() PL/pgSQL 函数 | ✅ |
+| 26 | downgrade 脚本不可用（数据永久丢失） | 中 | 简化为 raise exception（只升级不降级） | ✅ |
+| 27 | world_events 事件风暴（无变化也写入） | 中 | 事件去重（仅状态变化时写入） | ✅ |
+| 28 | memory_episodes.character_id 无外键 → 孤儿数据 | 中 | 应用层 Repository 显式校验 character_id 存在性 | ✅ |
+
+### 新增/修改文件
 
 | 文件 | 说明 |
 |------|------|
-| `alembic/versions/0002_optimize.py` | 数据库优化迁移脚本 |
+| `alembic/versions/0002_optimize.py` | 数据库优化迁移脚本 v3 |
 | `src/db/models/world_event.py` | 世界变更事件模型 |
-| `src/db/models/reflection_source.py` | 反思来源中间表模型 |
+| `src/db/models/world_snapshot.py` | 世界快照模型（v3 恢复） |
+| `src/db/models/reflection_source.py` | 反思来源中间表模型（v3 增加复合外键） |
+| `src/db/models/character.py` | 角色模型（v3 增加 updated_at） |
+| `src/db/models/plan.py` | 计划模型（v3 增加 updated_at） |
+| `src/db/repositories/snapshot_repo.py` | 世界事件+快照 Repository（v3 增加 WorldSnapshotRepository） |
+| `src/db/repositories/memory_repo.py` | 记忆 Repository（v3 增加 character_id 校验） |
+| `src/core/world_engine.py` | 世界引擎（v3 增加快照保存+事件去重） |
 | `src/memory/embedding_worker.py` | 异步 embedding 生成 worker |
 
 ### 容量估算修正
@@ -142,7 +175,8 @@ Phase 5: 前端 Dashboard
 | 项目 | 原估算 | 修正后 | 说明 |
 |------|--------|--------|------|
 | memory_episodes 存储 | 80 GB/年 | 108 GB/年（向量）+ 50 GB（HNSW 索引） | 1536 维 float32 = 6KB/条 |
-| world_snapshots → world_events | 1.2 TB/年（30s 落盘） | ~50 MB/年（差分事件） | 表已删除，仅保留 world_events |
+| world_events（差分事件） | 1.2 TB/年（30s 全量落盘） | ~50 MB/年（差分事件，仅状态变化时写入） | 事件去重后写入量极低 |
+| world_snapshots（定期快照） | — | ~500 MB/年（每 1000 Tick 一次） | 冷启动恢复用，启动时间恒定 |
 | 建议冷热分离 | — | 3 个月前 action_records.params 迁移至对象存储 | PG 仅存轻量索引字段 |
 
 ---
@@ -347,18 +381,27 @@ Phase 5: 前端 Dashboard
 | 角色 Tick 并发过多 | 资源耗尽 | 信号量限制 + 优先级调度 | ✅ 部分（信号量已有） |
 | HNSW 召回率崩塌 | 记忆检索空结果 | HASH 分区（16）+ 父表 HNSW | ✅ 已解决 |
 | Embedding 阻塞 Tick | 角色卡顿 | 异步 worker + materialized 标志 | ✅ 已解决 |
-| world_snapshots IO 灾难 | WAL 膨胀 | 差分事件表 + 降频 | ✅ 已解决 |
+| world_snapshots IO 灾难 | WAL 膨胀 | 差分事件表 + 定期快照（每 1000 Tick）+ 事件去重 | ✅ 已解决 |
+| 冷启动恢复时间线性增长 | 服务重启慢 | 快照 + 增量事件回放（启动时间恒定） | ✅ 已解决 |
+| character_states 表膨胀 | 索引膨胀 + VACUUM 压力 | fillfactor=85 + autovacuum 调优 | ✅ 已解决 |
+| reflection_sources 悬空引用 | 脏数据 | 复合外键 ON DELETE CASCADE | ✅ 已解决 |
+| 分区表无 FK → 孤儿记忆 | 查询异常 | 应用层 Repository character_id 存在性校验 | ✅ 已解决 |
+| 分区忘记预创建 → 月初写入失败 | 服务中断 | pre_create_partitions() 函数自动预创建 | ✅ 已解决 |
 | Redis ↔ PG 不一致 | 状态漂移 | 乐观锁 + 校验任务 | ⏳ Phase 3.5 |
 | LLM 成本失控 | 预算超支 | 日预算 + 熔断降级 | ⏳ Phase 3.5 |
+| 跨角色全局向量检索性能崩塌 | 全局搜索慢 | 额外维护全局非分区向量索引（未来需求） | ⏳ Phase 4+ |
+| 分区表统计信息漂移 | 执行计划劣化 | 配置更频繁的自动分析阈值 | ⏳ Phase 4 |
+| 向量索引碎片化 | 召回率下降 | 定期监控 + 低峰期索引重建 | ⏳ Phase 4 |
 
 ---
 
 ## 十三、下一步行动（Phase 2.5 → Phase 3）
 
-1. **执行 0002_optimize 迁移**（需维护窗口，涉及表重建）
+1. **执行 0002_optimize v3 迁移**（需维护窗口，涉及表重建；遵循只升级不降级原则，通过备份兜底）
 2. **集成 EmbeddingWorker 到 lifespan**（后台任务自动启动）
-3. **编写 Phase 2.5 单元测试**（分区裁剪验证 + worker 并发测试）
-4. **进入 Phase 3**（消息服务 + MCP Server）
+3. **应用启动时调用 pre_create_partitions()**（预创建未来 3 个月分区）
+4. **编写 Phase 2.5 单元测试**（分区裁剪验证 + worker 并发测试 + 快照恢复测试 + 事件去重测试）
+5. **进入 Phase 3**（消息服务 + MCP Server）
 
 ---
 

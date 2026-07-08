@@ -69,9 +69,10 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;      -- 文本模糊检索
 │  (对话历史, 分区)    │         │  (模块配置)          │
 └──────────────────────┘         └──────────────────────┘
 
-┌──────────────────────┐
-│  world_events        │  (世界变更事件, 差分记录)
-└──────────────────────┘
+┌──────────────────────┐         ┌──────────────────────┐
+│  world_events        │         │  world_snapshots     │
+│  (世界变更事件, 差分) │         │  (世界快照, 冷启动)  │
+└──────────────────────┘         └──────────────────────┘
 ```
 
 ---
@@ -158,8 +159,8 @@ CREATE TABLE action_records (
 CREATE TABLE action_records_2026_07 PARTITION OF action_records
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
--- ⚠️ 0002_optimize: 无 DEFAULT 分区，由 check_partition_exists() 触发器拦截
--- 若分区不存在则 RAISE EXCEPTION，强制运维预创建
+-- ⚠️ 0002_optimize: 无 DEFAULT 分区，PG 原生 "no partition found" 报错足够清晰
+-- 分区预创建由 pre_create_partitions() 函数自动处理（应用启动时调用）
 
 CREATE INDEX idx_ar_char_time   ON action_records (character_id, created_at DESC);
 CREATE INDEX idx_ar_action      ON action_records (action_id);
@@ -243,17 +244,22 @@ CREATE INDEX idx_refl_embedding_hnsw
 
 #### 3.5.1 reflection_sources（反思来源中间表）
 
-> ⚠️ **改进（0002_optimize 迁移）**：替代 `reflections.source_memory_ids UUID[]`，解决数组无法建立外键约束的问题。
+> ⚠️ **改进（0002_optimize v3 迁移）**：替代 `reflections.source_memory_ids UUID[]`，解决数组无法建立外键约束的问题。
+> v3 修复：增加 `memory_character_id` 字段，与 `memory_id` 组成**复合外键**引用 `memory_episodes(id, character_id) ON DELETE CASCADE`，真正保证参照完整性。
 
 ```sql
 CREATE TABLE reflection_sources (
-    reflection_id  UUID NOT NULL REFERENCES reflections(id) ON DELETE CASCADE,
-    memory_id      UUID NOT NULL,                         -- memory_episodes.id（应用层保证存在）
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (reflection_id, memory_id)
+    reflection_id        UUID NOT NULL REFERENCES reflections(id) ON DELETE CASCADE,
+    memory_id            UUID NOT NULL,                    -- memory_episodes.id
+    memory_character_id  UUID NOT NULL,                    -- memory_episodes.character_id（分区键）
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (reflection_id, memory_id, memory_character_id),
+    -- 复合外键：引用分区表 memory_episodes 的完整主键
+    FOREIGN KEY (memory_id, memory_character_id)
+        REFERENCES memory_episodes(id, character_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_refl_sources_memory ON reflection_sources (memory_id);
+CREATE INDEX idx_refl_sources_memory ON reflection_sources (memory_id, memory_character_id);
 ```
 
 ### 3.6 plans（长期规划）
@@ -317,7 +323,7 @@ CREATE TABLE messages (
 CREATE TABLE messages_2026_07 PARTITION OF messages
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
--- ⚠️ 0002_optimize: 无 DEFAULT 分区，由 check_partition_exists() 触发器拦截
+-- ⚠️ 0002_optimize: 无 DEFAULT 分区，PG 原生报错足够清晰，由 pre_create_partitions() 自动预创建
 
 CREATE INDEX idx_msg_conv_time ON messages (conversation_id, created_at);
 CREATE INDEX idx_msg_char_time ON messages (character_id, created_at DESC);
@@ -355,9 +361,13 @@ CREATE INDEX idx_module_enabled ON module_configs (enabled) WHERE enabled = TRUE
 
 ### 3.10 world_events（世界变更事件，差分记录）
 
-> ⚠️ **0002_optimize 迁移**：`world_snapshots` 表已**删除**，仅保留 `world_events` 差分事件表。
-> 每个周期按维度记录世界状态变更（time/weather/scene/resource/event），回放时从事件流重建状态。
-> 冷启动从 Redis 恢复当前态，无需全量快照。
+> **事件溯源 + 定期快照架构（v3 修复）**：
+> - `world_events`：差分事件（高频，仅状态变化时写入），每 N Tick 记录各维度变更
+> - `world_snapshots`：完整状态快照（低频，每 1000 Tick 存一次），冷启动恢复用
+> - 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态（启动时间恒定）
+>
+> ⚠️ v2 曾删除 `world_snapshots` 仅保留事件流，但缺少快照机制的事件溯源在生产环境
+> 完全不可用（冷启动需从头回放所有事件，启动时间随运行时长线性增长）。
 
 ```sql
 CREATE TABLE world_events (
@@ -370,6 +380,26 @@ CREATE TABLE world_events (
 
 CREATE INDEX idx_world_events_tick      ON world_events (tick_id);
 CREATE INDEX idx_world_events_type_time ON world_events (event_type, created_at DESC);
+```
+
+### 3.11 world_snapshots（世界快照，冷启动恢复）
+
+> 每 1000 Tick 存一次完整世界状态快照。冷启动时从最新快照开始，仅回放之后的增量事件。
+
+```sql
+-- 表结构在 0001_init 中创建，0002_optimize v3 保留（v2 曾误删）
+CREATE TABLE world_snapshots (
+    id             UUID PRIMARY KEY DEFAULT uuidv7(),
+    tick_id        BIGINT NOT NULL,                      -- 快照对应的 Tick 序号
+    world_time     TIMESTAMPTZ,                          -- 虚拟世界时间
+    weather        TEXT,                                 -- 天气状态
+    locations      JSONB,                                -- 所有场景状态
+    resources      JSONB,                                -- 资源状态
+    active_events  JSONB,                                -- 活跃事件列表
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_world_tick ON world_snapshots (tick_id);
 ```
 
 | event_type | payload 示例 |
@@ -397,7 +427,7 @@ CREATE INDEX idx_world_events_type_time ON world_events (event_type, created_at 
 | 关联角色反查 | `gin (related_characters)` | 数组成员查询 |
 | 关系图遍历 | `(from_id)` PK + `(to_id)` 索引 | 双向查询 |
 | 消息会话拉取 | `(conversation_id, created_at)` | 多轮对话上下文 |
-| 消息时间扫描 | `brin (created_at)` | 分区表海量时间数据 |
+| 消息时间扫描 | `btree (created_at)` | 按月分区裁剪后 B-tree 足够（不使用 BRIN） |
 
 ### 4.2 索引设计原则
 
@@ -405,7 +435,7 @@ CREATE INDEX idx_world_events_type_time ON world_events (event_type, created_at 
 2. **复合索引字段顺序**：等值查询字段在前，范围查询字段在后；
 3. **部分索引**：高频过滤条件用 `WHERE` 缩小索引体积（如 `WHERE enabled=TRUE`、`WHERE is_reflected=FALSE`）；
 4. **GIN 索引**：JSONB、数组、全文检索场景；
-5. **BRIN 索引**：分区表时间列，海量数据下极小体积；
+5. **不使用 BRIN 索引**：按月范围分区已通过分区裁剪限制扫描范围，BRIN 在单月千万级以内数据无收益，反而增加写入维护开销；
 6. **HNSW 索引**：向量检索，优于 IVFFlat（无需训练、增量友好）。
 
 ---
@@ -496,7 +526,7 @@ CREATE TABLE messages_2026_08 PARTITION OF messages
 |------|------|
 | `pg_cron` 扩展 | 每月 1 日定时执行 `CREATE TABLE ... PARTITION OF` |
 | 应用层定时任务 | Python `apscheduler` 每月 25 日预创建下月分区 |
-| ⚠️ 无 DEFAULT 分区 | 0002_optimize 已删除 DEFAULT 分区，改为 `check_partition_exists()` 触发器 `RAISE EXCEPTION`，强制运维预创建 |
+| ⚠️ 无 DEFAULT 分区 | 0002_optimize 已删除 DEFAULT 分区，PG 原生 "no partition found" 报错足够清晰。分区预创建由 `pre_create_partitions()` 函数自动处理 |
 
 ### 6.3 历史分区归档
 

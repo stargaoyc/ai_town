@@ -1,13 +1,15 @@
-"""世界事件 Repository - 差分事件持久化与回放
+"""世界事件与快照 Repository - 事件溯源 + 定期快照
 
-⚠️ 0002_optimize 迁移后，world_snapshots 表已删除。
-世界状态通过 world_events 差分事件表持久化，回放时从事件流重建。
+架构：
+- world_events: 差分事件（高频，仅状态变化时写入）
+- world_snapshots: 完整状态快照（低频，每 1000 Tick 存一次）
+- 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态
 """
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
-from src.db.models import WorldEvent
+from src.db.models import WorldEvent, WorldSnapshot
 from src.db.repositories.base import BaseRepository
 
 logger = get_logger()
@@ -85,3 +87,39 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars())
+
+
+class WorldSnapshotRepository(BaseRepository[WorldSnapshot]):
+    """世界快照 Repository - 冷启动恢复用
+
+    每 1000 Tick 存一次完整快照，冷启动时从最新快照开始回放增量事件。
+    """
+
+    def __init__(self, session: AsyncSession):
+        super().__init__(session, WorldSnapshot)
+
+    async def add(self, snapshot: WorldSnapshot) -> WorldSnapshot:
+        """写入一条世界快照"""
+        self.session.add(snapshot)
+        await self.session.flush()
+        logger.info(
+            "world_snapshot_created",
+            tick_id=snapshot.tick_id,
+        )
+        return snapshot
+
+    async def get_latest(self) -> WorldSnapshot | None:
+        """获取最新的世界快照（冷启动恢复入口）"""
+        stmt = (
+            select(WorldSnapshot)
+            .order_by(WorldSnapshot.tick_id.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_tick(self, tick_id: int) -> WorldSnapshot | None:
+        """按 Tick 序号获取快照"""
+        stmt = select(WorldSnapshot).where(WorldSnapshot.tick_id == tick_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

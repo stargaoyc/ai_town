@@ -93,6 +93,18 @@ async def lifespan(app: FastAPI):
         logger.error("redis_connection_failed", error=str(e), exc_info=True)
         raise
 
+    # 1.5 预创建分区（确保月初写入不报错）
+    try:
+        from src.db.session import db
+        from sqlalchemy import text
+        async with db.session() as session:
+            await session.execute(text("SELECT pre_create_partitions(3);"))
+            await session.commit()
+        logger.info("partitions_pre_created", months_ahead=3)
+    except Exception as e:
+        logger.warning("partition_pre_create_failed", error=str(e), exc_info=True)
+        # 不中断启动，分区可能已存在或由运维手动创建
+
     # 2. 初始化 LLM 客户端
     try:
         llm = LLMClient()

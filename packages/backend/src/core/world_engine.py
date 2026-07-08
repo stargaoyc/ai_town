@@ -6,16 +6,20 @@ World Tick 主循环流程：
    - 调用所有 Evolution.evolve()
    - 合并世界状态变更
    - 持久化到 Redis world:state
-   - 每 M Tick 持久化快照到 PG
+   - 每 M Tick 持久化差分事件到 world_events（仅状态变化时写入）
+   - 每 1000 Tick 持久化完整快照到 world_snapshots（冷启动恢复）
 3. 锁续租 & 监控
 
 设计要点：
 - 单实例运行：通过 Redis 分布式锁确保只有一个实例在推进世界
 - 容错性：锁 TTL 自动过期，避免死锁
 - 可观测性：每次 Tick 记录日志，便于监控和调试
+- 事件去重：仅在状态变化时写入 world_events，避免事件风暴
+- 快照闭环：定期快照 + 增量事件，冷启动恢复时间恒定
 """
 
 import asyncio
+import json
 from datetime import datetime
 from typing import Any
 
@@ -24,8 +28,8 @@ from structlog import get_logger
 
 from src.config import settings
 from src.core.evolutions import default_evolutions
-from src.db.models import WorldEvent
-from src.db.repositories import WorldEventRepository
+from src.db.models import WorldEvent, WorldSnapshot
+from src.db.repositories import WorldEventRepository, WorldSnapshotRepository
 from src.db.session import db
 
 logger = get_logger(__name__)
@@ -54,6 +58,8 @@ class WorldEngine:
         self._stop_event = asyncio.Event()
         self._leader_task: asyncio.Task | None = None
         self._tick_task: asyncio.Task | None = None
+        # 上一次持久化的世界状态（用于事件去重，仅在状态变化时写入 world_events）
+        self._last_persisted_state: dict[str, Any] = {}
 
     async def start(self) -> None:
         """启动 World Engine（后台任务）
@@ -204,9 +210,13 @@ class WorldEngine:
             # 3. 持久化到 Redis world:state
             await self._save_world_state(world_state)
 
-            # 4. 每 N Tick 持久化世界事件到 PG
+            # 4. 每 N Tick 持久化差分事件到 PG（仅状态变化时写入）
             if self.tick_id % settings.world_snapshot_interval == 0:
                 await self._save_world_events(world_state)
+
+            # 5. 每 1000 Tick 存一次完整快照（冷启动恢复用）
+            if self.tick_id % settings.world_full_snapshot_interval == 0:
+                await self._save_world_snapshot(world_state)
 
             duration = (datetime.now() - start_time).total_seconds()
             logger.info(
@@ -285,10 +295,11 @@ class WorldEngine:
         logger.debug("world_state_saved", tick_id=self.tick_id)
 
     async def _save_world_events(self, world_state: dict[str, Any]) -> None:
-        """持久化世界事件到 PostgreSQL
+        """持久化差分事件到 PostgreSQL（仅状态变化时写入）
 
-        ⚠️ 0002_optimize 迁移后，world_snapshots 表已删除。
-        改为按维度创建差分事件记录，回放时从事件流重建状态。
+        事件去重：对比上一次持久化的状态，仅当维度状态发生变化时才写入事件。
+        避免每个 Tick 都写入无变化的事件，防止事件风暴（50 角色 × 无变化 Tick
+        也会产生大量无用事件）。
 
         Args:
             world_state: 世界状态字典
@@ -300,44 +311,47 @@ class WorldEngine:
             resources_state = world_state.get("resources", {})
             events_state = world_state.get("events", {})
 
-            # 按维度创建事件记录
+            # 上一次持久化的状态（用于去重对比）
+            last = self._last_persisted_state
             events: list[WorldEvent] = []
 
-            # 时间事件
-            world_time_str = time_state.get("world_time", "")
-            if world_time_str:
+            # 时间事件（虚拟时间变化时写入）
+            world_time_str = str(time_state.get("world_time", ""))
+            if world_time_str and world_time_str != str(last.get("time", "")):
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="time",
                     payload={"virtual_time": world_time_str, "tick_id": self.tick_id},
                 ))
 
-            # 天气事件
-            weather = weather_state.get("weather", "sunny")
-            if weather:
+            # 天气事件（天气变化时写入）
+            weather = str(weather_state.get("weather", ""))
+            if weather and weather != str(last.get("weather", "")):
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="weather",
                     payload={"weather": weather},
                 ))
 
-            # 场景事件
-            if scenes_state:
+            # 场景事件（场景状态变化时写入）
+            scenes_json = json.dumps(scenes_state, sort_keys=True, default=str)
+            if scenes_state and scenes_json != last.get("_scenes_json"):
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="scene",
                     payload=scenes_state,
                 ))
 
-            # 资源事件
-            if resources_state:
+            # 资源事件（资源状态变化时写入）
+            resources_json = json.dumps(resources_state, sort_keys=True, default=str)
+            if resources_state and resources_json != last.get("_resources_json"):
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="resource",
                     payload=resources_state,
                 ))
 
-            # 特殊事件
+            # 特殊事件（有活跃事件时始终写入）
             if events_state:
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
@@ -351,11 +365,70 @@ class WorldEngine:
                     await repo.add_batch(events)
                     # session 会自动 commit（session 上下文管理器）
 
+            # 更新去重基线
+            self._last_persisted_state = {
+                "time": world_time_str,
+                "weather": weather,
+                "_scenes_json": scenes_json,
+                "_resources_json": resources_json,
+            }
+
             logger.info("world_events_saved", tick_id=self.tick_id, count=len(events))
 
         except Exception as e:
             logger.error(
                 "world_events_save_failed",
+                tick_id=self.tick_id,
+                error=str(e),
+                exc_info=True,
+            )
+            # 不抛出异常，避免影响主循环
+
+    async def _save_world_snapshot(self, world_state: dict[str, Any]) -> None:
+        """持久化完整世界快照到 PostgreSQL（冷启动恢复用）
+
+        每 1000 Tick 存一次完整状态快照。冷启动时：
+        1. 加载最新快照
+        2. 回放该 Tick 之后的增量 world_events
+        3. 恢复完整世界状态
+
+        这保证冷启动时间恒定，不随运行时长线性增长。
+        """
+        try:
+            time_state = world_state.get("time", {})
+            weather_state = world_state.get("weather", {})
+            scenes_state = world_state.get("scenes", {})
+            resources_state = world_state.get("resources", {})
+            events_state = world_state.get("events", {})
+
+            # 解析虚拟时间
+            world_time_str = str(time_state.get("world_time", ""))
+            world_time = None
+            if world_time_str:
+                try:
+                    world_time = datetime.fromisoformat(world_time_str)
+                except (ValueError, TypeError):
+                    pass
+
+            snapshot = WorldSnapshot(
+                tick_id=self.tick_id,
+                world_time=world_time,
+                weather=str(weather_state.get("weather", "")),
+                locations=scenes_state if scenes_state else None,
+                resources=resources_state if resources_state else None,
+                active_events=events_state if events_state else None,
+            )
+
+            async with db.session() as session:
+                repo = WorldSnapshotRepository(session)
+                await repo.add(snapshot)
+                # session 会自动 commit
+
+            logger.info("world_snapshot_saved", tick_id=self.tick_id)
+
+        except Exception as e:
+            logger.error(
+                "world_snapshot_save_failed",
                 tick_id=self.tick_id,
                 error=str(e),
                 exc_info=True,

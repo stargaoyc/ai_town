@@ -1,8 +1,9 @@
 """世界事件模型 - 差分事件记录
 
-⚠️ 0002_optimize 迁移后，world_snapshots 表已删除，仅保留 world_events。
-每个周期持久化各维度的世界状态变更（time/weather/scene/resource/event），
-回放时从事件流重建状态，冷启动从 Redis 恢复当前态。
+事件溯源 + 定期快照架构：
+- world_events: 差分事件（高频，仅状态变化时写入）
+- world_snapshots: 完整状态快照（低频，每 1000 Tick 存一次）
+- 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态
 """
 from datetime import datetime
 from uuid import UUID
