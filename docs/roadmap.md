@@ -153,7 +153,19 @@ Phase 5: 前端 Dashboard
 | 25 | 分区预创建只有约束无自动化 | 中 | pre_create_partitions() PL/pgSQL 函数 | ✅ |
 | 26 | downgrade 脚本不可用（数据永久丢失） | 中 | 简化为 raise exception（只升级不降级） | ✅ |
 | 27 | world_events 事件风暴（无变化也写入） | 中 | 事件去重（仅状态变化时写入） | ✅ |
-| 28 | memory_episodes.character_id 无外键 → 孤儿数据 | 中 | 应用层 Repository 显式校验 character_id 存在性 | ✅ |
+| 28 | memory_episodes.character_id 无外键 → 孤儿数据 | 中 | v3: 应用层校验 → v4: DB 外键 REFERENCES characters(id) ON DELETE CASCADE | ✅ |
+
+### 第四轮审查（v3 → v4）
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 29 | 「分区表不能加外键」是认知错误（PG 11+ 支持） | 致命 | memory_episodes.character_id 补充外键 REFERENCES characters(id) ON DELETE CASCADE | ✅ |
+| 30 | world_events 无幂等约束（重试/重启导致重复事件） | 高 | UNIQUE(tick_id, event_type) + ON CONFLICT DO NOTHING | ✅ |
+| 31 | VACUUM FULL 在迁移中阻塞全表读写 | 高 | 移除自动执行，改为注释说明手动维护 | ✅ |
+| 32 | 删除 DEFAULT 分区可能静默丢数据 | 高 | 删除前 DO 块检查数据量，有数据则 RAISE EXCEPTION | ✅ |
+| 33 | pre_create_partitions() 异常捕获过宽（WHEN OTHERS） | 中 | 收紧为 undefined_table + duplicate_table | ✅ |
+| 34 | HASH 分区「便于扩展」措辞误导 | 低 | 文档明确说明 HASH 分区数固定，扩容需全表重分布 | ✅ |
+| 35 | 异步向量化并发控制 | — | 已由 FOR UPDATE SKIP LOCKED 解决，无需修改 | ✅ |
 
 ### 新增/修改文件
 
@@ -385,8 +397,11 @@ Phase 5: 前端 Dashboard
 | 冷启动恢复时间线性增长 | 服务重启慢 | 快照 + 增量事件回放（启动时间恒定） | ✅ 已解决 |
 | character_states 表膨胀 | 索引膨胀 + VACUUM 压力 | fillfactor=85 + autovacuum 调优 | ✅ 已解决 |
 | reflection_sources 悬空引用 | 脏数据 | 复合外键 ON DELETE CASCADE | ✅ 已解决 |
-| 分区表无 FK → 孤儿记忆 | 查询异常 | 应用层 Repository character_id 存在性校验 | ✅ 已解决 |
+| 分区表无 FK → 孤儿记忆 | 查询异常 | DB 外键 REFERENCES characters(id) ON DELETE CASCADE（v4 修复） | ✅ 已解决 |
 | 分区忘记预创建 → 月初写入失败 | 服务中断 | pre_create_partitions() 函数自动预创建 | ✅ 已解决 |
+| world_events 重复写入 → 回放状态错误 | 状态异常 | UNIQUE(tick_id, event_type) + ON CONFLICT DO NOTHING（v4 修复） | ✅ 已解决 |
+| VACUUM FULL 阻塞全表 | 服务中断 | 移除自动执行，改为手动维护（v4 修复） | ✅ 已解决 |
+| DEFAULT 分区静默丢数据 | 数据丢失 | 删除前检查数据量（v4 修复） | ✅ 已解决 |
 | Redis ↔ PG 不一致 | 状态漂移 | 乐观锁 + 校验任务 | ⏳ Phase 3.5 |
 | LLM 成本失控 | 预算超支 | 日预算 + 熔断降级 | ⏳ Phase 3.5 |
 | 跨角色全局向量检索性能崩塌 | 全局搜索慢 | 额外维护全局非分区向量索引（未来需求） | ⏳ Phase 4+ |

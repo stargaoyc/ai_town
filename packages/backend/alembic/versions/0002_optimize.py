@@ -1,29 +1,32 @@
-"""数据库性能与完整性优化（v3）
+"""数据库性能与完整性优化（v4）
 
-基于三轮生产环境审查反馈的系统性改进。
+基于四轮生产环境审查反馈的系统性改进。
 
 致命问题修复：
 1. personality 迁移使用 COALESCE 防御 NULL（原代码 NULL || jsonb = NULL）
 2. HNSW 索引在父表创建（自动传播所有子分区，避免运维噩梦）
 3. 删除死代码 check_partition_exists 触发器（PG 分区路由在 BEFORE INSERT 之前执行）
+4. memory_episodes.character_id 补充外键 REFERENCES characters(id) ON DELETE CASCADE
+   （v3 曾误认为「分区表不能加外键」，实际 PG 11+ 支持）
 
 架构级修复：
-4. 删除 DEFAULT 分区（PG 原生报错已足够清晰，无需自定义触发器）
-5. 保留 world_snapshots 表 + 新增 world_events 差分表（事件溯源 + 快照闭环）
-6. HASH 分区改为 16 个（2 的幂，扩展性更好）
-7. 彻底删除 personality 列（不保留废弃列）
-8. reflection_sources 增加复合外键引用 memory_episodes(id, character_id)
+5. 删除 DEFAULT 分区（删除前检查数据，避免静默丢失）
+6. 保留 world_snapshots 表 + 新增 world_events 差分表（事件溯源 + 快照闭环）
+7. world_events 增加 UNIQUE(tick_id, event_type) 幂等约束
+8. HASH 分区改为 16 个（HASH 分区数固定，扩容需全表重分布）
+9. 彻底删除 personality 列（不保留废弃列）
+10. reflection_sources 增加复合外键引用 memory_episodes(id, character_id)
 
 性能优化：
-9. 覆盖索引移除 content 字段（避免索引膨胀）
-10. character_states fillfactor=85 + autovacuum 调优（高频更新表）
-11. 通用 updated_at 触发器覆盖所有表（characters/character_states/plans）
-12. characters/plans 补充 updated_at 字段
+11. 覆盖索引移除 content 字段（避免索引膨胀）
+12. character_states fillfactor=85 + autovacuum 调优（不自动执行 VACUUM FULL）
+13. 通用 updated_at 触发器覆盖所有表（characters/character_states/plans）
+14. characters/plans 补充 updated_at 字段
 
 工程化改进：
-13. COMMENT ON TABLE/COLUMN 元数据注释
-14. pre_create_partitions() 分区自动预创建函数
-15. downgrade 简化为 raise exception（只升级不降级原则）
+15. COMMENT ON TABLE/COLUMN 元数据注释
+16. pre_create_partitions() 分区自动预创建函数（收紧异常捕获范围）
+17. downgrade 简化为 raise exception（只升级不降级原则）
 
 Revision ID: 0002_optimize
 Revises: 0001_init
@@ -61,22 +64,27 @@ def upgrade() -> None:
     # 改进 1+2+5+6: memory_episodes 重建为 HASH 分区（16 分区）
     # ============================================================
     # 问题：全局 HNSW + WHERE character_id = :cid 导致召回率崩塌
-    # 方案：按 character_id HASH 分区（16 分区，2 的幂便于扩展）
+    # 方案：按 character_id HASH 分区（16 分区，HASH 分区数固定，扩容需全表重分布）
     #       查询时分区裁剪直接命中单分区，HNSW 只搜索该角色数据
     #
     # 同时：
     # - 增加 materialized 标志区分原始日志与向量化记忆
     # - ef_construction 64→128 提升图精度
     # - HNSW 索引在父表创建，自动传播到所有子分区（含未来新增）
+    # - character_id 外键引用 characters(id) ON DELETE CASCADE
+    #   ⚠️ v3 曾误认为「分区表不能加外键」而移除，实际 PostgreSQL 11+
+    #      支持分区表引用非分区表，与分区类型（RANGE/LIST/HASH）无关。
+    #      同设计的 action_records（RANGE 分区）也保留了 character_id 外键。
 
     op.execute("""
         -- 1. 重命名旧表
         ALTER TABLE memory_episodes RENAME TO memory_episodes_old;
 
-        -- 2. 创建新的 HASH 分区表（16 分区，2 的幂）
+        -- 2. 创建新的 HASH 分区表（16 分区）
         CREATE TABLE memory_episodes (
             id                 UUID NOT NULL DEFAULT uuidv7(),
-            character_id       UUID NOT NULL,                       -- 分区键（无 FK，应用层保证）
+            character_id       UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                                                                      -- 分区键（外键引用 characters.id）
             content            TEXT NOT NULL,
             embedding          vector(1536),                        -- nullable: materialized=false 时为 NULL
             importance         INT  NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
@@ -158,10 +166,39 @@ def upgrade() -> None:
     # 分区预创建由 pre_create_partitions() 函数处理（见本脚本末尾）。
 
     op.execute("""
-        -- 删除 action_records 的 DEFAULT 分区
-        DROP TABLE IF EXISTS action_records_default;
+        -- ⚠️ 删除 DEFAULT 分区前先检查是否有数据，避免静默丢失
+        -- 如果 DEFAULT 分区中有数据，说明有记录未能路由到正确分区，
+        -- 需要先排查并迁移数据，再删除 DEFAULT 分区。
 
-        -- 删除 messages 的 DEFAULT 分区
+        DO $$
+        DECLARE
+            default_count INT;
+        BEGIN
+            -- 检查 action_records_default
+            IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'action_records_default') THEN
+                EXECUTE 'SELECT count(*) FROM action_records_default' INTO default_count;
+                IF default_count > 0 THEN
+                    RAISE EXCEPTION
+                        'action_records_default contains % rows. '
+                        'Migrate data to correct monthly partitions before dropping DEFAULT.',
+                        default_count;
+                END IF;
+            END IF;
+
+            -- 检查 messages_default
+            IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'messages_default') THEN
+                EXECUTE 'SELECT count(*) FROM messages_default' INTO default_count;
+                IF default_count > 0 THEN
+                    RAISE EXCEPTION
+                        'messages_default contains % rows. '
+                        'Migrate data to correct monthly partitions before dropping DEFAULT.',
+                        default_count;
+                END IF;
+            END IF;
+        END $$;
+
+        -- 确认无数据后安全删除
+        DROP TABLE IF EXISTS action_records_default;
         DROP TABLE IF EXISTS messages_default;
     """)
 
@@ -185,6 +222,8 @@ def upgrade() -> None:
         sa.Column("payload", sa.JSONB, nullable=False,
                   comment="变更内容（仅差分）"),
         sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+        # 幂等约束：同一 Tick 同一类型事件唯一，防止重试/重启导致重复写入
+        sa.UniqueConstraint("tick_id", "event_type", name="uq_world_events_tick_type"),
     )
     op.create_index("idx_world_events_tick", "world_events", ["tick_id"])
     op.create_index("idx_world_events_type_time", "world_events", ["event_type", "created_at DESC"])
@@ -293,6 +332,10 @@ def upgrade() -> None:
 
     # 高频更新表优化：fillfactor=85 预留页面空闲空间，提升 HOT 更新比例
     # autovacuum 调优：更早触发清理，减少死元组堆积
+    #
+    # ⚠️ 不在迁移中执行 VACUUM FULL：该命令会获取 ACCESS EXCLUSIVE 锁，
+    #    阻塞所有读写。fillfactor 设置仅对新写入的页面生效，
+    #    已有数据需在维护窗口手动执行 pg_repack 或 VACUUM FULL。
     op.execute("""
         -- fillfactor=85：预留 15% 空间供 HOT 更新（减少索引膨胀）
         ALTER TABLE character_states SET (fillfactor = 85);
@@ -303,9 +346,9 @@ def upgrade() -> None:
             autovacuum_analyze_scale_factor = 0.02
         );
 
-        -- 重建表以应用 fillfactor（REPACK 或重建索引）
-        -- 注意：fillfactor 仅对新写入的页面生效，已有数据需 VACUUM FULL 或 pg_repack
-        VACUUM FULL ANALYZE character_states;
+        -- 注意：fillfactor 仅对新写入的页面生效。
+        -- 已有数据需在维护窗口执行：pg_repack -t character_states 或 VACUUM FULL ANALYZE character_states;
+        -- ⚠️ VACUUM FULL 会获取 ACCESS EXCLUSIVE 锁，切勿在迁移中自动执行。
     """)
 
     # ============================================================
@@ -354,7 +397,7 @@ def upgrade() -> None:
 
         -- memory_episodes 表注释
         COMMENT ON TABLE memory_episodes IS '记忆片段表 - HASH 分区（16 分区）+ 父表 HNSW 索引';
-        COMMENT ON COLUMN memory_episodes.character_id IS '所属角色（分区键，无外键，应用层保证）';
+        COMMENT ON COLUMN memory_episodes.character_id IS '所属角色（分区键，外键引用 characters.id ON DELETE CASCADE）';
         COMMENT ON COLUMN memory_episodes.embedding IS '向量嵌入（materialized=false 时为 NULL）';
         COMMENT ON COLUMN memory_episodes.importance IS '重要性 1-10，影响检索排序权重';
         COMMENT ON COLUMN memory_episodes.is_reflected IS '是否已被反思消化';
@@ -362,7 +405,7 @@ def upgrade() -> None:
         COMMENT ON COLUMN memory_episodes.source_type IS '来源：action/conversation/reflection/event';
 
         -- world_events 表注释
-        COMMENT ON TABLE world_events IS '世界变更事件表 - 差分记录（事件溯源）';
+        COMMENT ON TABLE world_events IS '世界变更事件表 - 差分记录（事件溯源），UNIQUE(tick_id, event_type) 保证幂等';
         COMMENT ON COLUMN world_events.tick_id IS 'Tick 序号';
         COMMENT ON COLUMN world_events.event_type IS '事件类型：time/weather/scene/resource/event';
         COMMENT ON COLUMN world_events.payload IS '变更内容（仅差分，非全量）';
@@ -434,9 +477,14 @@ def upgrade() -> None:
                             partition_name, start_date, end_date
                         );
                         RAISE NOTICE 'Created partition: %', partition_name;
-                    EXCEPTION WHEN OTHERS THEN
-                        -- messages 表可能不是分区表，跳过
-                        RAISE NOTICE 'Skipped messages partition: %', partition_name;
+                    EXCEPTION
+                        WHEN undefined_table THEN
+                            -- messages 表不存在，跳过
+                            RAISE NOTICE 'Table messages does not exist, skipping partition %', partition_name;
+                        WHEN duplicate_table THEN
+                            -- 分区已存在，跳过
+                            RAISE NOTICE 'Partition already exists: %', partition_name;
+                        -- 其他异常（权限不足、磁盘满等）直接抛出，不吞掉
                     END;
                 END IF;
             END LOOP;

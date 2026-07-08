@@ -170,12 +170,15 @@ CREATE INDEX idx_ar_params      ON action_records USING gin (params jsonb_path_o
 
 ### 3.4 memory_episodes（向量记忆，pgvector）
 
-> ⚠️ **性能优化（0002_optimize 迁移）**：表已改为按 `character_id` **HASH 分区**（16 分区，2 的幂便于扩展）。HNSW 索引在**父表**创建，PostgreSQL 自动传播到所有子分区（含未来新增）。查询 `WHERE character_id = :cid` 触发分区裁剪，HNSW 只搜索该角色的数据（< 10ms），避免全局 HNSW + WHERE 过滤导致的召回率崩塌。
+> ⚠️ **性能优化（0002_optimize 迁移）**：表已改为按 `character_id` **HASH 分区**（16 分区，HASH 分区数固定，扩容需全表重分布）。HNSW 索引在**父表**创建，PostgreSQL 自动传播到所有子分区（含未来新增）。查询 `WHERE character_id = :cid` 触发分区裁剪，HNSW 只搜索该角色的数据（< 10ms），避免全局 HNSW + WHERE 过滤导致的召回率崩塌。
+>
+> ⚠️ **外键修复（v4）**：`character_id` 已建立外键 `REFERENCES characters(id) ON DELETE CASCADE`。PostgreSQL 11+ 支持分区表引用非分区表，角色删除时记忆自动级联清理。
 
 ```sql
 CREATE TABLE memory_episodes (
     id                 UUID NOT NULL DEFAULT uuidv7(),
-    character_id       UUID NOT NULL,                       -- 分区键（HASH 分区，无 FK）
+    character_id       UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                                                                      -- 分区键（外键引用 characters.id）
     content            TEXT NOT NULL,
     embedding          vector(1536),                        -- nullable: materialized=false 时为 NULL
     importance         INT  NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
@@ -190,7 +193,7 @@ CREATE TABLE memory_episodes (
     PRIMARY KEY (id, character_id)                          -- 分区表主键必须含分区键
 ) PARTITION BY HASH (character_id);
 
--- 16 个 HASH 分区（MODULUS 16，2 的幂便于扩展）
+-- 16 个 HASH 分区（MODULUS 16，HASH 分区数固定，扩容到 32 需全表重分布）
 CREATE TABLE memory_episodes_p00 PARTITION OF memory_episodes FOR VALUES WITH (MODULUS 16, REMAINDER 0);
 CREATE TABLE memory_episodes_p01 PARTITION OF memory_episodes FOR VALUES WITH (MODULUS 16, REMAINDER 1);
 -- ... p02 ~ p15 同理
@@ -366,8 +369,8 @@ CREATE INDEX idx_module_enabled ON module_configs (enabled) WHERE enabled = TRUE
 > - `world_snapshots`：完整状态快照（低频，每 1000 Tick 存一次），冷启动恢复用
 > - 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态（启动时间恒定）
 >
-> ⚠️ v2 曾删除 `world_snapshots` 仅保留事件流，但缺少快照机制的事件溯源在生产环境
-> 完全不可用（冷启动需从头回放所有事件，启动时间随运行时长线性增长）。
+> ⚠️ **幂等性保证（v4 修复）**：`UNIQUE(tick_id, event_type)` 约束保证单 Tick 单类型事件唯一。
+> `add_batch` 使用 `INSERT ... ON CONFLICT DO NOTHING`，服务重启 / Tick 重试时自动跳过已存在事件。
 
 ```sql
 CREATE TABLE world_events (
@@ -375,7 +378,8 @@ CREATE TABLE world_events (
     tick_id     BIGINT NOT NULL,
     event_type  TEXT NOT NULL,                           -- time/weather/scene/resource/event
     payload     JSONB NOT NULL,                          -- 变更内容（仅差分）
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tick_id, event_type)                         -- 幂等约束：单 Tick 单类型事件唯一
 );
 
 CREATE INDEX idx_world_events_tick      ON world_events (tick_id);
@@ -577,7 +581,8 @@ class MemoryEpisode(Base):
     id: Mapped[UUID] = mapped_column(
         primary_key=True, default=uuid7                  # 应用层生成 UUID v7
     )
-    # ⚠️ 无 ForeignKey：分区表不支持跨分区外键，应用层保证引用完整性
+    # character_id 外键引用 characters(id) ON DELETE CASCADE
+    # PostgreSQL 11+ 支持分区表引用非分区表，角色删除时记忆自动级联清理
     character_id: Mapped[UUID] = mapped_column(primary_key=True)
     content: Mapped[str] = mapped_column(String)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))

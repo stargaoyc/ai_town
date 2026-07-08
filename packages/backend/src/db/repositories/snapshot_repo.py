@@ -6,6 +6,7 @@
 - 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态
 """
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
@@ -17,6 +18,9 @@ logger = get_logger()
 
 class WorldEventRepository(BaseRepository[WorldEvent]):
     """世界事件 Repository
+
+    事件幂等：UNIQUE(tick_id, event_type) 约束保证单 Tick 单类型事件唯一。
+    add_batch 使用 ON CONFLICT DO NOTHING，重复写入自动跳过。
 
     用法：
         async with db.session() as session:
@@ -39,14 +43,34 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
         return event
 
     async def add_batch(self, events: list[WorldEvent]) -> None:
-        """批量写入世界事件"""
+        """批量写入世界事件（幂等：重复写入自动跳过）
+
+        使用 INSERT ... ON CONFLICT DO NOTHING，
+        配合 UNIQUE(tick_id, event_type) 约束保证幂等性。
+        服务重启 / Tick 重试时不会产生重复事件。
+        """
         if not events:
             return
-        self.session.add_all(events)
-        await self.session.flush()
+        # 使用 PostgreSQL 原生 INSERT ... ON CONFLICT DO NOTHING
+        rows = [
+            {
+                "id": e.id,
+                "tick_id": e.tick_id,
+                "event_type": e.event_type,
+                "payload": e.payload,
+                "created_at": e.created_at,
+            }
+            for e in events
+        ]
+        stmt = pg_insert(WorldEvent).values(rows)
+        stmt = stmt.on_conflict_do_nothing(
+            constraint="uq_world_events_tick_type"
+        )
+        result = await self.session.execute(stmt)
         logger.info(
             "world_events_batch_created",
             count=len(events),
+            inserted=result.rowcount,
             tick_id=events[0].tick_id if events else None,
         )
 

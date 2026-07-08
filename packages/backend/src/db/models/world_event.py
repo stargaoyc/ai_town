@@ -4,12 +4,15 @@
 - world_events: 差分事件（高频，仅状态变化时写入）
 - world_snapshots: 完整状态快照（低频，每 1000 Tick 存一次）
 - 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态
+
+幂等性保证：UNIQUE(tick_id, event_type) 约束防止重复写入，
+服务重启 / Tick 重试时自动跳过已存在的事件。
 """
 from datetime import datetime
 from uuid import UUID
 from uuid6 import uuid7
 
-from sqlalchemy import BigInteger, Index, String
+from sqlalchemy import BigInteger, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,6 +33,8 @@ class WorldEvent(Base):
     - time: {"virtual_time": "2026-07-06T10:30:00", "tick_id": 42}
     - weather: {"from": "sunny", "to": "rainy"}
     - scene: {"scene_id": "cafe", "crowdedness": 0.8}
+
+    幂等性：UNIQUE(tick_id, event_type) 约束保证单 Tick 单类型事件唯一。
     """
     __tablename__ = "world_events"
 
@@ -48,6 +53,8 @@ class WorldEvent(Base):
     )
 
     __table_args__ = (
+        # 幂等约束：同一 Tick 同一类型事件唯一
+        UniqueConstraint("tick_id", "event_type", name="uq_world_events_tick_type"),
         Index("idx_world_events_tick", "tick_id"),
         Index("idx_world_events_type_time", "event_type", "created_at"),
     )
