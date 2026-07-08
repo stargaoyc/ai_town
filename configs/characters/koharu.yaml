@@ -1,0 +1,37 @@
+# 角色卡示例 - 小春
+name: 小春
+age: 16
+occupation: 高中生
+personality:
+  - 活泼
+  - 开朗
+  - 好奇心强
+  - 有点冒失
+traits:
+  hobby: [摄影, 甜品巡礼, 追番]
+  favorite_color: sky_blue
+  schedule: normal
+  favorite_food: [蛋糕, 奶茶, 可丽饼]
+  dislikes: [苦味, 下雨]
+  mbti: ENFP
+backstory: |
+  小镇本地人，家里开甜品店。
+  从小性格开朗，喜欢交朋友和拍照。
+  和结衣奈是同班同学，主动接近对方想成为朋友。
+avatar_url: https://cdn.example.com/avatar/koharu.png
+voice_preset: cheerful_girl
+initial_state:
+  location: cafe
+  stamina: 90
+  satiety: 70
+  mood: happy
+  money: 800
+  phone_battery: 90
+  social_energy: 80
+initial_plans:
+  - type: short_term
+    title: 和结衣奈成为好朋友
+    priority: 5
+  - type: long_term
+    title: 拍遍小镇的美景
+    priority: 3

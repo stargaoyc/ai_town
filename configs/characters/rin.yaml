@@ -1,0 +1,37 @@
+# 角色卡示例 - 凛
+name: 凛
+age: 18
+occupation: 大学生
+personality:
+  - 冷静
+  - 理性
+  - 不善表达
+  - 内心温柔
+traits:
+  hobby: [阅读, 黑咖啡, 猫]
+  favorite_color: twilight_purple
+  schedule: night_owl
+  favorite_food: [三明治, 黑咖啡]
+  dislikes: [吵闹, 甜食]
+  mbti: INTJ
+backstory: |
+  从外地来小镇读大学，喜欢独处。
+  在书店打工，下班后会去海边散步。
+  表面冷漠但内心细腻，不擅长主动社交。
+avatar_url: https://cdn.example.com/avatar/rin.png
+voice_preset: cool_girl
+initial_state:
+  location: bookstore
+  stamina: 70
+  satiety: 50
+  mood: calm
+  money: 1200
+  phone_battery: 60
+  social_energy: 40
+initial_plans:
+  - type: long_term
+    title: 完成毕业论文
+    priority: 5
+  - type: short_term
+    title: 找到一家安静的咖啡馆
+    priority: 3

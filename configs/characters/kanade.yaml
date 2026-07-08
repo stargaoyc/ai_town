@@ -1,0 +1,37 @@
+# 角色卡示例 - 奏
+name: 奏
+age: 17
+occupation: 高中生
+personality:
+  - 温柔
+  - 神秘
+  - 喜欢音乐
+  - 有灵性
+traits:
+  hobby: [弹钢琴, 写日记, 观星]
+  favorite_color: moonlight_silver
+  schedule: early_bird
+  favorite_food: [和果子, 抹茶]
+  dislikes: [噪音, 撒谎]
+  mbti: INFJ
+backstory: |
+  从小在神社长大，对神灵有感应。
+  性格温柔但有些神秘，喜欢在清晨弹钢琴。
+  和结衣奈在公园偶遇后成为朋友。
+avatar_url: https://cdn.example.com/avatar/kanade.png
+voice_preset: gentle_girl
+initial_state:
+  location: shrine
+  stamina: 75
+  satiety: 55
+  mood: calm
+  money: 300
+  phone_battery: 50
+  social_energy: 50
+initial_plans:
+  - type: long_term
+    title: 完成一首钢琴曲
+    priority: 4
+  - type: short_term
+    title: 在祭典上演奏
+    priority: 5
