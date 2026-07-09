@@ -45,6 +45,7 @@ def upgrade() -> None:
     # - platform 标识来源（web/qq/lark/internal）
     # - context JSONB 存储最近 N 条消息摘要（LLM 上下文压缩）
     # - last_message_at 用于会话活跃度排序
+    # v10: PG18 兼容性 - 拆分为单语句执行
     op.execute("""
         CREATE TABLE conversations (
             id              UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -54,15 +55,11 @@ def upgrade() -> None:
             context         JSONB,
             last_message_at TIMESTAMPTZ,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-
-        -- 同一用户对同一角色仅一个会话（ON CONFLICT 依赖此唯一约束）
-        CREATE UNIQUE INDEX idx_conv_user_char ON conversations (user_id, character_id);
-        -- 按最后消息时间排序活跃会话
-        CREATE INDEX idx_conv_last_msg   ON conversations (last_message_at DESC);
-        -- 按 character 查询所有相关会话（角色侧主动分享时使用）
-        CREATE INDEX idx_conv_char       ON conversations (character_id);
+        )
     """)
+    op.execute("CREATE UNIQUE INDEX idx_conv_user_char ON conversations (user_id, character_id);")
+    op.execute("CREATE INDEX idx_conv_last_msg ON conversations (last_message_at DESC);")
+    op.execute("CREATE INDEX idx_conv_char ON conversations (character_id);")
 
     # ============================================================
     # 2. messages 表（消息记录，非分区表）
@@ -78,6 +75,7 @@ def upgrade() -> None:
     # - (conversation_id, created_at) 复合索引足够支撑时间线查询
     # - 单表 3 个月内千万级数据 PostgreSQL B-tree 完全可承载
     # - 长期归档由 Phase 4 冷热分离方案处理
+    # v10: PG18 兼容性 - 拆分为单语句执行
     op.execute("""
         CREATE TABLE messages (
             id              UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -88,13 +86,10 @@ def upgrade() -> None:
             cost            NUMERIC(10, 6),
             extra_data      JSONB,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-
-        -- 会话时间线查询（核心索引）
-        CREATE INDEX idx_msg_conv_time ON messages (conversation_id, created_at);
-        -- 全局最近消息查询（管理面板、监控）
-        CREATE INDEX idx_msg_created   ON messages (created_at);
+        )
     """)
+    op.execute("CREATE INDEX idx_msg_conv_time ON messages (conversation_id, created_at);")
+    op.execute("CREATE INDEX idx_msg_created ON messages (created_at);")
 
     # ============================================================
     # 3. memory_episodes 增加失败处理字段（v8 P1 延后项）
@@ -106,34 +101,32 @@ def upgrade() -> None:
     # - last_error: 最近失败错误信息（截断 1000 字），便于排查
     # - 复合部分索引：仅索引 materialized=false AND fail_count<5 的记忆
     #   worker 拉取时直接命中，无需扫描失败记忆
-    op.execute("""
-        ALTER TABLE memory_episodes
-            ADD COLUMN fail_count INT NOT NULL DEFAULT 0,
-            ADD COLUMN last_error TEXT;
+    # v10: PG18 兼容性 - 拆分为单语句执行
+    op.execute("ALTER TABLE memory_episodes ADD COLUMN fail_count INT NOT NULL DEFAULT 0;")
+    op.execute("ALTER TABLE memory_episodes ADD COLUMN last_error TEXT;")
 
-        -- 替换原 idx_mem_unmaterialized：排除已熔断的失败记忆
-        DROP INDEX IF EXISTS idx_mem_unmaterialized;
-        CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp)
-            WHERE materialized = FALSE AND fail_count < 5;
+    # 替换原 idx_mem_unmaterialized：排除已熔断的失败记忆
+    op.execute("DROP INDEX IF EXISTS idx_mem_unmaterialized;")
+    op.execute("CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) WHERE materialized = FALSE AND fail_count < 5;")
 
-        COMMENT ON COLUMN memory_episodes.fail_count IS '向量化失败次数，达到 5 后不再重试';
-        COMMENT ON COLUMN memory_episodes.last_error IS '最近一次失败错误信息（截断 1000 字）';
+    # COMMENT ON 元数据注释
+    op.execute("COMMENT ON COLUMN memory_episodes.fail_count IS '向量化失败次数，达到 5 后不再重试';")
+    op.execute("COMMENT ON COLUMN memory_episodes.last_error IS '最近一次失败错误信息（截断 1000 字）';")
 
-        COMMENT ON TABLE conversations IS '会话表 - 用户与角色的对话线程';
-        COMMENT ON COLUMN conversations.character_id IS '角色 ID（外键 ON DELETE CASCADE）';
-        COMMENT ON COLUMN conversations.user_id IS '用户标识（平台特定）';
-        COMMENT ON COLUMN conversations.platform IS '来源平台 web/qq/lark/internal';
-        COMMENT ON COLUMN conversations.context IS 'LLM 上下文压缩摘要';
-        COMMENT ON COLUMN conversations.last_message_at IS '最后消息时间（活跃度排序）';
+    op.execute("COMMENT ON TABLE conversations IS '会话表 - 用户与角色的对话线程';")
+    op.execute("COMMENT ON COLUMN conversations.character_id IS '角色 ID（外键 ON DELETE CASCADE）';")
+    op.execute("COMMENT ON COLUMN conversations.user_id IS '用户标识（平台特定）';")
+    op.execute("COMMENT ON COLUMN conversations.platform IS '来源平台 web/qq/lark/internal';")
+    op.execute("COMMENT ON COLUMN conversations.context IS 'LLM 上下文压缩摘要';")
+    op.execute("COMMENT ON COLUMN conversations.last_message_at IS '最后消息时间（活跃度排序）';")
 
-        COMMENT ON TABLE messages IS '消息表 - 单条消息记录（非分区表）';
-        COMMENT ON COLUMN messages.conversation_id IS '会话 ID（外键 ON DELETE CASCADE）';
-        COMMENT ON COLUMN messages.sender IS '发送者 user/character/system';
-        COMMENT ON COLUMN messages.content IS '消息内容';
-        COMMENT ON COLUMN messages.tokens IS 'LLM token 消耗（成本追踪）';
-        COMMENT ON COLUMN messages.cost IS '本次调用费用（USD，Phase 3.5 熔断依赖）';
-        COMMENT ON COLUMN messages.extra_data IS '附加信息（reply_to/attachments 等）';
-    """)
+    op.execute("COMMENT ON TABLE messages IS '消息表 - 单条消息记录（非分区表）';")
+    op.execute("COMMENT ON COLUMN messages.conversation_id IS '会话 ID（外键 ON DELETE CASCADE）';")
+    op.execute("COMMENT ON COLUMN messages.sender IS '发送者 user/character/system';")
+    op.execute("COMMENT ON COLUMN messages.content IS '消息内容';")
+    op.execute("COMMENT ON COLUMN messages.tokens IS 'LLM token 消耗（成本追踪）';")
+    op.execute("COMMENT ON COLUMN messages.cost IS '本次调用费用（USD，Phase 3.5 熔断依赖）';")
+    op.execute("COMMENT ON COLUMN messages.extra_data IS '附加信息（reply_to/attachments 等）';")
 
     # ============================================================
     # 4. 更新 pre_create_partitions() 函数

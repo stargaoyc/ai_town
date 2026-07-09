@@ -183,7 +183,7 @@ async def lifespan(app: FastAPI):
             character_engine = CharacterTickEngine(
                 redis=redis,
                 registry=registry,
-                llm_client=llm,
+                llm=llm,  # 修正参数名：llm_client → llm
                 prompts=prompts,
             )
             # 启动后台任务：定期对所有活跃角色执行 Tick

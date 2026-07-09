@@ -20,16 +20,16 @@ class ReflectionRepository(BaseRepository[Reflection]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, Reflection)
 
-    async def add(self, reflection: Reflection) -> Reflection:
+    async def add(self, obj: Reflection) -> Reflection:
         """写入一条反思"""
-        self.session.add(reflection)
+        self.session.add(obj)
         await self.session.flush()
         logger.info(
             "reflection_created",
-            character_id=str(reflection.character_id),
-            related_count=len(reflection.related_episodes or []),
+            character_id=str(obj.character_id),
+            related_count=len(obj.related_episodes or []),
         )
-        return reflection
+        return obj
 
     async def get_by_character(
         self, character_id: UUID, limit: int = 10

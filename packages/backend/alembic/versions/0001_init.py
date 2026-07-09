@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import TIMESTAMP, JSONB
 
 # revision identifiers, used by Alembic.
 revision: str = "0001_init"
@@ -19,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # 1. 扩展
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_uuidv7;")
+    # op.execute("CREATE EXTENSION IF NOT EXISTS pg_uuidv7;")
     op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
@@ -30,13 +31,13 @@ def upgrade() -> None:
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("age", sa.Integer),
         sa.Column("occupation", sa.String(100)),
-        sa.Column("personality", sa.JSONB),
-        sa.Column("traits", sa.JSONB),
+        sa.Column("personality", JSONB),
+        sa.Column("traits", JSONB),
         sa.Column("backstory", sa.Text),
         sa.Column("avatar_url", sa.String(500)),
         sa.Column("voice_preset", sa.String(100)),
         sa.Column("is_active", sa.Boolean, default=True),
-        sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+        sa.Column("created_at", TIMESTAMP(timezone=True), server_default=sa.text("now()")),
     )
 
     # 3. character_states 表（PG 镜像）
@@ -48,11 +49,11 @@ def upgrade() -> None:
         sa.Column("satiety", sa.Integer, default=60),
         sa.Column("mood", sa.String(20)),
         sa.Column("money", sa.Integer, default=500),
-        sa.Column("inventory", sa.JSONB),
-        sa.Column("current_action", sa.JSONB),
+        sa.Column("inventory", JSONB),
+        sa.Column("current_action", JSONB),
         sa.Column("phone_battery", sa.Integer, default=75),
         sa.Column("social_energy", sa.Integer, default=60),
-        sa.Column("updated_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+        sa.Column("updated_at", TIMESTAMP(timezone=True), server_default=sa.text("now()")),
     )
 
     # 4. action_records 表（按月 RANGE 分区）
@@ -109,7 +110,8 @@ def upgrade() -> None:
             source_type VARCHAR(20) DEFAULT 'action',
             PRIMARY KEY (id)
         );
-
+    """)
+    op.execute("""
         CREATE INDEX idx_mem_embedding_hnsw ON memory_episodes
             USING hnsw (embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64);
@@ -127,9 +129,9 @@ def upgrade() -> None:
         sa.Column("description", sa.Text),
         sa.Column("status", sa.String(20), default="active"),
         sa.Column("priority", sa.Integer, default=3),
-        sa.Column("deadline", sa.TIMESTAMPTZ),
+        sa.Column("deadline", TIMESTAMP(timezone=True)),
         sa.Column("progress", sa.Integer, default=0),
-        sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+        sa.Column("created_at", TIMESTAMP(timezone=True), server_default=sa.text("now()")),
     )
 
     # 7. relations 表
@@ -139,7 +141,7 @@ def upgrade() -> None:
         sa.Column("target_id", sa.UUID, sa.ForeignKey("characters.id", ondelete="CASCADE")),
         sa.Column("strength", sa.Integer, default=20),
         sa.Column("relationship_type", sa.String(30)),
-        sa.Column("last_interaction_at", sa.TIMESTAMPTZ),
+        sa.Column("last_interaction_at", TIMESTAMP(timezone=True)),
         sa.Column("notes", sa.Text),
         sa.PrimaryKeyConstraint("character_id", "target_id"),
     )
@@ -150,8 +152,8 @@ def upgrade() -> None:
         sa.Column("id", sa.UUID, primary_key=True, server_default=sa.text("uuidv7()")),
         sa.Column("character_id", sa.UUID, sa.ForeignKey("characters.id", ondelete="CASCADE")),
         sa.Column("content", sa.Text),
-        sa.Column("related_episodes", sa.JSONB),
-        sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+        sa.Column("related_episodes", JSONB),
+        sa.Column("created_at", TIMESTAMP(timezone=True), server_default=sa.text("now()")),
     )
 
     # 9. world_snapshots 表
@@ -159,12 +161,12 @@ def upgrade() -> None:
         "world_snapshots",
         sa.Column("id", sa.UUID, primary_key=True, server_default=sa.text("uuidv7()")),
         sa.Column("tick_id", sa.BigInteger),
-        sa.Column("world_time", sa.TIMESTAMPTZ),
+        sa.Column("world_time", TIMESTAMP(timezone=True)),
         sa.Column("weather", sa.String(20)),
-        sa.Column("locations", sa.JSONB),
-        sa.Column("resources", sa.JSONB),
-        sa.Column("active_events", sa.JSONB),
-        sa.Column("created_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
+        sa.Column("locations", JSONB),
+        sa.Column("resources", JSONB),
+        sa.Column("active_events", JSONB),
+        sa.Column("created_at", TIMESTAMP(timezone=True), server_default=sa.text("now()")),
     )
     op.create_index("idx_world_tick", "world_snapshots", ["tick_id"])
 

@@ -47,6 +47,7 @@ class Action(BaseModel):
 
     id: str  # 唯一标识
     name: str  # 显示名
+    description: str | None = None  # 行为描述（可选）
     category: ActionCategory
     scene: str | None = None  # 所需场景（None 表示任意场景）
     activity: str | None = None  # 场景活动类型

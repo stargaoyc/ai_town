@@ -21,16 +21,16 @@ class ActionRepository(BaseRepository[ActionRecord]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, ActionRecord)
 
-    async def add(self, record: ActionRecord) -> ActionRecord:
+    async def add(self, obj: ActionRecord) -> ActionRecord:
         """记录一条行为（覆盖基类 add 以追加日志）"""
-        self.session.add(record)
+        self.session.add(obj)
         await self.session.flush()
         logger.info(
             "action_recorded",
-            character_id=str(record.character_id),
-            action_id=record.action_id,
+            character_id=str(obj.character_id),
+            action_id=obj.action_id,
         )
-        return record
+        return obj
 
     async def get_by_character(
         self, character_id: UUID, limit: int = 50

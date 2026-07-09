@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP  # FastMCP 2.0+ 导入方式
 from pydantic import BaseModel, Field
 
 logger = structlog.get_logger()

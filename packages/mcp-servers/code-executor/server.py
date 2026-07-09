@@ -21,7 +21,7 @@ import tempfile
 from pathlib import Path
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP  # FastMCP 2.0+ 导入方式
 
 logger = structlog.get_logger()
 

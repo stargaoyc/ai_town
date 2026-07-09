@@ -68,9 +68,9 @@ class MessageRepository(BaseRepository[Message]):
         )
         return msg
 
-    async def get_by_id(self, message_id: UUID) -> Message | None:
-        """按主键查询单条消息"""
-        return await self.session.get(Message, message_id)
+    async def get_by_id(self, id: UUID) -> Message | None:
+        """按主键查询单条消息（覆盖基类方法，参数名对齐）"""
+        return await self.session.get(Message, id)
 
     async def list_by_conversation(
         self,

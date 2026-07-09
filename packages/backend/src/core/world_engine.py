@@ -280,14 +280,15 @@ class WorldEngine:
         """
         # 主哈希存储摘要
         time_state = state.get("time", {})
-        weather_state = state.get("weather", {})
+        # weather 字段已为字符串（扁平结构），直接使用
+        weather = state.get("weather", "sunny")
 
         await self.redis.hset(
             "world:state",
             mapping={
                 "tick_id": str(self.tick_id),
                 "world_time": str(time_state.get("world_time", "")),
-                "weather": str(weather_state.get("weather", "sunny")),
+                "weather": str(weather),  # 直接使用字符串
                 "updated_at": datetime.now().isoformat(),
             },
         )
@@ -306,7 +307,8 @@ class WorldEngine:
         """
         try:
             time_state = world_state.get("time", {})
-            weather_state = world_state.get("weather", {})
+            # weather 字段已为字符串（扁平结构）
+            weather = world_state.get("weather", "")
             scenes_state = world_state.get("scenes", {})
             resources_state = world_state.get("resources", {})
             events_state = world_state.get("events", {})
@@ -325,12 +327,12 @@ class WorldEngine:
                 ))
 
             # 天气事件（天气变化时写入）
-            weather = str(weather_state.get("weather", ""))
-            if weather and weather != str(last.get("weather", "")):
+            weather_str = str(weather)  # weather 已是字符串
+            if weather_str and weather_str != str(last.get("weather", "")):
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="weather",
-                    payload={"weather": weather},
+                    payload={"weather": weather_str},  # 使用转换后的字符串
                 ))
 
             # 场景事件（场景状态变化时写入）
@@ -396,7 +398,8 @@ class WorldEngine:
         """
         try:
             time_state = world_state.get("time", {})
-            weather_state = world_state.get("weather", {})
+            # weather 字段已为字符串（扁平结构）
+            weather = world_state.get("weather", "")
             scenes_state = world_state.get("scenes", {})
             resources_state = world_state.get("resources", {})
             events_state = world_state.get("events", {})
@@ -413,7 +416,7 @@ class WorldEngine:
             snapshot = WorldSnapshot(
                 tick_id=self.tick_id,
                 world_time=world_time,
-                weather=str(weather_state.get("weather", "")),
+                weather=str(weather),  # 直接使用字符串
                 locations=scenes_state if scenes_state else None,
                 resources=resources_state if resources_state else None,
                 active_events=events_state if events_state else None,

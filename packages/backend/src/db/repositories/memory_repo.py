@@ -38,7 +38,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, MemoryEpisode)
 
-    async def add(self, episode: MemoryEpisode) -> MemoryEpisode:
+    async def add(self, obj: MemoryEpisode) -> MemoryEpisode:
         """添加记忆（ORM）
 
         ⚠️ 新增记忆时 materialized=false，embedding=NULL。
@@ -46,9 +46,9 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
 
         引用完整性由数据库外键保证（character_id REFERENCES characters.id ON DELETE CASCADE）。
         """
-        self.session.add(episode)
+        self.session.add(obj)
         await self.session.flush()
-        return episode
+        return obj
 
     async def recent(
         self, character_id: UUID, limit: int = 50

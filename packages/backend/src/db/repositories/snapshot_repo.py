@@ -31,16 +31,16 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, WorldEvent)
 
-    async def add(self, event: WorldEvent) -> WorldEvent:
+    async def add(self, obj: WorldEvent) -> WorldEvent:
         """写入一条世界事件"""
-        self.session.add(event)
+        self.session.add(obj)
         await self.session.flush()
         logger.info(
             "world_event_created",
-            tick_id=event.tick_id,
-            event_type=event.event_type,
+            tick_id=obj.tick_id,
+            event_type=obj.event_type,
         )
-        return event
+        return obj
 
     async def add_batch(self, events: list[WorldEvent]) -> None:
         """批量写入世界事件（幂等：重复写入自动跳过）
@@ -122,15 +122,15 @@ class WorldSnapshotRepository(BaseRepository[WorldSnapshot]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, WorldSnapshot)
 
-    async def add(self, snapshot: WorldSnapshot) -> WorldSnapshot:
+    async def add(self, obj: WorldSnapshot) -> WorldSnapshot:
         """写入一条世界快照"""
-        self.session.add(snapshot)
+        self.session.add(obj)
         await self.session.flush()
         logger.info(
             "world_snapshot_created",
-            tick_id=snapshot.tick_id,
+            tick_id=obj.tick_id,
         )
-        return snapshot
+        return obj
 
     async def get_latest(self) -> WorldSnapshot | None:
         """获取最新的世界快照（冷启动恢复入口）"""

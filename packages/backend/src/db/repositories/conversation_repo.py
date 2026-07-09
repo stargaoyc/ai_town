@@ -83,9 +83,9 @@ class ConversationRepository(BaseRepository[Conversation]):
 
         return record
 
-    async def get_by_id(self, conversation_id: UUID) -> Conversation | None:
-        """按主键查询单条会话"""
-        return await self.session.get(Conversation, conversation_id)
+    async def get_by_id(self, id: UUID) -> Conversation | None:
+        """按主键查询单条会话（覆盖基类方法，参数名对齐）"""
+        return await self.session.get(Conversation, id)
 
     async def get_by_user_character(
         self,

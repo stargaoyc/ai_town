@@ -40,6 +40,7 @@ dependencies = [
     "pyyaml>=6.0",
     # 定时调度（月度分区预创建、Phase 3.5 成本控制等）
     "apscheduler>=3.11",
+    "fastmcp>=3.4.4",
 ]
 
 [project.optional-dependencies]

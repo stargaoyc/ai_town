@@ -2,9 +2,7 @@
 
 services:
   postgres:
-    build:
-      context: ./docker/postgres
-      dockerfile: Dockerfile
+    image: pgvector/pgvector:pg18
     container_name: aitown-postgres
     restart: unless-stopped
     environment:

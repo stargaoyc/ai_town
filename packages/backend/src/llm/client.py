@@ -1,12 +1,18 @@
-"""LLM 客户端 - OpenAI + LangChain 统一接口
+"""LLM 客户端 - OpenAI + LangChain 统一接口（支持三模态）
 
-提供三个模型配置：
-- chat: 日常对话（gpt-4o-mini）
-- strong: 复杂决策（gpt-4o）
-- flash: 快速响应（gpt-3.5-turbo）
+提供三个模型配置，分别对应三个模态：
+- chat: 文本模型（agnes-2.0-flash）
+- strong: 图像模型（agnes-image-2.1-flash）
+- flash: 视频模型（agnes-video-v2.0）
+
+多模态输入格式：
+- 文本: 字符串或 {"type": "text", "text": "..."}
+- 图像: {"type": "image_url", "image_url": {"url": "https://..."}}
+- 视频: {"type": "video_url", "video_url": {"url": "https://..."}}
 """
 from typing import Any
 
+from langchain_core.messages import HumanMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
@@ -87,6 +93,44 @@ class LLMClient:
         logger.debug("chat_completed", model=model, response_length=len(response.content))
         return response.content
 
+    async def multimodal_chat(
+        self,
+        content: str | list[dict[str, Any]],
+        model: str = "chat"
+    ) -> str:
+        """多模态对话（支持文本+图像+视频）
+
+        Args:
+            content: 输入内容，可以是纯文本字符串或多模态内容列表
+                     多模态格式示例：
+                     [
+                         {"type": "text", "text": "描述这张图片"},
+                         {"type": "image_url", "image_url": {"url": "https://..."}},
+                         {"type": "video_url", "video_url": {"url": "https://..."}}
+                     ]
+            model: 模型类型（chat/strong/flash）
+
+        Returns:
+            模型回复内容
+        """
+        llm = self._get_llm(model)
+
+        # 如果是字符串，转换为单文本内容
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+
+        # 构建多模态消息
+        message = HumanMessage(content=content)
+        response = await llm.ainvoke([message])
+
+        logger.debug(
+            "multimodal_chat_completed",
+            model=model,
+            content_types=[c.get("type", "text") for c in content],
+            response_length=len(response.content)
+        )
+        return response.content
+
     async def structured_output(
         self,
         prompt: str,
@@ -115,6 +159,50 @@ class LLMClient:
         result = await structured_llm.ainvoke(prompt)
 
         logger.debug("structured_output_completed", model=model, result_type=type(result).__name__)
+
+        # 将 Pydantic 模型转换为字典
+        if isinstance(result, BaseModel):
+            return result.model_dump()
+        return result
+
+    async def multimodal_structured_output(
+        self,
+        content: str | list[dict[str, Any]],
+        schema: dict[str, Any],
+        model: str = "strong"
+    ) -> dict[str, Any]:
+        """多模态结构化输出（支持文本+图像+视频）
+
+        Args:
+            content: 输入内容，可以是纯文本字符串或多模态内容列表
+            schema: 输出结构的 JSON Schema
+            model: 模型类型（chat/strong）
+
+        Returns:
+            符合 schema 的结构化输出
+        """
+        llm = self._get_llm(model)
+
+        # 将 dict schema 转换为 Pydantic 模型
+        pydantic_model = self._schema_to_pydantic(schema)
+
+        # 使用 with_structured_output 进行结构化输出
+        structured_llm = llm.with_structured_output(pydantic_model)
+
+        # 如果是字符串，转换为单文本内容
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+
+        # 构建多模态消息
+        message = HumanMessage(content=content)
+        result = await structured_llm.ainvoke([message])
+
+        logger.debug(
+            "multimodal_structured_output_completed",
+            model=model,
+            content_types=[c.get("type", "text") for c in content],
+            result_type=type(result).__name__
+        )
 
         # 将 Pydantic 模型转换为字典
         if isinstance(result, BaseModel):
