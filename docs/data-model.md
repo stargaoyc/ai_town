@@ -87,7 +87,7 @@ CREATE TABLE characters (
     name          TEXT NOT NULL,
     age           INT,
     occupation    TEXT,
-    traits        JSONB NOT NULL DEFAULT '{}'::jsonb,      -- 自定义属性（含 personality）
+    traits        JSONB,                                    -- 自定义属性（含 personality，ORM 层 default={}）
     backstory     TEXT,
     avatar_url    TEXT,
     voice_preset  TEXT,
@@ -129,7 +129,7 @@ CREATE TABLE character_states (
     satiety           INT  NOT NULL DEFAULT 60,           -- 饱腹度 0-100
     mood              TEXT,                               -- 情绪（happy/calm/sad/anxious 等）
     money             INT  NOT NULL DEFAULT 500,          -- 金钱
-    inventory         JSONB NOT NULL DEFAULT '{}'::jsonb, -- 物品栏
+    inventory         JSONB,                              -- 物品栏（ORM 层 default={}）
     current_action    JSONB,                              -- 当前动作 {action_id, params, end_time}
     phone_battery     INT  NOT NULL DEFAULT 75,           -- 手机电量 0-100
     social_energy     INT  NOT NULL DEFAULT 60,           -- 社交能量 0-100
@@ -277,7 +277,7 @@ CREATE TABLE plans (
     type          TEXT,                                   -- 计划类型：long_term/short_term
     title         TEXT,                                   -- 计划标题
     description   TEXT,                                   -- 计划描述
-    status        TEXT NOT NULL DEFAULT 'active',         -- active/completed/abandoned
+    status        TEXT,                                   -- active/completed/abandoned（ORM 层 default='active'）
     priority      INT  NOT NULL DEFAULT 3,                -- 优先级 1-5
     deadline      TIMESTAMPTZ,                            -- 截止时间
     progress      INT  NOT NULL DEFAULT 0,                -- 进度 0-100

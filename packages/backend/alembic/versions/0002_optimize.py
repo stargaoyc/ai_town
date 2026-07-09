@@ -474,14 +474,15 @@ def upgrade() -> None:
             i INT;
             target_month DATE;
             partition_name TEXT;
-            start_date DATE;
-            end_date DATE;
+            start_date TIMESTAMPTZ;                       -- v7: 与分区键类型一致
+            end_date TIMESTAMPTZ;
         BEGIN
             -- action_records 按月分区
             FOR i IN 0..months_ahead LOOP
-                target_month := date_trunc('month', CURRENT_DATE + (i || ' months')::interval)::date;
-                start_date := target_month;
-                end_date := target_month + INTERVAL '1 month';
+                -- v7: 使用 CURRENT_TIMESTAMP 保证与 TIMESTAMPTZ 分区键时区一致
+                target_month := date_trunc('month', CURRENT_TIMESTAMP + (i || ' months')::interval)::date;
+                start_date := target_month::timestamptz;
+                end_date := (target_month + INTERVAL '1 month')::timestamptz;
                 partition_name := 'action_records_' || to_char(target_month, 'YYYY_MM');
 
                 IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = partition_name) THEN
@@ -503,9 +504,9 @@ def upgrade() -> None:
 
             -- messages 按月分区（若表存在分区结构）
             FOR i IN 0..months_ahead LOOP
-                target_month := date_trunc('month', CURRENT_DATE + (i || ' months')::interval)::date;
-                start_date := target_month;
-                end_date := target_month + INTERVAL '1 month';
+                target_month := date_trunc('month', CURRENT_TIMESTAMP + (i || ' months')::interval)::date;
+                start_date := target_month::timestamptz;
+                end_date := (target_month + INTERVAL '1 month')::timestamptz;
                 partition_name := 'messages_' || to_char(target_month, 'YYYY_MM');
 
                 IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = partition_name) THEN

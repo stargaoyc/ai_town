@@ -110,7 +110,7 @@ Phase 5: 前端 Dashboard
 
 ## 五、Phase 2.5：性能与数据完整性优化 🔄 当前
 
-> 基于六轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v6 迁移脚本。
+> 基于七轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v6 迁移脚本 + [0001_init.py](../packages/backend/alembic/versions/0001_init.py) v7 修复。
 
 ### 第一轮审查（v1 → v2）
 
@@ -200,6 +200,24 @@ Phase 5: 前端 Dashboard
 | 55 | reflection_sources 复合外键在分区表删除时扫描所有子分区 | P2 | 16 分区下可接受；64+ 分区需评估改为软删除+后台清理 | ⏳ Phase 4+ |
 
 > **v6 核心结论**：P0 阻塞性 Bug（messages 表索引）已修复，迁移可正常执行。world_events 幂等约束经核查**非真实问题**（当前实现聚合写入，非逐实体写入），但已文档化前提假设以防未来误改。personality 分批更新在 50 行规模下属过度优化。
+
+### 第七轮审查（v6 → v7）— 0001_init 致命缺陷修复
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 56 | ⚠️ P0: 0001_init action_records 用 op.create_table() 建普通堆表，无 PARTITION BY 声明 → 建子分区必报 "relation is not partitioned" | P0 | 改用原生 SQL `CREATE TABLE ... PARTITION BY RANGE (timestamp)`，复合主键 `(id, timestamp)` | ✅ |
+| 57 | ⚠️ P0: 0001_init memory_episodes embedding 定义为 sa.Text，但 HNSW 索引用 vector_cosine_ops → 类型不匹配必失败 | P0 | 改用原生 SQL `embedding vector(1536)` 类型 | ✅ |
+| 58 | pre_create_partitions() 用 CURRENT_DATE（无时区）计算分区边界，与 TIMESTAMPTZ 分区键不一致 | P1 | 改用 CURRENT_TIMESTAMP，边界变量改为 TIMESTAMPTZ 类型 | ✅ |
+| 59 | 文档 characters.traits/character_states.inventory/plans.status 标注 NOT NULL DEFAULT，迁移实际为 nullable | 文档 | 按方案 B 对齐文档为 nullable，标注 ORM 层 default | ✅ |
+| 60 | updated_at 触发器未覆盖 relations/world_snapshots | — | **不成立**：这两张表无 updated_at 字段 | ✅ |
+| 61 | 异步向量化无失败处理（fail_count/last_error） | P2 | 延后至 Phase 3 EmbeddingWorker 增强阶段 | ⏳ Phase 3 |
+| 62 | reflections 移除 embedding 导致语义检索退化 | 架构 | 延后至 Phase 4 补回 reflections.embedding + HNSW | ⏳ Phase 4 |
+| 63 | 软删除(is_active)与物理级联(ON DELETE CASCADE)语义冲突 | 架构 | 延后至 Phase 4 统一删除策略 | ⏳ Phase 4 |
+| 64 | relations 有向图无双向一致性触发器 | 架构 | 延后至 Phase 3 社交模块阶段 | ⏳ Phase 3 |
+| 65 | 事件溯源缺少状态哈希校验闭环 | 架构 | 延后至 Phase 4 可观测性阶段 | ⏳ Phase 4 |
+| 66 | stamina/satiety/money 等字段文档标注 NOT NULL DEFAULT，迁移用 Python default（nullable） | 文档 | 已知差异，与 #59 同类，后续统一处理 | ⏳ 技术债 |
+
+> **v7 核心结论**：0001_init 从第一版起就存在两个致命缺陷（action_records 未分区 + embedding 类型错误），导致整个迁移链从未能成功执行。v7 修复后 0001_init → 0002_optimize 迁移链可正常 `alembic upgrade head`。
 
 ### 新增/修改文件
 
@@ -440,6 +458,7 @@ Phase 5: 前端 Dashboard
 | reflections.related_episodes 双写不一致 | 数据脏写 | 删除废弃字段，统一走 reflection_sources（v5 修复） | ✅ 已解决 |
 | messages 表索引在表不存在时创建 → 迁移中断 | 上线即失败 | 移除索引创建，表+索引推迟到 Phase 3（v6 修复） | ✅ 已解决 |
 | memory_episodes 大表重建卡死 | 服务长时间不可用 | 显式 statement_timeout + lock_timeout（v6 修复） | ✅ 已解决 |
+| 0001_init action_records 未声明分区 + embedding 类型错误 | 迁移链从未成功执行 | 原生 SQL 重建分区表 + vector(1536) 类型（v7 修复） | ✅ 已解决 |
 | Redis ↔ PG 不一致 | 状态漂移 | 乐观锁 + 校验任务 | ⏳ Phase 3.5 |
 | LLM 成本失控 | 预算超支 | 日预算 + 熔断降级 | ⏳ Phase 3.5 |
 | 跨角色全局向量检索性能崩塌 | 全局搜索慢 | 额外维护全局非分区向量索引（未来需求） | ⏳ Phase 4+ |
@@ -454,9 +473,9 @@ Phase 5: 前端 Dashboard
 
 ## 十三、下一步行动（Phase 2.5 → Phase 3）
 
-1. **执行 0002_optimize v6 迁移**（需维护窗口，涉及表重建；遵循只升级不降级原则，通过备份兜底；已含超时保护）
-2. **集成 EmbeddingWorker 到 lifespan**（后台任务自动启动）
-3. **应用启动时调用 pre_create_partitions()**（预创建未来 3 个月分区）
+1. **执行迁移链 0001_init(v7) → 0002_optimize(v6)**（0001_init P0 已修复，迁移链可正常执行）
+2. ~~**集成 EmbeddingWorker 到 lifespan**~~ ✅ 已完成（[main.py L129-142](../packages/backend/src/main.py#L129-L142)）
+3. ~~**应用启动时调用 pre_create_partitions()**~~ ✅ 已完成（[main.py L96-106](../packages/backend/src/main.py#L96-L106)）
 4. **编写 Phase 2.5 单元测试**（分区裁剪验证 + worker 并发测试 + 快照恢复测试 + 事件去重测试）
 5. **进入 Phase 3**（消息服务 + MCP Server，含 conversations/messages 表+索引+分区迁移补建）
 

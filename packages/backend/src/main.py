@@ -2,10 +2,12 @@
 
 启动流程：
 1. 初始化 Redis / LLM / Action Registry / Memory Services
-2. 启动 World Engine（后台任务）
-3. 启动 Character Tick Engine（后台任务）
-4. 注册 API 路由
-5. 监听 shutdown 信号，优雅停止
+2. 预创建数据库分区（pre_create_partitions）
+3. 启动 Embedding Worker（异步向量化后台任务）
+4. 启动 World Engine（后台任务）
+5. 启动 Character Tick Engine（后台任务）
+6. 注册 API 路由
+7. 监听 shutdown 信号，优雅停止
 
 API 路由：
 - /health - 健康检查
@@ -38,6 +40,7 @@ from src.db.repositories import (
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
+from src.memory.embedding_worker import EmbeddingWorker
 from src.modules import (
     CharacterImporter,
     DurationCalculator,
@@ -65,6 +68,7 @@ character_engine: CharacterTickEngine | None = None  # type: ignore
 registry: ActionRegistry | None = None
 llm: LLMClient | None = None
 prompts: PromptTemplates | None = None
+embedding_worker: EmbeddingWorker | None = None
 
 
 @asynccontextmanager
@@ -80,6 +84,7 @@ async def lifespan(app: FastAPI):
     """
     global redis, world_engine, character_engine, registry, llm, prompts
     global scene_loader, schedule_system, duration_calculator, movement_system
+    global embedding_worker
 
     logger.info("ai_town_backend_starting")
 
@@ -122,6 +127,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("action_registry_initialization_failed", error=str(e), exc_info=True)
         raise
+
+    # 3.5 启动 Embedding Worker（异步向量化后台任务）
+    embedding_task: asyncio.Task | None = None
+    try:
+        embedding_worker = EmbeddingWorker(
+            session_factory=db.session,
+            llm_client=llm,
+            batch_size=20,
+            poll_interval=5.0,
+        )
+        embedding_task = asyncio.create_task(embedding_worker.run())
+        logger.info("embedding_worker_started", batch_size=20, poll_interval=5.0)
+    except Exception as e:
+        logger.error("embedding_worker_start_failed", error=str(e), exc_info=True)
+        embedding_worker = None
 
     # 4. 启动 World Engine
     try:
@@ -181,6 +201,17 @@ async def lifespan(app: FastAPI):
 
     # === Shutdown ===
     logger.info("ai_town_backend_shutting_down")
+
+    # 停止 Embedding Worker
+    if embedding_worker:
+        await embedding_worker.stop()
+        logger.info("embedding_worker_stopped")
+    if embedding_task:
+        embedding_task.cancel()
+        try:
+            await embedding_task
+        except asyncio.CancelledError:
+            pass
 
     # 取消 Character Tick 循环
     if character_tick_task:
@@ -605,6 +636,9 @@ async def get_admin_status():
         "llm": {
             "initialized": llm is not None,
             "model": settings.model_chat,
+        },
+        "embedding_worker": {
+            "running": embedding_worker is not None and embedding_worker._running,
         },
         "phase2": {
             "scene_loader": scene_loader is not None,

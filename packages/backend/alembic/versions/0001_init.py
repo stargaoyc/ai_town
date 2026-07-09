@@ -55,21 +55,27 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
     )
 
-    # 4. action_records 表（分区表）
-    op.create_table(
-        "action_records",
-        sa.Column("id", sa.UUID, primary_key=True, server_default=sa.text("uuidv7()")),
-        sa.Column("character_id", sa.UUID, sa.ForeignKey("characters.id", ondelete="CASCADE")),
-        sa.Column("action_id", sa.String(100)),
-        sa.Column("action_name", sa.String(100)),
-        sa.Column("params", sa.JSONB),
-        sa.Column("reason", sa.Text),
-        sa.Column("result", sa.Text),
-        sa.Column("duration_minutes", sa.Integer),
-        sa.Column("location", sa.String(50)),
-        sa.Column("related_characters", sa.JSONB),
-        sa.Column("timestamp", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
-    )
+    # 4. action_records 表（按月 RANGE 分区）
+    # ⚠️ v7 P0 修复：原 op.create_table() 创建的是普通堆表，无 PARTITION BY 声明，
+    #    后续 CREATE TABLE ... PARTITION OF 会报 "relation is not partitioned" 错误。
+    #    且原主键仅 id 单列，违反分区表"主键必须包含所有分区键"约束。
+    #    改用原生 SQL 创建分区父表，复合主键 (id, timestamp)。
+    op.execute("""
+        CREATE TABLE action_records (
+            id UUID NOT NULL DEFAULT uuidv7(),
+            character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+            action_id VARCHAR(100),
+            action_name VARCHAR(100),
+            params JSONB,
+            reason TEXT,
+            result TEXT,
+            duration_minutes INT,
+            location VARCHAR(50),
+            related_characters JSONB,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (id, timestamp)              -- 分区表主键必须包含分区键
+        ) PARTITION BY RANGE (timestamp);
+    """)
     # 分区（按月）
     op.execute("""
         CREATE TABLE action_records_2026_07 PARTITION OF action_records
@@ -82,25 +88,28 @@ def upgrade() -> None:
     op.create_index("idx_action_char_time", "action_records", ["character_id", sa.text("timestamp DESC")])
 
     # 5. memory_episodes 表（含向量）
-    op.create_table(
-        "memory_episodes",
-        sa.Column("id", sa.UUID, primary_key=True, server_default=sa.text("uuidv7()")),
-        sa.Column("character_id", sa.UUID, sa.ForeignKey("characters.id", ondelete="CASCADE")),
-        sa.Column("content", sa.Text),
-        sa.Column("embedding", sa.Text),  # pgvector Vector(1536) 需原生 SQL
-        sa.Column("importance", sa.Integer, default=5),
-        sa.Column("timestamp", sa.TIMESTAMPTZ, server_default=sa.text("now()")),
-        sa.Column("action_id", sa.String(100)),
-        sa.Column("location", sa.String(50)),
-        sa.Column("related_characters", sa.JSONB),
-        sa.Column("is_reflected", sa.Boolean, default=False),
-        sa.Column("source_type", sa.String(20), default="action"),
-    )
-    # HNSW 向量索引
+    # ⚠️ v7 P0 修复：原 embedding 字段定义为 sa.Text，但 HNSW 索引使用
+    #    vector_cosine_ops 操作符类，仅支持 vector 类型，TEXT 类型会导致
+    #    索引创建失败。改用原生 SQL 声明 vector(1536) 类型。
     op.execute("""
+        CREATE TABLE memory_episodes (
+            id UUID NOT NULL DEFAULT uuidv7(),
+            character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+            content TEXT,
+            embedding vector(1536),                 -- pgvector 向量类型（非 TEXT）
+            importance INT DEFAULT 5,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+            action_id VARCHAR(100),
+            location VARCHAR(50),
+            related_characters JSONB,
+            is_reflected BOOLEAN DEFAULT FALSE,
+            source_type VARCHAR(20) DEFAULT 'action',
+            PRIMARY KEY (id)
+        );
+
         CREATE INDEX idx_mem_embedding_hnsw ON memory_episodes
-        USING hnsw (embedding vector_cosine_ops)
-        WITH (m = 16, ef_construction = 64);
+            USING hnsw (embedding vector_cosine_ops)
+            WITH (m = 16, ef_construction = 64);
     """)
     op.create_index("idx_mem_char_time", "memory_episodes", ["character_id", sa.text("timestamp DESC")])
     op.create_index("idx_mem_unreflected", "memory_episodes", ["character_id"], postgresql_where=sa.text("is_reflected = FALSE"))
