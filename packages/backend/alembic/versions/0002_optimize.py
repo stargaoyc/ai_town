@@ -160,6 +160,8 @@ def upgrade() -> None:
         CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) WHERE materialized = FALSE;
 
         -- 6. 迁移旧数据（⚠️ 大表锁警告，见函数 docstring）
+        -- ⚠️ v8 P0 修复：旧表 related_characters 为 JSONB，新表为 UUID[]，
+        --    PostgreSQL 无法隐式转换，需显式 jsonb_array_elements_text → uuid[]
         INSERT INTO memory_episodes (
             id, character_id, content, embedding, importance, timestamp,
             action_id, location, related_characters, is_reflected,
@@ -168,7 +170,13 @@ def upgrade() -> None:
         SELECT
             id, character_id, content,
             CASE WHEN embedding IS NOT NULL THEN embedding::vector ELSE NULL END,
-            importance, timestamp, action_id, location, related_characters,
+            importance, timestamp, action_id, location,
+            -- JSONB 数组 → UUID[] 显式转换（v8 P0 修复）
+            CASE
+                WHEN related_characters IS NOT NULL AND jsonb_typeof(related_characters) = 'array'
+                THEN ARRAY(SELECT jsonb_array_elements_text(related_characters))::uuid[]
+                ELSE '{}'::uuid[]
+            END,
             is_reflected,
             CASE WHEN embedding IS NOT NULL THEN TRUE ELSE FALSE END,
             source_type

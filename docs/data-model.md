@@ -195,6 +195,8 @@ CREATE TABLE memory_episodes (
     related_characters UUID[] NOT NULL DEFAULT '{}',
     is_reflected       BOOLEAN NOT NULL DEFAULT FALSE,
     materialized       BOOLEAN NOT NULL DEFAULT FALSE,      -- embedding 是否已生成（异步 worker）
+    fail_count         INT  NOT NULL DEFAULT 0,             -- v3 新增：向量化失败次数，达 5 后熔断
+    last_error         TEXT,                                -- v3 新增：最近失败错误信息（截断 1000 字）
     source_type        TEXT NOT NULL DEFAULT 'action'
                        CHECK (source_type IN ('action','conversation','reflection','event')),
     PRIMARY KEY (id, character_id)                          -- 分区表主键必须含分区键
@@ -217,7 +219,9 @@ CREATE INDEX idx_mem_char_time ON memory_episodes (character_id, timestamp DESC)
 CREATE INDEX idx_mem_char_imp  ON memory_episodes (character_id, importance DESC);
 CREATE INDEX idx_mem_related   ON memory_episodes USING gin (related_characters);
 CREATE INDEX idx_mem_unreflected ON memory_episodes (character_id) WHERE is_reflected = FALSE;
-CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) WHERE materialized = FALSE;  -- embedding worker
+-- v3: 排除 fail_count >= 5 的熔断记忆，避免 worker 反复拉取
+CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp)
+    WHERE materialized = FALSE AND fail_count < 5;
 
 -- 查询时调优（分区后可适当提高，单分区数据量小）
 -- SET hnsw.ef_search = 100;
@@ -304,43 +308,63 @@ CREATE TABLE relations (
 );
 ```
 
-### 3.8 messages（对话历史，按月分区）
+### 3.8 messages（对话历史，非分区表）
+
+> ⚠️ **Phase 3 设计变更（v3 迁移）**：原设计为按月分区表，实际实现改为**非分区表**（方案 B 对齐 ORM）。
+> 原因：
+> - messages 通过 `conversation_id` 外键引用 conversations，分区表 FK 受限
+> - 单表 + (conversation_id, created_at) 复合索引足够支撑查询
+> - 单表 3 个月内千万级数据 PostgreSQL B-tree 完全可承载
+> - 长期归档由 Phase 4 冷热分离方案处理
+>
+> 与原设计差异：
+> - 取消 `PARTITION BY RANGE (created_at)` 与月度分区
+> - 取消 `idx_msg_user_time_cover` / `idx_msg_conv_time_cover` 覆盖索引（非分区表无收益）
+> - `role` 字段改名为 `sender`（与 ORM 模型一致，覆盖 user/character/system 三种）
+> - `metadata` 字段改名为 `extra_data`（与 ORM 模型一致）
+> - 新增 `conversation_id` 外键引用 conversations(id) ON DELETE CASCADE（替代无外键的逻辑概念）
+> - 取消 character_id / user_id / platform 字段（提升至 conversations 表）
 
 ```sql
 CREATE TABLE messages (
-    id              UUID NOT NULL DEFAULT uuidv7(),
-    conversation_id UUID NOT NULL,                       -- 会话 ID (无外键, 会话为逻辑概念)
-    character_id    UUID REFERENCES characters(id) ON DELETE SET NULL,
-    user_id         TEXT,                                -- 平台用户标识
-    platform        TEXT NOT NULL CHECK (platform IN ('web','qq','lark','api')),
-    role            TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool')),
+    id              UUID PRIMARY KEY DEFAULT uuidv7(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender          VARCHAR(20) NOT NULL,                 -- user/character/system
     content         TEXT NOT NULL,
-    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,  -- 平台特定字段
-    tokens          INT,
-    cost            NUMERIC(10,6),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (id, created_at)
-) PARTITION BY RANGE (created_at);
+    tokens          INT,                                  -- LLM token 消耗（成本追踪）
+    cost            NUMERIC(10, 6),                       -- 调用费用 USD（Phase 3.5 熔断依赖）
+    extra_data      JSONB,                                -- 附加信息（reply_to/attachments 等）
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE TABLE messages_2026_07 PARTITION OF messages
-    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
-
--- ⚠️ 0002_optimize: 无 DEFAULT 分区，PG 原生报错足够清晰，由 pre_create_partitions() 自动预创建
-
+-- 会话时间线查询（核心索引）
 CREATE INDEX idx_msg_conv_time ON messages (conversation_id, created_at);
-CREATE INDEX idx_msg_char_time ON messages (character_id, created_at DESC);
-CREATE INDEX idx_msg_user_time ON messages (user_id, created_at DESC);
+-- 全局最近消息查询（管理面板、监控）
+CREATE INDEX idx_msg_created   ON messages (created_at);
+```
 
--- ⚠️ 覆盖索引：仅包含轻量字段，content 走主键回表
---    原 INCLUDE(content) 会导致索引膨胀（content 可能 2000 字）
--- ⚠️ v6: messages 表及索引创建统一推迟到 Phase 3 消息服务阶段
---    （0001_init 未建 messages 表，0002_optimize 不再创建其索引）
-CREATE INDEX idx_msg_user_time_cover
-    ON messages (user_id, created_at DESC) INCLUDE (role, platform);
-CREATE INDEX idx_msg_conv_time_cover
-    ON messages (conversation_id, created_at) INCLUDE (role, character_id, platform);
+#### 3.8.1 conversations（会话主表，Phase 3 新增）
 
--- ⚠️ 不使用 BRIN 索引：按月分区裁剪已限制扫描范围，BRIN 在单月数据量内无收益
+> 一个用户与一个角色的对话线程。`context` JSONB 存储压缩后的对话摘要，
+> 避免每次拉取全量历史。`last_message_at` 维护会话活跃度。
+
+```sql
+CREATE TABLE conversations (
+    id              UUID PRIMARY KEY DEFAULT uuidv7(),
+    character_id    UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    user_id         VARCHAR(100) NOT NULL,
+    platform        VARCHAR(20) NOT NULL,                 -- web/qq/lark/internal
+    context         JSONB,                                -- LLM 上下文压缩摘要
+    last_message_at TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 同一用户对同一角色仅一个会话（ON CONFLICT 依赖此唯一约束）
+CREATE UNIQUE INDEX idx_conv_user_char ON conversations (user_id, character_id);
+-- 按最后消息时间排序活跃会话
+CREATE INDEX idx_conv_last_msg         ON conversations (last_message_at DESC);
+-- 按 character 查询所有相关会话（角色侧主动分享时使用）
+CREATE INDEX idx_conv_char             ON conversations (character_id);
 ```
 
 ### 3.9 module_configs（模块配置）

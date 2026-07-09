@@ -86,6 +86,9 @@ def upgrade() -> None:
         CREATE TABLE action_records_default PARTITION OF action_records DEFAULT;
     """)
     op.create_index("idx_action_char_time", "action_records", ["character_id", sa.text("timestamp DESC")])
+    # v8: 补充文档声明的索引，保持文档与迁移一致
+    op.create_index("idx_ar_action", "action_records", ["action_id"])
+    op.execute("CREATE INDEX idx_ar_params ON action_records USING gin (params jsonb_path_ops);")
 
     # 5. memory_episodes 表（含向量）
     # ⚠️ v7 P0 修复：原 embedding 字段定义为 sa.Text，但 HNSW 索引使用

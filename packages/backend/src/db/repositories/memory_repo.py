@@ -96,11 +96,14 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
     ) -> list[MemoryEpisode]:
         """拉取未向量化的记忆（供 embedding worker 异步处理）
 
-        利用 idx_mem_unmaterialized 部分索引。
+        利用 idx_mem_unmaterialized 部分索引（已排除 fail_count >= 5 的熔断记忆）。
         """
         stmt = (
             select(MemoryEpisode)
-            .where(MemoryEpisode.materialized.is_(False))
+            .where(
+                MemoryEpisode.materialized.is_(False),
+                MemoryEpisode.fail_count < 5,  # v3: 跳过熔断记忆
+            )
             .order_by(MemoryEpisode.timestamp)
             .limit(limit)
             .with_for_update(skip_locked=True)  # 跳过被锁的行，避免 worker 竞争
@@ -116,6 +119,8 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
     ) -> None:
         """更新记忆的向量并标记为已 materialize
 
+        成功时清空 fail_count 与 last_error。
+
         Args:
             episode_id: 记忆 ID
             character_id: 角色 ID（分区键，必须提供）
@@ -127,10 +132,52 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
                 MemoryEpisode.id == episode_id,
                 MemoryEpisode.character_id == character_id,
             )
-            .values(embedding=embedding, materialized=True)
+            .values(
+                embedding=embedding,
+                materialized=True,
+                fail_count=0,        # v3: 成功后清空失败计数
+                last_error=None,
+            )
         )
         await self.session.execute(stmt)
         await self.session.flush()
+
+    async def mark_embedding_failed(
+        self,
+        episode_id: UUID,
+        character_id: UUID,
+        error: str,
+    ) -> None:
+        """标记向量化失败（v3 新增）
+
+        累加 fail_count，记录 last_error（截断 1000 字）。
+        达到最大重试次数（5）后，由 fetch_unmaterialized 自动过滤。
+
+        Args:
+            episode_id: 记忆 ID
+            character_id: 角色 ID（分区键，必须提供）
+            error: 错误信息
+        """
+        truncated_error = error[:1000] if error else "unknown error"
+        stmt = (
+            update(MemoryEpisode)
+            .where(
+                MemoryEpisode.id == episode_id,
+                MemoryEpisode.character_id == character_id,
+            )
+            .values(
+                fail_count=MemoryEpisode.fail_count + 1,
+                last_error=truncated_error,
+            )
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+        logger.warning(
+            "embedding_marked_failed",
+            episode_id=str(episode_id),
+            character_id=str(character_id),
+            error=truncated_error[:200],
+        )
 
     async def search_hybrid(
         self, character_id: UUID, query_vec: list[float], top_k: int = 10

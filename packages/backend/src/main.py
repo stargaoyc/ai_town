@@ -20,6 +20,7 @@ API 路由：
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -34,13 +35,16 @@ from src.core import WorldEngine
 from src.db.repositories import (
     ActionRepository,
     CharacterRepository,
+    ConversationRepository,
     MemoryRepository,
+    MessageRepository,
     WorldEventRepository,
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
 from src.memory.embedding_worker import EmbeddingWorker
+from src.messaging import MessageService
 from src.modules import (
     CharacterImporter,
     DurationCalculator,
@@ -49,6 +53,7 @@ from src.modules import (
     ScheduleSystem,
     SceneLoader,
 )
+from src.scheduler import PartitionScheduler
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
 try:
@@ -69,6 +74,7 @@ registry: ActionRegistry | None = None
 llm: LLMClient | None = None
 prompts: PromptTemplates | None = None
 embedding_worker: EmbeddingWorker | None = None
+partition_scheduler: PartitionScheduler | None = None
 
 
 @asynccontextmanager
@@ -84,7 +90,7 @@ async def lifespan(app: FastAPI):
     """
     global redis, world_engine, character_engine, registry, llm, prompts
     global scene_loader, schedule_system, duration_calculator, movement_system
-    global embedding_worker
+    global embedding_worker, partition_scheduler
 
     logger.info("ai_town_backend_starting")
 
@@ -142,6 +148,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("embedding_worker_start_failed", error=str(e), exc_info=True)
         embedding_worker = None
+
+    # 3.6 启动分区预创建调度器（每月 25 号 03:00 自动执行）
+    # 解决 v8 P1 #68：原仅启动时执行，长期运行 >3 月漏建分区
+    try:
+        partition_scheduler = PartitionScheduler()
+        await partition_scheduler.start()
+        logger.info("partition_scheduler_started")
+    except Exception as e:
+        logger.error(
+            "partition_scheduler_start_failed",
+            error=str(e),
+            exc_info=True,
+        )
+        partition_scheduler = None
 
     # 4. 启动 World Engine
     try:
@@ -201,6 +221,11 @@ async def lifespan(app: FastAPI):
 
     # === Shutdown ===
     logger.info("ai_town_backend_shutting_down")
+
+    # 停止分区调度器
+    if partition_scheduler:
+        await partition_scheduler.stop()
+        logger.info("partition_scheduler_stopped")
 
     # 停止 Embedding Worker
     if embedding_worker:
@@ -640,6 +665,9 @@ async def get_admin_status():
         "embedding_worker": {
             "running": embedding_worker is not None and embedding_worker._running,
         },
+        "partition_scheduler": {
+            "running": partition_scheduler is not None and partition_scheduler.running,
+        },
         "phase2": {
             "scene_loader": scene_loader is not None,
             "schedule_system": schedule_system is not None,
@@ -996,4 +1024,223 @@ async def calculate_duration(
             "mood": modifiers.mood,
             "total": modifiers.total_multiplier(),
         },
+    }
+
+
+# === Phase 3 API：消息服务 ===
+
+
+@app.post("/api/v1/messages/send")
+async def send_message(
+    character_id: str,
+    user_id: str,
+    platform: str = "web",
+    content: str = "",
+):
+    """发送消息给角色并获取回复
+
+    Args:
+        character_id: 角色 UUID
+        user_id: 用户标识
+        platform: 来源平台（web/qq/lark/internal）
+        content: 用户消息内容
+
+    Returns:
+        角色回复内容与元数据（token/cost/conversation_id）
+    """
+    if not llm or not prompts:
+        raise HTTPException(status_code=503, detail="LLM client not initialized")
+
+    try:
+        cid = UUID(character_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Message content cannot be empty")
+
+    if platform not in ("web", "qq", "lark", "internal"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid platform: {platform}",
+        )
+
+    async with db.session() as session:
+        svc = MessageService(
+            session=session,
+            llm=llm,
+            prompts=prompts,
+        )
+        try:
+            result = await svc.handle_user_message(
+                character_id=cid,
+                user_id=user_id,
+                platform=platform,
+                content=content,
+            )
+        except Exception as e:
+            logger.error(
+                "message_handle_failed",
+                character_id=character_id,
+                user_id=user_id,
+                error=str(e),
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Message handling failed: {str(e)}",
+            )
+
+    return {
+        "data": {
+            "conversation_id": str(result["conversation_id"]),
+            "message_id": str(result["message_id"]) if result["message_id"] else None,
+            "content": result["content"],
+            "tokens": result["tokens"],
+            "cost": result["cost"],
+            "error": result["error"],
+        }
+    }
+
+
+@app.get("/api/v1/messages/history")
+async def get_message_history(
+    conversation_id: str,
+    limit: int = 50,
+    before: str | None = None,
+):
+    """获取会话消息历史（支持游标分页）
+
+    Args:
+        conversation_id: 会话 UUID
+        limit: 返回数量上限（默认 50）
+        before: 游标时间（ISO 8601），仅返回该时间点之前的消息
+
+    Returns:
+        消息列表（按时间倒序）
+    """
+    try:
+        conv_id = UUID(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    before_dt = None
+    if before:
+        try:
+            before_dt = datetime.fromisoformat(before)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid 'before' datetime format (use ISO 8601)",
+            )
+
+    async with db.session() as session:
+        repo = MessageRepository(session)
+        messages = await repo.list_by_conversation(
+            conversation_id=conv_id,
+            limit=limit,
+            before=before_dt,
+            order_desc=True,
+        )
+
+    return {
+        "data": [
+            {
+                "id": str(m.id),
+                "sender": m.sender,
+                "content": m.content,
+                "tokens": m.tokens,
+                "cost": float(m.cost) if m.cost else None,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in messages
+        ],
+        "total": len(messages),
+        "has_more": len(messages) == limit,
+    }
+
+
+@app.get("/api/v1/conversations")
+async def list_conversations(
+    character_id: str | None = None,
+    user_id: str | None = None,
+    limit: int = 50,
+):
+    """查询会话列表
+
+    Args:
+        character_id: 可选，按角色过滤
+        user_id: 可选，按用户过滤
+        limit: 返回数量上限
+
+    Returns:
+        会话列表（按 last_message_at 倒序）
+    """
+    async with db.session() as session:
+        repo = ConversationRepository(session)
+
+        if character_id and user_id:
+            # 精确查询：单会话（仅查询不创建）
+            try:
+                cid = UUID(character_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid UUID format")
+            conv = await repo.get_by_user_character(
+                user_id=user_id,
+                character_id=cid,
+            )
+            conversations = [conv] if conv else []
+        elif character_id:
+            try:
+                cid = UUID(character_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid UUID format")
+            conversations = await repo.list_by_character(cid, limit=limit)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Must provide character_id (with optional user_id)",
+            )
+
+    return {
+        "data": [
+            {
+                "id": str(c.id),
+                "character_id": str(c.character_id),
+                "user_id": c.user_id,
+                "platform": c.platform,
+                "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,
+                "created_at": c.created_at.isoformat(),
+            }
+            for c in conversations
+        ],
+        "total": len(conversations),
+    }
+
+
+@app.get("/api/v1/messages/stats")
+async def get_message_stats(character_id: str):
+    """获取角色消息统计（token/cost 累计，供成本监控）
+
+    Args:
+        character_id: 角色 UUID
+
+    Returns:
+        累计 token 数与 cost（USD）
+    """
+    try:
+        cid = UUID(character_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    async with db.session() as session:
+        repo = MessageRepository(session)
+        tokens, cost = await repo.sum_tokens_by_character(cid)
+
+    return {
+        "data": {
+            "character_id": character_id,
+            "total_tokens": tokens,
+            "total_cost_usd": cost,
+        }
     }

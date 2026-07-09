@@ -50,4 +50,7 @@ class ActionRecord(Base):
     __table_args__ = (
         # 角色行为时间线查询优化
         Index("idx_action_char_time", "character_id", "timestamp"),
+        # v8: 补充文档声明的索引
+        Index("idx_ar_action", "action_id"),
+        Index("idx_ar_params", "params", postgresql_using="gin", postgresql_ops={"params": "jsonb_path_ops"}),
     )

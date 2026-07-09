@@ -11,7 +11,9 @@ Repository 模式封装数据访问逻辑，业务层通过 Repository 操作数
 from src.db.repositories.action_repo import ActionRepository
 from src.db.repositories.base import BaseRepository
 from src.db.repositories.character_repo import CharacterRepository
+from src.db.repositories.conversation_repo import ConversationRepository
 from src.db.repositories.memory_repo import MemoryRepository
+from src.db.repositories.message_repo import MessageRepository
 from src.db.repositories.plan_repo import PlanRepository
 from src.db.repositories.reflection_repo import ReflectionRepository
 from src.db.repositories.relation_repo import RelationRepository
@@ -27,4 +29,6 @@ __all__ = [
     "ReflectionRepository",
     "WorldEventRepository",
     "WorldSnapshotRepository",
+    "ConversationRepository",
+    "MessageRepository",
 ]

@@ -98,6 +98,9 @@ class EmbeddingWorker:
             )
 
             # 批量生成 embedding
+            success_count = 0
+            failed_count = 0
+            circuit_break_count = 0
             for episode in episodes:
                 try:
                     embedding = await self.llm_client.embed(episode.content)
@@ -106,19 +109,35 @@ class EmbeddingWorker:
                         character_id=episode.character_id,
                         embedding=embedding,
                     )
+                    success_count += 1
                 except Exception as e:
+                    failed_count += 1
+                    # v3: 标记失败并累加 fail_count，达 5 次后自动熔断
+                    await repo.mark_embedding_failed(
+                        episode_id=episode.id,
+                        character_id=episode.character_id,
+                        error=str(e),
+                    )
+                    # 检测熔断（fail_count 达到 5 表示刚刚跨过阈值）
+                    if episode.fail_count + 1 >= 5:
+                        circuit_break_count += 1
                     logger.error(
                         "embedding_failed",
                         episode_id=str(episode.id),
+                        character_id=str(episode.character_id),
                         error=str(e),
+                        fail_count=episode.fail_count + 1,
+                        circuit_broken=episode.fail_count + 1 >= 5,
                     )
-                    # 跳过失败的，下次重试
 
             await session.commit()
 
             logger.info(
                 "embedding_batch_done",
                 count=len(episodes),
+                success=success_count,
+                failed=failed_count,
+                circuit_broken=circuit_break_count,
             )
             return len(episodes)
 
@@ -127,11 +146,10 @@ class EmbeddingWorker:
 
 async def main():
     """独立运行 embedding worker"""
-    from src.config import settings
     from src.db.session import db
     from src.llm.client import LLMClient
 
-    llm = LLMClient(settings)
+    llm = LLMClient()
     worker = EmbeddingWorker(
         session_factory=db.session,
         llm_client=llm,

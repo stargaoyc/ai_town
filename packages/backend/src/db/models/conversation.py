@@ -9,7 +9,7 @@ from datetime import datetime
 from uuid import UUID
 from uuid6 import uuid7
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,7 +46,9 @@ class Message(Base):
 
     sender: 发送者（user/character/system）
     content: 消息内容
-    metadata: 附加信息（LLM token 数、回复延迟等）
+    tokens: LLM token 消耗（Phase 3 成本追踪）
+    cost: 本次调用费用（USD）
+    extra_data: 附加信息（回复延迟、平台特定字段等）
     """
     __tablename__ = "messages"
 
@@ -54,11 +56,18 @@ class Message(Base):
     conversation_id: Mapped[UUID] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), comment="会话 ID"
     )
-    sender: Mapped[str] = mapped_column(String(20), comment="发送者")
+    sender: Mapped[str] = mapped_column(String(20), comment="发送者（user/character/system）")
     content: Mapped[str] = mapped_column(Text, comment="消息内容")
-    extra_data: Mapped[dict | None] = mapped_column(JSONB, comment="附加信息（token 数、延迟等）")
+    tokens: Mapped[int | None] = mapped_column(Integer, comment="LLM token 消耗")
+    cost: Mapped[float | None] = mapped_column(Numeric(10, 6), comment="调用费用（USD）")
+    extra_data: Mapped[dict | None] = mapped_column(JSONB, comment="附加信息（延迟、平台字段等）")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default="now()", comment="创建时间"
     )
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+    __table_args__ = (
+        Index("idx_msg_conv_time", "conversation_id", "created_at"),
+        Index("idx_msg_created", "created_at"),
+    )

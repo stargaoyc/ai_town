@@ -36,6 +36,8 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "passlib[bcrypt]>=1.7",
     "pyyaml>=6.0",
+    # 定时调度（月度分区预创建、Phase 3.5 成本控制等）
+    "apscheduler>=3.11",
 ]
 
 [project.optional-dependencies]

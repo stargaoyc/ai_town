@@ -110,7 +110,7 @@ Phase 5: 前端 Dashboard
 
 ## 五、Phase 2.5：性能与数据完整性优化 🔄 当前
 
-> 基于七轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v6 迁移脚本 + [0001_init.py](../packages/backend/alembic/versions/0001_init.py) v7 修复。
+> 基于八轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v6 迁移脚本 + [0001_init.py](../packages/backend/alembic/versions/0001_init.py) v8 修复。
 
 ### 第一轮审查（v1 → v2）
 
@@ -219,6 +219,20 @@ Phase 5: 前端 Dashboard
 
 > **v7 核心结论**：0001_init 从第一版起就存在两个致命缺陷（action_records 未分区 + embedding 类型错误），导致整个迁移链从未能成功执行。v7 修复后 0001_init → 0002_optimize 迁移链可正常 `alembic upgrade head`。
 
+### 第八轮审查（v7 → v8）— 数据迁移类型转换 + 索引补全
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 67 | ⚠️ P0: 0002_optimize 数据迁移 SELECT related_characters 直接从 JSONB 插入 UUID[] → 隐式转换失败 | P0 | 添加 `ARRAY(SELECT jsonb_array_elements_text(...))::uuid[]` 显式转换 | ✅ |
+| 68 | pre_create_partitions 仅启动时执行，长期运行 >3 月漏建分区 | P1 | Phase 3 增加 APScheduler 每月定时调度 | ⏳ Phase 3 |
+| 69 | 异步向量化无失败处理（fail_count/last_error），故障记忆反复重试 | P1 | Phase 3 新增 fail_count/last_error 字段 + 最大重试次数 | ⏳ Phase 3 |
+| 70 | action_records 缺失 idx_ar_action/idx_ar_params 索引（文档声明但迁移未建） | P2 | 0001_init 补充索引 + ORM 模型同步 | ✅ |
+| 71 | module_configs 等表 updated_at 触发器未覆盖 | — | **不成立**：module_configs 表不存在于任何迁移 | ✅ |
+| 72 | world_events 幂等约束粒度过粗 | — | **非问题（第三次驳回）**：每 Tick 每类型仅写 1 条全量事件 | ✅ |
+| 73 | personality 全表更新长锁 | — | **过度优化**：50 行数据瞬时完成 | ✅ |
+
+> **v8 核心结论**：最后一个 P0（JSONB→UUID[] 类型转换）已修复，迁移链 0001→0002 可完整执行。P1 增强项（分区定时调度、向量化失败处理）纳入 Phase 3。
+
 ### 新增/修改文件
 
 | 文件 | 说明 |
@@ -242,6 +256,55 @@ Phase 5: 前端 Dashboard
 | world_events（差分事件） | 1.2 TB/年（30s 全量落盘） | ~50 MB/年（差分事件，仅状态变化时写入） | 事件去重后写入量极低 |
 | world_snapshots（定期快照） | — | ~500 MB/年（每 1000 Tick 一次） | 冷启动恢复用，启动时间恒定 |
 | 建议冷热分离 | — | 3 个月前 action_records.params 迁移至对象存储 | PG 仅存轻量索引字段 |
+
+### 第九轮审查（v8 → v9）— Phase 3 启动：消息服务 + MCP Server + P1 延后项处理
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 74 | P0: memory_episodes JSONB→UUID[] 类型转换失败（再次提出） | — | v8 已修复，本轮确认 | ✅ |
+| 75 | P1: world_events 幂等约束粒度过粗（第四次提出） | — | **非问题（第四次驳回）**：world_engine.py 每 Tick 每类型仅写 1 条全量事件 | ✅ |
+| 76 | P1: personality 全表更新长锁（第四次提出） | — | **过度优化**：50 行数据瞬时完成 | ✅ |
+| 77 | P1: 分区预创建依赖服务重启（v8 P1 #68 延后项） | P1 | 新增 APScheduler，每月 25 号 03:00 自动执行 pre_create_partitions | ✅ |
+| 78 | P1: 异步向量化无失败处理（v8 P1 #69 延后项） | P1 | memory_episodes 增 fail_count/last_error 字段 + EmbeddingWorker 熔断逻辑 | ✅ |
+| 79 | P2: module_configs updated_at 触发器未覆盖（再次提出） | — | **不成立**：module_configs 表不存在于任何迁移 | ✅ |
+| 80 | P2: idx_ar_action/idx_ar_params 索引缺失（再次提出） | — | v8 已补充 | ✅ |
+| 81 | 架构：反思层语义检索退化 | 架构 | 延后至 Phase 4 补回 reflections.embedding | ⏳ Phase 4 |
+| 82 | 架构：软删除与物理级联语义冲突 | 架构 | 延后至 Phase 4 统一删除策略 | ⏳ Phase 4 |
+| 83 | 架构：关系表无双向一致性触发器 | 架构 | 延后至 Phase 4 社交模块阶段 | ⏳ Phase 4 |
+| 84 | 架构：事件溯源缺少状态哈希校验闭环 | 架构 | 延后至 Phase 4 可观测性阶段 | ⏳ Phase 4 |
+| 85 | 架构：冷热分离无落地机制 | 架构 | 延后至 Phase 4 制定归档流程 | ⏳ Phase 4 |
+| 86 | P2: related_characters 类型不统一（action_records JSONB / memory_episodes UUID[]） | P2 | 延后至 Phase 4 统一 | ⏳ Phase 4 |
+| 87 | P2: 索引命名规范不统一 | P2 | 延后至 Phase 4 全库统一 | ⏳ Phase 4 |
+| 88 | 文档：characters.traits/inventory/status ORM 默认值与 DB 不一致 | 文档 | 已按方案 B 对齐（ORM 层 default，DB nullable） | ✅ |
+| 89 | Phase 3: 创建 conversations + messages 表迁移 | Phase 3 | 新增 0003_messages.py 迁移（messages 改为非分区表，对齐 ORM） | ✅ |
+| 90 | Phase 3: 创建 ConversationRepository + MessageRepository | Phase 3 | 新增 conversation_repo.py / message_repo.py | ✅ |
+| 91 | Phase 3: 创建 MessageService 消息服务层 | Phase 3 | 新增 src/messaging/service.py（含上下文压缩 + LLM 回复生成） | ✅ |
+| 92 | Phase 3: 消息 API 路由 | Phase 3 | 新增 /api/v1/messages/send、/history、/stats 与 /api/v1/conversations | ✅ |
+| 93 | Phase 3: MCP code-executor 实现 | Phase 3 | 实现沙箱执行（subprocess 隔离 + 模块白名单 + 超时保护） | ✅ |
+| 94 | Phase 3: MCP shop-simulator 实现 | Phase 3 | 实现商品目录 + 购买/出售事务校验（24 件默认商品） | ✅ |
+
+> **v9 核心结论**：Phase 3 主体（消息服务 + MCP Server）已完成。P1 延后项（#77 分区调度、#78 向量化失败处理）已落地。剩余架构层面问题统一延后至 Phase 4。
+
+### 新增/修改文件（Phase 3）
+
+| 文件 | 说明 |
+|------|------|
+| `alembic/versions/0003_messages.py` | Phase 3 迁移：conversations + messages 表 + memory_episodes 失败处理字段 + pre_create_partitions 精简 |
+| `src/db/models/memory_episode.py` | 增加 fail_count / last_error 字段，更新 idx_mem_unmaterialized 部分索引 |
+| `src/db/models/conversation.py` | Conversation + Message ORM 模型（已存在，v3 增强 tokens/cost 字段） |
+| `src/db/repositories/conversation_repo.py` | 会话 Repository（get_or_create 幂等 + 上下文更新 + 列表查询） |
+| `src/db/repositories/message_repo.py` | 消息 Repository（游标分页 + token/cost 聚合统计） |
+| `src/db/repositories/memory_repo.py` | 新增 mark_embedding_failed 方法，fetch_unmaterialized 排除熔断记忆 |
+| `src/memory/embedding_worker.py` | EmbeddingWorker 增强：失败标记 + 熔断检测 + 详细日志 |
+| `src/messaging/__init__.py` | 消息服务模块入口 |
+| `src/messaging/service.py` | MessageService（用户消息处理 + LLM 回复生成 + 上下文压缩） |
+| `src/scheduler/__init__.py` | 调度器模块入口 |
+| `src/scheduler/partition_scheduler.py` | PartitionScheduler（APScheduler 月度分区预创建） |
+| `src/main.py` | 集成 MessageService API + PartitionScheduler lifespan + admin status |
+| `packages/mcp-servers/code-executor/server.py` | MCP 沙箱执行（subprocess + 模块白名单） |
+| `packages/mcp-servers/shop-simulator/server.py` | MCP 商店模拟（24 件商品 + 购买/出售事务） |
+| `packages/mcp-servers/shop-simulator/pyproject.toml` | shop-simulator 包配置 |
+| `pyproject.toml` | 新增 apscheduler>=3.11 依赖 |
 
 ---
 
@@ -459,6 +522,7 @@ Phase 5: 前端 Dashboard
 | messages 表索引在表不存在时创建 → 迁移中断 | 上线即失败 | 移除索引创建，表+索引推迟到 Phase 3（v6 修复） | ✅ 已解决 |
 | memory_episodes 大表重建卡死 | 服务长时间不可用 | 显式 statement_timeout + lock_timeout（v6 修复） | ✅ 已解决 |
 | 0001_init action_records 未声明分区 + embedding 类型错误 | 迁移链从未成功执行 | 原生 SQL 重建分区表 + vector(1536) 类型（v7 修复） | ✅ 已解决 |
+| 0002_optimize JSONB→UUID[] 隐式转换失败 | 数据迁移中断 | 显式 jsonb_array_elements_text 转换（v8 修复） | ✅ 已解决 |
 | Redis ↔ PG 不一致 | 状态漂移 | 乐观锁 + 校验任务 | ⏳ Phase 3.5 |
 | LLM 成本失控 | 预算超支 | 日预算 + 熔断降级 | ⏳ Phase 3.5 |
 | 跨角色全局向量检索性能崩塌 | 全局搜索慢 | 额外维护全局非分区向量索引（未来需求） | ⏳ Phase 4+ |
@@ -473,11 +537,10 @@ Phase 5: 前端 Dashboard
 
 ## 十三、下一步行动（Phase 2.5 → Phase 3）
 
-1. **执行迁移链 0001_init(v7) → 0002_optimize(v6)**（0001_init P0 已修复，迁移链可正常执行）
-2. ~~**集成 EmbeddingWorker 到 lifespan**~~ ✅ 已完成（[main.py L129-142](../packages/backend/src/main.py#L129-L142)）
-3. ~~**应用启动时调用 pre_create_partitions()**~~ ✅ 已完成（[main.py L96-106](../packages/backend/src/main.py#L96-L106)）
-4. **编写 Phase 2.5 单元测试**（分区裁剪验证 + worker 并发测试 + 快照恢复测试 + 事件去重测试）
-5. **进入 Phase 3**（消息服务 + MCP Server，含 conversations/messages 表+索引+分区迁移补建）
+1. ~~**执行迁移链 0001_init(v8) → 0002_optimize(v6)**~~ ✅ P0 全部修复，迁移链可完整执行
+2. ~~**集成 EmbeddingWorker 到 lifespan**~~ ✅ 已完成
+3. ~~**应用启动时调用 pre_create_partitions()**~~ ✅ 已完成
+4. **进入 Phase 3**（消息服务 + MCP Server，含 conversations/messages 表迁移、分区定时调度、向量化失败处理）
 
 ---
 

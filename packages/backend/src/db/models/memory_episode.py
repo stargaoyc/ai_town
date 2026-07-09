@@ -73,6 +73,13 @@ class MemoryEpisode(Base):
         Boolean, default=False,
         comment="embedding 是否已生成（异步 worker 处理）"
     )
+    # v3 迁移新增：向量化失败处理（最大重试 5 次后熔断）
+    fail_count: Mapped[int] = mapped_column(
+        Integer, default=0, comment="向量化失败次数，达到 5 后不再重试"
+    )
+    last_error: Mapped[str | None] = mapped_column(
+        Text, comment="最近一次失败错误信息（截断 1000 字）"
+    )
     source_type: Mapped[str] = mapped_column(
         String(20), default="action", comment="来源类型"
     )
@@ -89,9 +96,10 @@ class MemoryEpisode(Base):
             postgresql_where="is_reflected = FALSE",
         ),
         # 部分索引：未向量化的记忆，供 embedding worker 批量拉取
+        # v3: 排除 fail_count >= 5 的熔断记忆，避免反复拉取
         Index(
             "idx_mem_unmaterialized",
             "timestamp",
-            postgresql_where="materialized = FALSE",
+            postgresql_where="materialized = FALSE AND fail_count < 5",
         ),
     )
