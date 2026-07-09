@@ -1,13 +1,16 @@
 """反思模型 - 角色的高层认知归纳
 
 由反思系统定期从记忆片段中提炼生成，影响角色长期行为。
+
+⚠️ related_episodes 字段已在 0002_optimize v5 迁移中删除，
+   关联记忆通过 reflection_sources 中间表管理（复合外键保证参照完整性）。
 """
 from datetime import datetime
 from uuid import UUID
 from uuid6 import uuid7
 
 from sqlalchemy import ForeignKey, Text
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -22,7 +25,7 @@ class Reflection(Base):
     3. 写入 reflections 表
     4. 标记对应 memory_episodes 为 is_reflected=TRUE
 
-    related_episodes: 关联的记忆片段 ID 列表（JSONB）
+    关联记忆通过 reflection_sources 中间表管理（复合外键 ON DELETE CASCADE）。
     """
     __tablename__ = "reflections"
 
@@ -31,9 +34,6 @@ class Reflection(Base):
         ForeignKey("characters.id", ondelete="CASCADE"), comment="所属角色"
     )
     content: Mapped[str] = mapped_column(Text, comment="反思内容")
-    related_episodes: Mapped[list] = mapped_column(
-        JSONB, default=list, comment="关联记忆 ID 列表"
-    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default="now()", comment="创建时间"
     )

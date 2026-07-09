@@ -110,7 +110,7 @@ Phase 5: 前端 Dashboard
 
 ## 五、Phase 2.5：性能与数据完整性优化 🔄 当前
 
-> 基于三轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v3 迁移脚本。
+> 基于五轮数据库审查意见的系统性优化。已创建 [0002_optimize.py](../packages/backend/alembic/versions/0002_optimize.py) v4 迁移脚本。
 
 ### 第一轮审查（v1 → v2）
 
@@ -167,11 +167,30 @@ Phase 5: 前端 Dashboard
 | 34 | HASH 分区「便于扩展」措辞误导 | 低 | 文档明确说明 HASH 分区数固定，扩容需全表重分布 | ✅ |
 | 35 | 异步向量化并发控制 | — | 已由 FOR UPDATE SKIP LOCKED 解决，无需修改 | ✅ |
 
+### 第五轮审查（v4 → v5）
+
+| # | 问题 | 严重度 | 解决方案 | 状态 |
+|---|------|--------|----------|------|
+| 36 | 设计文档（data-model.md）与迁移脚本/ORM 严重脱节（字段名不一致：energy/hunger vs stamina/satiety、horizon vs type、status vs is_active 等） | P0 | 选择**方案 B**：改文档对齐代码（避免破坏既有业务逻辑），全文 DDL 逐表校对修正 | ✅ |
+| 37 | reflections.related_episodes 废弃字段未清理（已被 reflection_sources 替代，双写风险） | P0 | 迁移增加 `ALTER TABLE reflections DROP COLUMN IF EXISTS related_episodes`，ORM 同步移除 | ✅ |
+| 38 | reflections 表仍残留 summary/detail/source_memory_ids/importance/embedding 字段引用 | P0 | 文档对齐为仅 `content` 单字段，检索 SQL 改用 content 全文匹配 | ✅ |
+| 39 | relations 表文档使用 from_id/to_id，实际代码为 character_id/target_id | P0 | 文档 DDL 对齐代码，移除不存在的 tags/metadata/updated_at 字段 | ✅ |
+| 40 | messages 段落仍引用 BRIN 索引（与"不使用 BRIN"原则矛盾） | 中 | 删除 `idx_msg_created_brin`，补充说明 | ✅ |
+| 41 | world_events 未按月 RANGE 分区（高频写入表） | P1 | 延迟至 Phase 4，当前数据量未达分区阈值 | ⏳ Phase 4 |
+| 42 | conversations/messages 表在迁移脚本中未创建（0001/0002 均缺失） | P1 | 延迟至 Phase 3 消息服务阶段补建迁移 | ⏳ Phase 3 |
+| 43 | action_records.related_characters 为 JSONB，memory_episodes.related_characters 为 UUID[]（类型不统一） | P1 | 延迟至 Phase 4 统一，需评估查询模式后再定 | ⏳ Phase 4 |
+| 44 | TEXT + CHECK 与 ENUM 类型选型未统一 | P2 | 延迟至 Phase 4，ENUM 修改需 ALTER TYPE 影响较大 | ⏳ Phase 4 |
+| 45 | Schema 划分与权限体系未实施 | P2 | 延迟至 Phase 4 多租户/权限阶段 | ⏳ Phase 4 |
+| 46 | HNSW 索引运维（重建/监控）缺方案 | P2 | 延迟至 Phase 4 可观测性阶段 | ⏳ Phase 4 |
+| 47 | 软删除 vs 物理级联语义未统一 | P2 | 延迟至 Phase 4，需制定全表一致的删除策略 | ⏳ Phase 4 |
+
+> **v5 核心结论**：经核查，ORM 模型与迁移脚本**实际一致**（无运行时风险），不一致主要发生在设计文档与代码之间。采用方案 B（文档对齐代码）而非方案 A（改迁移对齐文档），避免破坏已通过测试的业务逻辑。
+
 ### 新增/修改文件
 
 | 文件 | 说明 |
 |------|------|
-| `alembic/versions/0002_optimize.py` | 数据库优化迁移脚本 v3 |
+| `alembic/versions/0002_optimize.py` | 数据库优化迁移脚本 v4（v5 增加 reflections.related_episodes 清理） |
 | `src/db/models/world_event.py` | 世界变更事件模型 |
 | `src/db/models/world_snapshot.py` | 世界快照模型（v3 恢复） |
 | `src/db/models/reflection_source.py` | 反思来源中间表模型（v3 增加复合外键） |
@@ -402,21 +421,27 @@ Phase 5: 前端 Dashboard
 | world_events 重复写入 → 回放状态错误 | 状态异常 | UNIQUE(tick_id, event_type) + ON CONFLICT DO NOTHING（v4 修复） | ✅ 已解决 |
 | VACUUM FULL 阻塞全表 | 服务中断 | 移除自动执行，改为手动维护（v4 修复） | ✅ 已解决 |
 | DEFAULT 分区静默丢数据 | 数据丢失 | 删除前检查数据量（v4 修复） | ✅ 已解决 |
+| 文档与代码脱节导致开发误用 | 业务代码报错 | 方案 B 全文对齐 data-model.md（v5 修复） | ✅ 已解决 |
+| reflections.related_episodes 双写不一致 | 数据脏写 | 删除废弃字段，统一走 reflection_sources（v5 修复） | ✅ 已解决 |
 | Redis ↔ PG 不一致 | 状态漂移 | 乐观锁 + 校验任务 | ⏳ Phase 3.5 |
 | LLM 成本失控 | 预算超支 | 日预算 + 熔断降级 | ⏳ Phase 3.5 |
 | 跨角色全局向量检索性能崩塌 | 全局搜索慢 | 额外维护全局非分区向量索引（未来需求） | ⏳ Phase 4+ |
 | 分区表统计信息漂移 | 执行计划劣化 | 配置更频繁的自动分析阈值 | ⏳ Phase 4 |
 | 向量索引碎片化 | 召回率下降 | 定期监控 + 低峰期索引重建 | ⏳ Phase 4 |
+| world_events 未分区 | 高频写入表膨胀 | 按月 RANGE 分区（待数据量达标后实施） | ⏳ Phase 4 |
+| conversations/messages 表缺迁移 | 消息服务无表可用 | Phase 3 消息服务阶段补建迁移脚本 | ⏳ Phase 3 |
+| related_characters 类型不统一（JSONB vs UUID[]） | 查询模式不一致 | 评估查询模式后统一类型 | ⏳ Phase 4 |
+| 软删除 vs 物理级联语义混乱 | 数据残留/误删 | 制定全表一致的删除策略 | ⏳ Phase 4 |
 
 ---
 
 ## 十三、下一步行动（Phase 2.5 → Phase 3）
 
-1. **执行 0002_optimize v3 迁移**（需维护窗口，涉及表重建；遵循只升级不降级原则，通过备份兜底）
+1. **执行 0002_optimize v4 迁移**（需维护窗口，涉及表重建；遵循只升级不降级原则，通过备份兜底）
 2. **集成 EmbeddingWorker 到 lifespan**（后台任务自动启动）
 3. **应用启动时调用 pre_create_partitions()**（预创建未来 3 个月分区）
 4. **编写 Phase 2.5 单元测试**（分区裁剪验证 + worker 并发测试 + 快照恢复测试 + 事件去重测试）
-5. **进入 Phase 3**（消息服务 + MCP Server）
+5. **进入 Phase 3**（消息服务 + MCP Server，含 conversations/messages 表迁移补建）
 
 ---
 

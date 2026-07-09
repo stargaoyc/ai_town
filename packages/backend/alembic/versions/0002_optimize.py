@@ -321,6 +321,12 @@ def upgrade() -> None:
     op.create_index("idx_refl_sources_memory", "reflection_sources",
                     ["memory_id", "memory_character_id"])
 
+    # 删除 reflections.related_episodes 废弃字段（已被 reflection_sources 中间表替代）
+    # 保留废弃字段会导致双写不一致风险：应用层可能误用旧字段
+    op.execute("""
+        ALTER TABLE reflections DROP COLUMN IF EXISTS related_episodes;
+    """)
+
     # ============================================================
     # 改进 8: character_states 乐观锁 + fillfactor + autovacuum
     # ============================================================

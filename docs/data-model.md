@@ -43,7 +43,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;      -- 文本模糊检索
 ```text
 ┌──────────────────────┐         ┌──────────────────────┐
 │  characters          │◀────────│  relations           │
-│  (角色定义)          │  from/to│  (角色关系)          │
+│  (角色定义)          │ char/tgt│  (角色关系, 有向图)  │
 └──────────┬───────────┘         └──────────────────────┘
            │ 1:N
            ▼
@@ -83,36 +83,39 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;      -- 文本模糊检索
 
 ```sql
 CREATE TABLE characters (
-    id           UUID PRIMARY KEY DEFAULT uuidv7(),
-    name         TEXT NOT NULL,
-    age          INT  NOT NULL CHECK (age >= 0 AND age <= 200),
-    occupation   TEXT NOT NULL,
-    traits       JSONB NOT NULL DEFAULT '{}'::jsonb,      -- 自定义属性（含 personality）
-    backstory    TEXT NOT NULL DEFAULT '',
-    avatar_url   TEXT,
-    status       TEXT NOT NULL DEFAULT 'active'
-                 CHECK (status IN ('active','archived','deleted')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    id            UUID PRIMARY KEY DEFAULT uuidv7(),
+    name          TEXT NOT NULL,
+    age           INT,
+    occupation    TEXT,
+    traits        JSONB NOT NULL DEFAULT '{}'::jsonb,      -- 自定义属性（含 personality）
+    backstory     TEXT,
+    avatar_url    TEXT,
+    voice_preset  TEXT,
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,            -- 是否参与世界运行
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()        -- 0002_optimize 新增，触发器自动维护
 );
 
 CREATE INDEX idx_characters_name_trgm ON characters USING gin (name gin_trgm_ops);
 CREATE INDEX idx_characters_traits    ON characters USING gin (traits jsonb_path_ops);
-CREATE INDEX idx_characters_status    ON characters (status);
+CREATE INDEX idx_characters_active    ON characters (is_active) WHERE is_active = TRUE;
 ```
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | UUID (v7) | 主键，时间有序 |
 | `name` | TEXT | 角色名 |
-| `age` | INT | 年龄 |
-| `occupation` | TEXT | 职业 |
+| `age` | INT | 年龄（可空） |
+| `occupation` | TEXT | 职业（可空） |
 | `traits` | JSONB | 自定义属性（`personality`/`hobby`/`schedule`/`mbti` 等） |
-| `backstory` | TEXT | 背景故事 |
+| `backstory` | TEXT | 背景故事（可空） |
 | `avatar_url` | TEXT | 头像 URL |
-| `status` | TEXT | `active`/`archived`/`deleted` |
+| `voice_preset` | TEXT | 语音预设 |
+| `is_active` | BOOLEAN | 是否参与世界运行（true/false） |
+| `created_at` | TIMESTAMPTZ | 创建时间 |
+| `updated_at` | TIMESTAMPTZ | 更新时间（触发器自动维护） |
 
-> ⚠️ **0002_optimize 迁移**：`personality TEXT[]` 列已删除，性格标签统一存储在 `traits.personality`（`list[str]`）。角色卡导入时自动合并。
+> ⚠️ **0002_optimize 迁移**：`personality` 列已删除，性格标签统一存储在 `traits.personality`（`list[str]`）。`updated_at` 字段+触发器新增。
 
 ### 3.2 character_states（实时态持久镜像）
 
@@ -121,19 +124,23 @@ CREATE INDEX idx_characters_status    ON characters (status);
 ```sql
 CREATE TABLE character_states (
     character_id      UUID PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
-    location          TEXT NOT NULL,
-    current_action    TEXT,
-    action_started_at TIMESTAMPTZ,                       -- 统一 TIMESTAMPTZ
-    energy            INT  NOT NULL DEFAULT 100 CHECK (energy BETWEEN 0 AND 100),
-    hunger            INT  NOT NULL DEFAULT 0   CHECK (hunger BETWEEN 0 AND 100),
-    mood              TEXT,
-    version           INT  NOT NULL DEFAULT 1,           -- 乐观锁版本号（0002_optimize）
+    location          TEXT,                               -- 当前场景 ID
+    stamina           INT  NOT NULL DEFAULT 80,           -- 体力 0-100
+    satiety           INT  NOT NULL DEFAULT 60,           -- 饱腹度 0-100
+    mood              TEXT,                               -- 情绪（happy/calm/sad/anxious 等）
+    money             INT  NOT NULL DEFAULT 500,          -- 金钱
+    inventory         JSONB NOT NULL DEFAULT '{}'::jsonb, -- 物品栏
+    current_action    JSONB,                              -- 当前动作 {action_id, params, end_time}
+    phone_battery     INT  NOT NULL DEFAULT 75,           -- 手机电量 0-100
+    social_energy     INT  NOT NULL DEFAULT 60,           -- 社交能量 0-100
+    version           INT  NOT NULL DEFAULT 1,            -- 乐观锁版本号（0002_optimize）
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()  -- 自动更新触发器（0002_optimize）
 );
 
 -- 启动时: SELECT * FROM character_states; → 灌入 Redis
 -- 更新时: ... SET version = version + 1 WHERE version = :old_version
--- updated_at 由 trg_character_states_updated_at 触发器自动更新
+-- updated_at 由通用 update_updated_at() 触发器自动更新
+-- fillfactor=85 + autovacuum 调优（0002_optimize v4）
 ```
 
 ### 3.3 action_records（行为历史，按月分区）
@@ -142,18 +149,17 @@ CREATE TABLE character_states (
 CREATE TABLE action_records (
     id                 UUID NOT NULL DEFAULT uuidv7(),
     character_id       UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    action_id          TEXT NOT NULL,
-    action_name        TEXT NOT NULL,
-    params             JSONB NOT NULL DEFAULT '{}'::jsonb,
-    reason             TEXT NOT NULL DEFAULT '',
-    result             TEXT NOT NULL DEFAULT '',
-    duration_minutes   INT  NOT NULL DEFAULT 0,
+    action_id          TEXT,
+    action_name        TEXT,
+    params             JSONB,
+    reason             TEXT,
+    result             TEXT,
+    duration_minutes   INT,
     location           TEXT,
-    related_characters UUID[] NOT NULL DEFAULT '{}',
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    -- 分区表主键必须包含分区键
-    PRIMARY KEY (id, created_at)
-) PARTITION BY RANGE (created_at);
+    related_characters JSONB,                              -- 相关角色 ID 列表（JSONB，非 UUID[]）
+    timestamp          TIMESTAMPTZ NOT NULL DEFAULT now(), -- 执行时间（分区键）
+    PRIMARY KEY (id, timestamp)
+) PARTITION BY RANGE (timestamp);
 
 -- 每月一个分区 (示例: 2026-07)
 CREATE TABLE action_records_2026_07 PARTITION OF action_records
@@ -162,9 +168,10 @@ CREATE TABLE action_records_2026_07 PARTITION OF action_records
 -- ⚠️ 0002_optimize: 无 DEFAULT 分区，PG 原生 "no partition found" 报错足够清晰
 -- 分区预创建由 pre_create_partitions() 函数自动处理（应用启动时调用）
 
-CREATE INDEX idx_ar_char_time   ON action_records (character_id, created_at DESC);
+CREATE INDEX idx_ar_char_time   ON action_records (character_id, timestamp DESC);
 CREATE INDEX idx_ar_action      ON action_records (action_id);
-CREATE INDEX idx_ar_related     ON action_records USING gin (related_characters);
+-- ⚠️ related_characters 为 JSONB 非 UUID[]，不能直接 GIN 索引
+-- 如需数组查询，需改为 UUID[] 类型或使用 JSONB GIN 索引
 CREATE INDEX idx_ar_params      ON action_records USING gin (params jsonb_path_ops);
 ```
 
@@ -218,7 +225,7 @@ CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) WHERE materia
 
 | 字段 | 变更 | 说明 |
 |------|------|------|
-| `character_id` | 移除 FK | 分区表不支持 FK 引用，由应用层 ORM 保证 |
+| `character_id` | 保留 FK | 外键 `REFERENCES characters(id) ON DELETE CASCADE`，PG 11+ 支持分区表引用非分区表（v4 修复 v3 误判） |
 | `embedding` | 改为 nullable | `materialized=false` 时为 NULL |
 | `materialized` | **新增** | embedding 是否已生成（异步 worker 处理） |
 | `PRIMARY KEY` | 改为复合 | `(id, character_id)` 分区表要求 |
@@ -231,18 +238,14 @@ CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) WHERE materia
 CREATE TABLE reflections (
     id                 UUID PRIMARY KEY DEFAULT uuidv7(),
     character_id       UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    summary            TEXT NOT NULL,                    -- "我习惯早睡早起"
-    detail             TEXT NOT NULL DEFAULT '',
-    source_memory_ids  UUID[] NOT NULL DEFAULT '{}',     -- DEPRECATED: 使用 reflection_sources 中间表
-    importance         INT  NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
-    embedding          vector(1536),                     -- 反思向量(可选, 高层语义检索)
+    content            TEXT NOT NULL,                    -- 反思内容
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ⚠️ related_episodes 字段已在 0002_optimize v5 迁移中删除
+--    关联记忆通过 reflection_sources 中间表管理（复合外键 ON DELETE CASCADE）
+
 CREATE INDEX idx_refl_char_time ON reflections (character_id, created_at DESC);
-CREATE INDEX idx_refl_embedding_hnsw
-    ON reflections USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 128);                -- ef_construction 同步提升
 ```
 
 #### 3.5.1 reflection_sources（反思来源中间表）
@@ -271,38 +274,34 @@ CREATE INDEX idx_refl_sources_memory ON reflection_sources (memory_id, memory_ch
 CREATE TABLE plans (
     id            UUID PRIMARY KEY DEFAULT uuidv7(),
     character_id  UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    title         TEXT NOT NULL,                         -- "三个月内学会咖啡拉花"
-    horizon       TEXT NOT NULL CHECK (horizon IN ('daily','weekly','monthly','quarterly','yearly')),
-    steps         JSONB NOT NULL DEFAULT '[]'::jsonb,    -- [{...},{...}]
-    status        TEXT NOT NULL DEFAULT 'active'
-                  CHECK (status IN ('active','completed','abandoned','paused')),
-    priority      INT  NOT NULL DEFAULT 5,
+    type          TEXT,                                   -- 计划类型：long_term/short_term
+    title         TEXT,                                   -- 计划标题
+    description   TEXT,                                   -- 计划描述
+    status        TEXT NOT NULL DEFAULT 'active',         -- active/completed/abandoned
+    priority      INT  NOT NULL DEFAULT 3,                -- 优先级 1-5
+    deadline      TIMESTAMPTZ,                            -- 截止时间
+    progress      INT  NOT NULL DEFAULT 0,                -- 进度 0-100
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    due_at        TIMESTAMPTZ
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()      -- 0002_optimize 新增，触发器自动维护
 );
 
 CREATE INDEX idx_plans_char_status ON plans (character_id, status);
-CREATE INDEX idx_plans_due         ON plans (due_at) WHERE status = 'active';
 ```
 
 ### 3.7 relations（角色关系）
 
+> 有向图：双向关系需两条记录（A→B 和 B→A）。`strength` 范围 0-100，配合 `relationship_type` 描述关系层级。
+
 ```sql
 CREATE TABLE relations (
-    from_id    UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    to_id      UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    strength   INT  NOT NULL DEFAULT 0 CHECK (strength BETWEEN -100 AND 100),
-    tags       TEXT[] NOT NULL DEFAULT '{}',             -- ["朋友","同学"]
-    metadata   JSONB NOT NULL DEFAULT '{}'::jsonb,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (from_id, to_id),
-    CHECK (from_id <> to_id)
+    character_id        UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    target_id           UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    strength            INT  NOT NULL DEFAULT 20,                 -- 关系强度 0-100
+    relationship_type   TEXT NOT NULL DEFAULT 'stranger',         -- stranger/acquaintance/friend/close_friend/best_friend
+    last_interaction_at TIMESTAMPTZ,                               -- 最后互动时间（衰减计算）
+    notes               TEXT,                                      -- LLM 总结的对该角色的认知
+    PRIMARY KEY (character_id, target_id)
 );
-
-CREATE INDEX idx_rel_to       ON relations (to_id, strength DESC);
-CREATE INDEX idx_rel_tags     ON relations USING gin (tags);
-CREATE INDEX idx_rel_metadata ON relations USING gin (metadata jsonb_path_ops);
 ```
 
 ### 3.8 messages（对话历史，按月分区）
@@ -339,7 +338,7 @@ CREATE INDEX idx_msg_user_time_cover
 CREATE INDEX idx_msg_conv_time_cover
     ON messages (conversation_id, created_at) INCLUDE (role, character_id, platform);
 
-CREATE INDEX idx_msg_created_brin ON messages USING brin (created_at);
+-- ⚠️ 不使用 BRIN 索引：按月分区裁剪已限制扫描范围，BRIN 在单月数据量内无收益
 ```
 
 ### 3.9 module_configs（模块配置）
@@ -427,9 +426,9 @@ CREATE INDEX idx_world_tick ON world_snapshots (tick_id);
 | 角色记忆向量召回 | `hnsw (embedding vector_cosine_ops)` | HNSW，生产首选 |
 | 角色内记忆按时间 | `(character_id, timestamp DESC)` | 范围扫描 |
 | 未反思记忆查找 | `(character_id) WHERE is_reflected=FALSE` | 部分索引，反思专用 |
-| 角色行为历史 | `(character_id, created_at DESC)` | 分区裁剪 + 索引 |
+| 角色行为历史 | `(character_id, timestamp DESC)` | 分区裁剪 + 索引 |
 | 关联角色反查 | `gin (related_characters)` | 数组成员查询 |
-| 关系图遍历 | `(from_id)` PK + `(to_id)` 索引 | 双向查询 |
+| 关系图遍历 | `(character_id)` PK + `(target_id)` 查询 | 双向查询（双向关系需两条记录） |
 | 消息会话拉取 | `(conversation_id, created_at)` | 多轮对话上下文 |
 | 消息时间扫描 | `btree (created_at)` | 按月分区裁剪后 B-tree 足够（不使用 BRIN） |
 
@@ -479,24 +478,28 @@ LIMIT :top_k;
 
 ### 5.3 反思层检索
 
+> ⚠️ `reflections` 表已移除 `embedding` 字段（v5 简化），反思检索改用 `content` 全文匹配或应用层合并。
+
 ```sql
-SELECT id, summary
+-- 反思按时间倒序拉取（应用层再用 LLM 重排或与记忆联合检索）
+SELECT id, content
 FROM reflections
 WHERE character_id = :cid
-ORDER BY embedding <=> :q_vec
-LIMIT 5;
+ORDER BY created_at DESC
+LIMIT 20;
 ```
 
 ### 5.4 联合检索（应用层合并）
 
 ```sql
--- 原始记忆 + 反思 UNION ALL, 应用层按 final_score 排序
+-- 原始记忆向量检索 + 反思按时间拉取，应用层按 final_score 合并排序
 SELECT 'memory' AS kind, id, content AS text, embedding <=> :q_vec AS dist
 FROM memory_episodes WHERE character_id = :cid
-UNION ALL
-SELECT 'reflection', id, summary, embedding <=> :q_vec
-FROM reflections WHERE character_id = :cid
-ORDER BY dist LIMIT :top_k;
+ORDER BY embedding <=> :q_vec LIMIT :top_k;
+-- UNION ALL
+-- SELECT 'reflection', id, content, 0 FROM reflections WHERE character_id = :cid
+-- ORDER BY created_at DESC LIMIT 5;
+-- ⚠️ reflections 无 embedding 字段，反思合并由应用层用 LLM 重排实现
 ```
 
 ### 5.5 HNSW 查询时调优
@@ -567,7 +570,7 @@ PG 在 HNSW + 分区表下，单表千万级行检索 p95 < 50ms（HNSW 检索 +
 ```python
 # db/models/memory_episode.py
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import String, Integer, Boolean, Index, DateTime, Uuid
+from sqlalchemy import ForeignKey, String, Integer, Boolean, Index, DateTime, Uuid
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
@@ -583,7 +586,9 @@ class MemoryEpisode(Base):
     )
     # character_id 外键引用 characters(id) ON DELETE CASCADE
     # PostgreSQL 11+ 支持分区表引用非分区表，角色删除时记忆自动级联清理
-    character_id: Mapped[UUID] = mapped_column(primary_key=True)
+    character_id: Mapped[UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
+    )
     content: Mapped[str] = mapped_column(String)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     importance: Mapped[int] = mapped_column(Integer, default=5)
