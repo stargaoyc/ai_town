@@ -67,6 +67,7 @@ from src.observability import (
 )
 from src.scheduler import PartitionScheduler
 from src.security.rate_limiter import RateLimiter
+from src.adapters import OneBotAdapter
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
 try:
@@ -92,6 +93,9 @@ rate_limiter: RateLimiter | None = None
 
 # WebSocket 连接管理器（单例）- 用于 Web 客户端实时聊天
 ws_manager = WebSocketManager()
+
+# OneBot v12 适配器（QQ 机器人接入）
+onebot_adapter = OneBotAdapter()
 
 
 @asynccontextmanager
@@ -259,10 +263,24 @@ async def lifespan(app: FastAPI):
         manager=type(ws_manager).__name__,
     )
 
+    # 8. 启动 OneBot 适配器（QQ 机器人反向 WebSocket）
+    try:
+        await onebot_adapter.start()
+        logger.info("onebot_adapter_started", endpoint="/ws/onebot/v12")
+    except Exception as e:
+        logger.error("onebot_adapter_start_failed", error=str(e), exc_info=True)
+
     yield
 
     # === Shutdown ===
     logger.info("ai_town_backend_shutting_down")
+
+    # 停止 OneBot 适配器
+    try:
+        await onebot_adapter.stop()
+        logger.info("onebot_adapter_stopped")
+    except Exception as e:
+        logger.error("onebot_adapter_stop_failed", error=str(e))
 
     # 停止分区调度器
     if partition_scheduler:
@@ -384,6 +402,9 @@ app.add_middleware(
 
 # 注册 WebSocket 路由（/ws/chat/{character_id}）
 app.include_router(ws_router)
+
+# 注册 OneBot v12 反向 WebSocket 路由（/ws/onebot/v12）
+app.include_router(onebot_adapter.router)
 
 # Phase 4: 可观测性初始化（OTel Trace + Prometheus Metrics + Langfuse）
 setup_tracing(app)
@@ -958,7 +979,7 @@ async def import_characters_batch(directory: str = "configs/characters"):
     """批量导入角色卡目录
 
     Args:
-        directory: 角色卡目录路径（默认 configs/characters）
+        directory: 角色卡目录路径（默认 configs/characters，相对于项目根目录）
 
     Returns:
         导入结果统计
@@ -966,10 +987,18 @@ async def import_characters_batch(directory: str = "configs/characters"):
     if not redis:
         raise HTTPException(status_code=503, detail="Redis not connected")
 
+    # 自动定位项目根目录：从 packages/backend 上两级到项目根
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[3]  # src/main.py -> backend -> packages -> aitown
+    resolved = project_root / directory
+    if not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"目录不存在: {resolved}")
+
     async with db.session() as session:
         importer = CharacterImporter(session, redis)
         try:
-            characters = await importer.import_directory(directory)
+            characters = await importer.import_directory(str(resolved))
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
