@@ -57,6 +57,12 @@ from src.modules import (
     ScheduleSystem,
     SceneLoader,
 )
+from src.observability import (
+    setup_langfuse,
+    setup_logging,
+    setup_metrics,
+    setup_tracing,
+)
 from src.scheduler import PartitionScheduler
 from src.security.rate_limiter import RateLimiter
 
@@ -102,6 +108,10 @@ async def lifespan(app: FastAPI):
     global embedding_worker, partition_scheduler, rate_limiter
 
     logger.info("ai_town_backend_starting")
+
+    # 0.5 初始化可观测性（日志/Trace/Metrics/Langfuse）
+    setup_logging(log_level=settings.log_level, log_format=settings.log_format)
+    logger.info("logging_configured", format=settings.log_format, level=settings.log_level)
 
     # 1. 初始化 Redis
     try:
@@ -370,6 +380,12 @@ app.add_middleware(
 
 # 注册 WebSocket 路由（/ws/chat/{character_id}）
 app.include_router(ws_router)
+
+# Phase 4: 可观测性初始化（OTel Trace + Prometheus Metrics + Langfuse）
+setup_tracing(app)
+setup_metrics(app)
+setup_langfuse()
+logger.info("observability_initialized")
 
 
 # === API 路由 ===

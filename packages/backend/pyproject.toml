@@ -30,7 +30,12 @@ dependencies = [
     "opentelemetry-api>=1.28",
     "opentelemetry-sdk>=1.28",
     "opentelemetry-exporter-otlp>=1.28",
+    "opentelemetry-exporter-otlp-proto-http>=1.28",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-asyncpg>=0.48b0",
     "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "langfuse>=2.0.0,<3.0.0",
     # HTTP 客户端
     "httpx>=0.28",
     # 工具
