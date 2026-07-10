@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface State {
   hasError: boolean;
@@ -13,7 +13,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, errorInfo);
+    console.error("ErrorBoundary caught:", error, errorInfo);
   }
 
   render() {
@@ -22,9 +22,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
         <div className="min-h-screen flex items-center justify-center p-4">
           <div className="bg-glass-bg backdrop-blur-glass-blur rounded-2xl p-8 shadow-soft max-w-md w-full text-center">
             <div className="text-5xl mb-4">😵</div>
-            <h1 className="text-xl font-bold text-sakura-600 mb-2">页面出错了</h1>
+            <h1 className="text-xl font-bold text-sakura-600 mb-2">
+              页面出错了
+            </h1>
             <p className="text-sm text-twilight-400 mb-4">
-              {this.state.error?.message || '发生了未知错误'}
+              {this.state.error?.message || "发生了未知错误"}
             </p>
             <button
               onClick={() => window.location.reload()}

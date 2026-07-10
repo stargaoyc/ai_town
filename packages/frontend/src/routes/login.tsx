@@ -1,100 +1,120 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
-import { useAuthStore } from '@/stores/auth';
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { User, Lock, Sparkles } from "lucide-react";
+import { useAuthStore } from "@/stores/auth";
+import { AnimeBackground } from "@/components/AnimeBackground";
+import { AnimeButton } from "@/components/ui";
 
-export const Route = createFileRoute('/login')({
+export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
 function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [error, setError] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apiKey.trim()) {
-      setError('请输入 API Key');
+    if (!username.trim() || !password.trim()) {
+      setError("请输入账号和密码");
       return;
     }
     setLoading(true);
-    setError('');
-    const result = await login(apiKey.trim());
+    setError("");
+    const result = await login(username.trim(), password.trim());
     setLoading(false);
     if (result.success) {
-      navigate({ to: '/' });
+      navigate({ to: "/" });
     } else {
-      setError(result.error || '登录失败');
+      setError(result.error || "登录失败");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      {/* 装饰性背景圆 */}
-      <div className="absolute top-10 left-10 w-72 h-72 bg-sakura-300/30 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-10 right-10 w-96 h-96 bg-sky-soft-300/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-twilight-300/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
-
-      <div className="relative z-10 w-full max-w-md">
-        <div className="bg-glass-bg backdrop-blur-glass-blur rounded-3xl p-8 shadow-soft border border-white/40">
-          {/* Logo 区域 */}
+    <div className="min-h-screen flex items-center justify-center p-4 relative">
+      <AnimeBackground />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5 }}
+        className="relative z-10 w-full max-w-md"
+      >
+        <div className="bg-white/70 backdrop-blur-2xl rounded-[2rem] p-8 border border-white/60 shadow-[0_20px_60px_rgba(255,143,171,0.25)]">
           <div className="text-center mb-8">
-            <div className="inline-block text-6xl mb-3 animate-bounce">🌸</div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-sakura-500 via-twilight-400 to-sky-soft-400 bg-clip-text text-transparent">
+            <motion.div
+              className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-sakura-400 to-twilight-400 mb-4 shadow-lg"
+              animate={{ rotate: [0, 5, -5, 0] }}
+              transition={{ duration: 4, repeat: Infinity }}
+            >
+              <Sparkles className="w-10 h-10 text-white" />
+            </motion.div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-sakura-500 via-twilight-400 to-sky-soft-500 bg-clip-text text-transparent">
               AI Town
             </h1>
-            <p className="text-sm text-twilight-400 mt-2">二次元 AI 小镇陪伴智能体</p>
+            <p className="text-sm text-twilight-400 mt-2">
+              二次元 AI 小镇陪伴智能体
+            </p>
           </div>
 
-          {/* 登录表单 */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-twilight-500 mb-1.5">
-                API Key
-              </label>
-              <div className="relative">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="请输入 API Key"
-                  className="w-full px-4 py-2.5 rounded-xl bg-white/50 border border-sakura-200/50 text-twilight-600 placeholder:text-twilight-300 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent transition-all"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-twilight-400 hover:text-sakura-500 text-sm"
-                >
-                  {showKey ? '隐藏' : '显示'}
-                </button>
-              </div>
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sakura-400" />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="账号"
+                className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 placeholder:text-twilight-300 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent transition-all"
+                autoFocus
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sakura-400" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="密码"
+                className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 placeholder:text-twilight-300 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent transition-all"
+              />
             </div>
 
             {error && (
-              <div className="px-4 py-2.5 rounded-xl bg-red-50/80 border border-red-200/50 text-red-600 text-sm">
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="px-4 py-2.5 rounded-xl bg-red-50/90 border border-red-200/50 text-red-600 text-sm"
+              >
                 {error}
-              </div>
+              </motion.div>
             )}
 
-            <button
+            <AnimeButton
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-sakura-400 to-sakura-500 text-white font-medium hover:from-sakura-500 hover:to-sakura-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-sakura-400/30 hover:shadow-sakura-400/50 hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full py-3 text-base"
             >
-              {loading ? '登录中...' : '登录'}
-            </button>
+              {loading ? "登录中..." : "登录小镇"}
+            </AnimeButton>
           </form>
 
-          {/* 提示 */}
           <div className="mt-6 text-center text-xs text-twilight-400">
-            默认 API Key: <code className="px-1.5 py-0.5 rounded bg-white/40 text-sakura-500">your-api-key</code>
+            默认账号:{" "}
+            <code className="px-2 py-0.5 rounded-lg bg-white/50 text-sakura-500 font-medium">
+              admin
+            </code>
+            {" / "}
+            <code className="px-2 py-0.5 rounded-lg bg-white/50 text-sakura-500 font-medium">
+              admin123
+            </code>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

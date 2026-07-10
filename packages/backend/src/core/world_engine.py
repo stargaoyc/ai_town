@@ -280,18 +280,25 @@ class WorldEngine:
         """
         # 主哈希存储摘要
         time_state = state.get("time", {})
-        # weather 字段已为字符串（扁平结构），直接使用
-        weather = state.get("weather", "sunny")
+        # weather 字段可能是 dict 或字符串
+        weather_raw = state.get("weather", "sunny")
+        if isinstance(weather_raw, dict):
+            weather = str(weather_raw.get("weather", "sunny"))
+            temperature = weather_raw.get("temperature")
+        else:
+            weather = str(weather_raw) if weather_raw else "sunny"
+            temperature = None
 
-        await self.redis.hset(
-            "world:state",
-            mapping={
-                "tick_id": str(self.tick_id),
-                "world_time": str(time_state.get("world_time", "")),
-                "weather": str(weather),  # 直接使用字符串
-                "updated_at": datetime.now().isoformat(),
-            },
-        )
+        mapping: dict[str, str] = {
+            "tick_id": str(self.tick_id),
+            "world_time": str(time_state.get("world_time", "")),
+            "weather": weather,
+            "updated_at": datetime.now().isoformat(),
+        }
+        if temperature is not None:
+            mapping["temperature"] = str(temperature)
+
+        await self.redis.hset("world:state", mapping=mapping)
 
         logger.debug("world_state_saved", tick_id=self.tick_id)
 

@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 24
     api_key: str | None = None
+    admin_username: str = "admin"
+    admin_password: str = "admin123"
 
     # Cost Control
     llm_daily_budget_usd: float = 10.0

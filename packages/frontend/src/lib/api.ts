@@ -1,22 +1,22 @@
-const BASE_URL = '/api/v1';
+const BASE_URL = "/api/v1";
 
 function getToken(): string | null {
-  return localStorage.getItem('token');
+  return localStorage.getItem("token");
 }
 
 function getApiKey(): string | null {
-  return localStorage.getItem('api_key');
+  return localStorage.getItem("api_key");
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(options?.headers as Record<string, string>),
   };
   const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const apiKey = getApiKey();
-  if (apiKey) headers['X-API-Key'] = apiKey;
+  if (apiKey) headers["X-API-Key"] = apiKey;
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
@@ -78,7 +78,7 @@ export interface Memory {
 export interface Message {
   id: string;
   conversation_id: string;
-  sender: 'user' | 'character' | 'system';
+  sender: "user" | "character" | "system";
   content: string;
   tokens?: number;
   cost?: number;
@@ -113,33 +113,49 @@ export interface Scene {
 
 export const api = {
   getHealth: () =>
-    fetch('/health').then((r) => r.json()) as Promise<{ status: string; world_tick: number; redis: string }>,
+    fetch("/health").then((r) => r.json()) as Promise<{
+      status: string;
+      world_tick: number;
+      redis: string;
+    }>,
 
   getCharacters: (params?: { limit?: number; active_only?: boolean }) => {
-    const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+    const qs = params
+      ? "?" + new URLSearchParams(params as Record<string, string>).toString()
+      : "";
     return request<{ data: Character[]; total: number }>(`/characters${qs}`);
   },
   getCharacter: (id: string) => request<Character>(`/characters/${id}`),
 
-  getWorld: () => request<WorldState>('/world'),
-  getWorldEvents: (tickId: number) => request<{ data: unknown[] }>(`/world/events/${tickId}`),
+  getWorld: () => request<WorldState>("/world"),
+  getWorldEvents: (tickId: number) =>
+    request<{ data: unknown[] }>(`/world/events/${tickId}`),
 
-  getActions: () => request<{ data: Action[] }>('/actions'),
+  getActions: () => request<{ data: Action[] }>("/actions"),
   getMemories: (characterId: string, limit = 20) =>
     request<{ data: Memory[] }>(`/memories/${characterId}?limit=${limit}`),
 
   sendMessage: (characterId: string, userId: string, content: string) =>
-    request<{ conversation_id: string; message_id: string; content: string }>('/messages/send', {
-      method: 'POST',
-      body: JSON.stringify({ character_id: characterId, user_id: userId, content }),
-    }),
+    request<{ conversation_id: string; message_id: string; content: string }>(
+      "/messages/send",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          character_id: characterId,
+          user_id: userId,
+          content,
+        }),
+      },
+    ),
   getHistory: (characterId: string, limit = 20) =>
-    request<{ data: Message[] }>(`/messages/history?character_id=${characterId}&limit=${limit}`),
-  getConversations: () => request<{ data: Conversation[] }>('/conversations'),
+    request<{ data: Message[] }>(
+      `/messages/history?character_id=${characterId}&limit=${limit}`,
+    ),
+  getConversations: () => request<{ data: Conversation[] }>("/conversations"),
 
-  forceTick: () => request('/admin/tick', { method: 'POST' }),
-  getAdminStatus: () => request<AdminStatus>('/admin/status'),
+  forceTick: () => request("/admin/tick", { method: "POST" }),
+  getAdminStatus: () => request<AdminStatus>("/admin/status"),
 
-  getScenes: () => request<{ data: Scene[] }>('/town/scenes'),
+  getScenes: () => request<{ data: Scene[] }>("/town/scenes"),
   getScene: (id: string) => request<Scene>(`/town/scenes/${id}`),
 };

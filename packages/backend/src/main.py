@@ -411,28 +411,30 @@ async def health():
 
 @app.post("/api/v1/auth/login")
 async def login(body: dict):
-    """登录接口 - 通过 API Key 换取 JWT Token
+    """登录接口 - 账号密码换取 JWT Token
 
-    请求体: {"api_key": "your-api-key"}
-    返回: {"token": "jwt_token", "user_id": "static", "expires_in": 86400}
+    请求体: {"username": "admin", "password": "admin123"}
+    返回: {"token": "jwt_token", "user_id": "admin", "expires_in": 86400}
     """
     import secrets
 
-    api_key = body.get("api_key", "")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="api_key is required")
+    username = body.get("username", "")
+    password = body.get("password", "")
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password are required")
 
-    # 校验 API Key（与 middleware 中 _validate_api_key 逻辑一致）
-    if not settings.api_key or not secrets.compare_digest(api_key, settings.api_key):
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    # 校验账号密码
+    if not secrets.compare_digest(username, settings.admin_username) or not secrets.compare_digest(password, settings.admin_password):
+        logger.warning("auth_login_failed", username=username)
+        raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # 生成 JWT Token
-    token = create_token("static")
-    logger.info("auth_login_success", user_id="static")
+    token = create_token(username)
+    logger.info("auth_login_success", user_id=username)
 
     return {
         "token": token,
-        "user_id": "static",
+        "user_id": username,
         "expires_in": settings.jwt_expire_hours * 3600,
     }
 
@@ -520,13 +522,42 @@ async def get_world_state():
     """获取世界状态
 
     Returns:
-        世界当前状态（从 Redis 读取）
+        世界当前状态（与前端 WorldState 接口对齐）
     """
     if not redis:
         raise HTTPException(status_code=503, detail="Redis not connected")
 
+    import json
+
     state = await redis.hgetall("world:state")
-    return {"data": dict(state)}
+    tick_id = int(state.get("tick_id", 0)) if state.get("tick_id") else 0
+    world_time_raw = str(state.get("world_time", ""))
+    # 兼容历史数据：world_time 可能被 JSON 序列化过两次
+    try:
+        world_time = json.loads(world_time_raw)
+        if not isinstance(world_time, str):
+            world_time = world_time_raw
+    except (json.JSONDecodeError, TypeError):
+        world_time = world_time_raw
+    weather = str(state.get("weather", "sunny"))
+    temperature = state.get("temperature")
+
+    # 查询活跃角色数
+    active_characters = 0
+    try:
+        async with db.session() as session:
+            repo = CharacterRepository(session)
+            active_characters = len(await repo.get_active_characters())
+    except Exception as e:
+        logger.warning("world_state_active_characters_failed", error=str(e))
+
+    return {
+        "tick_id": tick_id,
+        "world_time": world_time,
+        "weather": weather,
+        "temperature": int(temperature) if temperature is not None else None,
+        "active_characters": active_characters,
+    }
 
 
 @app.get("/api/v1/world/events/{tick_id}")

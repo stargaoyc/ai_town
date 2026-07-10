@@ -1,7 +1,11 @@
 @import 'tailwindcss';
 
-/* 二次元配色（Tailwind v4 @theme） */
+/* =========================================================
+   AI Town — 现代二次元风格设计系统（Tailwind CSS v4）
+   ========================================================= */
+
 @theme {
+  /* ---------------- 樱花色系 ---------------- */
   --color-sakura-50: #fff5f8;
   --color-sakura-100: #ffe8ef;
   --color-sakura-200: #ffcdd9;
@@ -13,78 +17,168 @@
   --color-sakura-800: #be3b54;
   --color-sakura-900: #a33146;
 
+  /* ---------------- 天空色系 ---------------- */
   --color-sky-soft-50: #f0faff;
   --color-sky-soft-100: #e0f5ff;
   --color-sky-soft-200: #baeaff;
   --color-sky-soft-300: #7ec8e3;
   --color-sky-soft-400: #5db8d5;
   --color-sky-soft-500: #3ba8c7;
+  --color-sky-soft-600: #2a8fb0;
+  --color-sky-soft-700: #1f7491;
+  --color-sky-soft-800: #185d75;
+  --color-sky-soft-900: #124d60;
 
+  /* ---------------- 暮光色系 ---------------- */
   --color-twilight-50: #f8f5ff;
   --color-twilight-100: #ede7ff;
   --color-twilight-200: #dcd0ff;
   --color-twilight-300: #b19cd9;
   --color-twilight-400: #9b7fd1;
   --color-twilight-500: #7a5fc3;
+  --color-twilight-600: #6649ab;
+  --color-twilight-700: #543a8d;
+  --color-twilight-800: #442f71;
+  --color-twilight-900: #37265c;
 
-  --color-glass-bg: rgba(255, 255, 255, 0.55);
+  /* ---------------- 玻璃拟态 ---------------- */
+  --color-glass-bg: rgba(255, 255, 255, 0.6);
+  --color-glass-bg-dark: rgba(30, 30, 45, 0.55);
   --color-glass-blur: 16px;
+  --color-glass-border: rgba(255, 255, 255, 0.5);
+  --color-glass-border-dark: rgba(255, 255, 255, 0.08);
+
+  /* ---------------- 阴影 ---------------- */
   --shadow-soft: 0 4px 20px rgba(255, 143, 171, 0.12);
-  --shadow-glow: 0 0 30px rgba(255, 143, 171, 0.2);
+  --shadow-soft-lg: 0 12px 40px rgba(255, 143, 171, 0.18);
+  --shadow-glow: 0 0 30px rgba(255, 143, 171, 0.25);
+  --shadow-glow-sky: 0 0 30px rgba(126, 200, 227, 0.25);
+  --shadow-glow-twilight: 0 0 30px rgba(177, 156, 217, 0.25);
+  --shadow-card: 0 20px 60px rgba(255, 143, 171, 0.2);
+
+  /* ---------------- 动画时长 ---------------- */
+  --ease-anime: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* =========================================================
+   基础 & 浅色默认主题
+   ========================================================= */
+
+:root {
+  color-scheme: light;
 }
 
 body {
   margin: 0;
-  font-family: 'Inter', 'HarmonyOS Sans', 'Source Han Sans CN', sans-serif;
+  font-family: 'Inter', 'HarmonyOS Sans', 'Source Han Sans CN', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   background: linear-gradient(135deg, #ffe8ef 0%, #e0f5ff 50%, #ede7ff 100%);
   background-attachment: fixed;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 装饰性浮动花瓣背景 */
+/* 深色主题（可通过 .dark 在 html 上切换） */
+.dark body {
+  background: linear-gradient(135deg, #1a1220 0%, #10182c 50%, #1a1220 100%);
+  color: #f8f5ff;
+}
+
+/* =========================================================
+   全局装饰层
+   ========================================================= */
+
 body::before {
   content: '';
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-image:
-    radial-gradient(circle at 20% 30%, rgba(255, 143, 171, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(126, 200, 227, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(177, 156, 217, 0.05) 0%, transparent 60%);
+    radial-gradient(circle at 20% 20%, rgba(255, 143, 171, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 80% 30%, rgba(126, 200, 227, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 40% 80%, rgba(177, 156, 217, 0.1) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
 
-/* 自定义滚动条 */
+/* =========================================================
+   自定义滚动条
+   ========================================================= */
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: rgba(255, 232, 239, 0.3);
+  background: rgba(255, 232, 239, 0.4);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb {
   background: linear-gradient(135deg, #ffa3b5, #b19cd9);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, #ff7a94, #9b7fd1);
 }
 
-/* 选中文本颜色 */
+.dark ::-webkit-scrollbar-track {
+  background: rgba(30, 30, 45, 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #ff7a94, #7a5fc3);
+}
+
+/* =========================================================
+   选中文本颜色
+   ========================================================= */
+
 ::selection {
-  background: rgba(255, 143, 171, 0.3);
+  background: rgba(255, 143, 171, 0.35);
   color: #d94968;
 }
 
-/* 渐入动画 */
+.dark ::selection {
+  background: rgba(255, 122, 148, 0.45);
+  color: #ffe8ef;
+}
+
+/* =========================================================
+   动画关键帧
+   ========================================================= */
+
+@keyframes petal-fall {
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
@@ -92,24 +186,162 @@ body::before {
   }
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.4s ease-out;
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
-/* 卡片悬浮动画 */
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 143, 171, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 143, 171, 0.6);
+  }
+}
+
+@keyframes swing {
+  0%, 100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* =========================================================
+   花瓣装饰（CSS 生成多层飘落）
+   ========================================================= */
+
+.petal {
+  position: fixed;
+  top: -10vh;
+  width: 12px;
+  height: 12px;
+  border-radius: 50% 0 50% 50%;
+  background: linear-gradient(135deg, rgba(255, 163, 181, 0.9), rgba(255, 122, 148, 0.7));
+  pointer-events: none;
+  z-index: 1;
+  animation: petal-fall linear infinite;
+  filter: blur(0.5px);
+}
+
+.petal::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50% 0 50% 50%;
+  background: linear-gradient(135deg, rgba(255, 232, 239, 0.6), transparent);
+}
+
+.petal:nth-child(1) { left: 5%; animation-duration: 14s; animation-delay: 0s; transform: scale(0.8); }
+.petal:nth-child(2) { left: 12%; animation-duration: 18s; animation-delay: 2s; transform: scale(1.1); background: linear-gradient(135deg, rgba(177, 156, 217, 0.8), rgba(123, 95, 209, 0.6)); }
+.petal:nth-child(3) { left: 20%; animation-duration: 16s; animation-delay: 5s; transform: scale(0.9); }
+.petal:nth-child(4) { left: 28%; animation-duration: 20s; animation-delay: 1s; transform: scale(1.2); background: linear-gradient(135deg, rgba(126, 200, 227, 0.8), rgba(59, 168, 199, 0.6)); }
+.petal:nth-child(5) { left: 38%; animation-duration: 15s; animation-delay: 7s; transform: scale(0.7); }
+.petal:nth-child(6) { left: 45%; animation-duration: 19s; animation-delay: 3s; transform: scale(1); }
+.petal:nth-child(7) { left: 55%; animation-duration: 17s; animation-delay: 6s; transform: scale(0.85); background: linear-gradient(135deg, rgba(255, 163, 181, 0.85), rgba(177, 156, 217, 0.6)); }
+.petal:nth-child(8) { left: 62%; animation-duration: 21s; animation-delay: 4s; transform: scale(1.15); }
+.petal:nth-child(9) { left: 70%; animation-duration: 13s; animation-delay: 8s; transform: scale(0.75); background: linear-gradient(135deg, rgba(126, 200, 227, 0.75), rgba(255, 122, 148, 0.55)); }
+.petal:nth-child(10) { left: 78%; animation-duration: 18s; animation-delay: 2.5s; transform: scale(1.05); }
+.petal:nth-child(11) { left: 85%; animation-duration: 16s; animation-delay: 5.5s; transform: scale(0.95); background: linear-gradient(135deg, rgba(177, 156, 217, 0.8), rgba(255, 163, 181, 0.6)); }
+.petal:nth-child(12) { left: 92%; animation-duration: 22s; animation-delay: 1.5s; transform: scale(1.1); }
+
+/* =========================================================
+   实用类
+   ========================================================= */
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
 }
 
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
 
-/* 渐变文字 */
+.animate-swing {
+  animation: swing 4s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-twinkle {
+  animation: twinkle 2s ease-in-out infinite;
+}
+
 .gradient-text {
   background: linear-gradient(135deg, #ff8fab, #7ec8e3, #b19cd9);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.gradient-text-sakura {
+  background: linear-gradient(135deg, #ff8fab, #ff7a94);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-text-sky {
+  background: linear-gradient(135deg, #7ec8e3, #3ba8c7);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-text-twilight {
+  background: linear-gradient(135deg, #b19cd9, #7a5fc3);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.glass-card {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(var(--color-glass-blur));
+  -webkit-backdrop-filter: blur(var(--color-glass-blur));
+  border: 1px solid var(--color-glass-border);
+  box-shadow: var(--shadow-soft);
+}
+
+.dark .glass-card {
+  background: var(--color-glass-bg-dark);
+  border: 1px solid var(--color-glass-border-dark);
+}
+
+/* 霓虹光晕背景 */
+.glow-sakura {
+  box-shadow: 0 0 40px rgba(255, 143, 171, 0.3);
+}
+
+.glow-sky {
+  box-shadow: 0 0 40px rgba(126, 200, 227, 0.3);
+}
+
+.glow-twilight {
+  box-shadow: 0 0 40px rgba(177, 156, 217, 0.3);
 }

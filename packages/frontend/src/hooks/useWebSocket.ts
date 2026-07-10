@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 interface UseWebSocketOptions {
   url: string;
@@ -25,7 +25,7 @@ export function useWebSocket({
   onClose,
   maxRetries = 10,
 }: UseWebSocketOptions): UseWebSocketReturn {
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [retryCount, setRetryCount] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -48,11 +48,14 @@ export function useWebSocket({
     shouldConnectRef.current = true;
     clearRetryTimer();
 
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    ) {
       return;
     }
 
-    setStatus('connecting');
+    setStatus("connecting");
 
     try {
       const ws = new WebSocket(url);
@@ -61,7 +64,7 @@ export function useWebSocket({
       ws.onopen = () => {
         retryCountRef.current = 0;
         setRetryCount(0);
-        setStatus('connected');
+        setStatus("connected");
         callbacksRef.current.onOpen?.();
       };
 
@@ -76,11 +79,11 @@ export function useWebSocket({
       };
 
       ws.onerror = () => {
-        setStatus('error');
+        setStatus("error");
       };
 
       ws.onclose = () => {
-        setStatus('disconnected');
+        setStatus("disconnected");
         callbacksRef.current.onClose?.();
 
         // 自动重连
@@ -97,7 +100,7 @@ export function useWebSocket({
         }
       };
     } catch {
-      setStatus('error');
+      setStatus("error");
     }
   }, [url, maxRetries, clearRetryTimer]);
 
@@ -112,7 +115,7 @@ export function useWebSocket({
       wsRef.current.close();
       wsRef.current = null;
     }
-    setStatus('disconnected');
+    setStatus("disconnected");
   }, [clearRetryTimer]);
 
   const send = useCallback((data: string) => {
