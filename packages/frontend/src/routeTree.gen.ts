@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorldRouteImport } from './routes/world'
+import { Route as MapRouteImport } from './routes/map'
 import { Route as CharactersRouteImport } from './routes/characters'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CharactersCharacterIdRouteImport } from './routes/characters.$characterId'
 
@@ -19,9 +21,19 @@ const WorldRoute = WorldRouteImport.update({
   path: '/world',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MapRoute = MapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CharactersRoute = CharactersRouteImport.update({
   id: '/characters',
   path: '/characters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,34 +49,61 @@ const CharactersCharacterIdRoute = CharactersCharacterIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/map': typeof MapRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/map': typeof MapRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/map': typeof MapRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/characters' | '/world' | '/characters/$characterId'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/characters'
+    | '/map'
+    | '/world'
+    | '/characters/$characterId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/characters' | '/world' | '/characters/$characterId'
-  id: '__root__' | '/' | '/characters' | '/world' | '/characters/$characterId'
+  to:
+    | '/'
+    | '/admin'
+    | '/characters'
+    | '/map'
+    | '/world'
+    | '/characters/$characterId'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/characters'
+    | '/map'
+    | '/world'
+    | '/characters/$characterId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   CharactersRoute: typeof CharactersRouteWithChildren
+  MapRoute: typeof MapRoute
   WorldRoute: typeof WorldRoute
 }
 
@@ -77,11 +116,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorldRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/map': {
+      id: '/map'
+      path: '/map'
+      fullPath: '/map'
+      preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/characters': {
       id: '/characters'
       path: '/characters'
       fullPath: '/characters'
       preLoaderRoute: typeof CharactersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -115,7 +168,9 @@ const CharactersRouteWithChildren = CharactersRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   CharactersRoute: CharactersRouteWithChildren,
+  MapRoute: MapRoute,
   WorldRoute: WorldRoute,
 }
 export const routeTree = rootRouteImport

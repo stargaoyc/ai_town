@@ -1,0 +1,1 @@
+{"version":"7.0.1-rc","root":["./src/main.tsx","./src/routetree.gen.ts","./src/vite-env.d.ts","./src/components/ui.tsx","./src/lib/api.ts","./src/lib/queries.ts","./src/routes/__root.tsx","./src/routes/admin.tsx","./src/routes/characters.$characterid.tsx","./src/routes/characters.tsx","./src/routes/index.tsx","./src/routes/map.tsx","./src/routes/world.tsx"]}
