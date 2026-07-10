@@ -30,7 +30,7 @@ from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.actions import ActionRegistry, register_all
-from src.auth import auth_dependency
+from src.auth import auth_dependency, create_token
 from src.config import settings
 from src.core import WorldEngine
 from src.cost_control.budget_manager import set_budget_manager
@@ -357,8 +357,10 @@ async def _character_tick_loop() -> None:
 # === FastAPI 应用实例 ===
 # /health 和 /ws 端点无需鉴权，所有 /api/v1/ 路由强制鉴权
 async def _api_auth(request: Request) -> dict | None:
-    """条件鉴权：仅 /api/ 路径需要鉴权"""
+    """条件鉴权：仅 /api/ 路径需要鉴权（登录接口豁免）"""
     if request.url.path.startswith("/api/"):
+        if request.url.path == "/api/v1/auth/login":
+            return None
         return await auth_dependency(request)
     return None
 
@@ -404,6 +406,34 @@ async def health():
         "world_tick": world_engine.tick_id if world_engine else 0,
         "redis": "connected" if redis else "disconnected",
         "character_engine": "available" if character_engine else "unavailable",
+    }
+
+
+@app.post("/api/v1/auth/login")
+async def login(body: dict):
+    """登录接口 - 通过 API Key 换取 JWT Token
+
+    请求体: {"api_key": "your-api-key"}
+    返回: {"token": "jwt_token", "user_id": "static", "expires_in": 86400}
+    """
+    import secrets
+
+    api_key = body.get("api_key", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="api_key is required")
+
+    # 校验 API Key（与 middleware 中 _validate_api_key 逻辑一致）
+    if not settings.api_key or not secrets.compare_digest(api_key, settings.api_key):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    # 生成 JWT Token
+    token = create_token("static")
+    logger.info("auth_login_success", user_id="static")
+
+    return {
+        "token": token,
+        "user_id": "static",
+        "expires_in": settings.jwt_expire_hours * 3600,
     }
 
 

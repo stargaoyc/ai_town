@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorldRouteImport } from './routes/world'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
@@ -24,6 +25,11 @@ const WorldRoute = WorldRouteImport.update({
 const MapRoute = MapRouteImport.update({
   id: '/map',
   path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CharactersRoute = CharactersRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/characters'
+    | '/login'
     | '/map'
     | '/world'
     | '/characters/$characterId'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/characters'
+    | '/login'
     | '/map'
     | '/world'
     | '/characters/$characterId'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/characters'
+    | '/login'
     | '/map'
     | '/world'
     | '/characters/$characterId'
@@ -103,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   CharactersRoute: typeof CharactersRouteWithChildren
+  LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
   WorldRoute: typeof WorldRoute
 }
@@ -121,6 +134,13 @@ declare module '@tanstack/react-router' {
       path: '/map'
       fullPath: '/map'
       preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/characters': {
@@ -170,6 +190,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   CharactersRoute: CharactersRouteWithChildren,
+  LoginRoute: LoginRoute,
   MapRoute: MapRoute,
   WorldRoute: WorldRoute,
 }

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { GlassCard, LoadingSpinner, ErrorDisplay, StatCard } from '@/components/ui';
+import { GlassCard, ErrorDisplay, StatCard, PageHeader, SkeletonList, EmptyState } from '@/components/ui';
 import { useWorld, useActions } from '@/lib/queries';
 
 export const Route = createFileRoute('/world')({
@@ -11,14 +11,17 @@ function WorldPage() {
   const { data: actionsData } = useActions();
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-sakura-600">世界状态</h2>
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader title="世界状态" subtitle="虚拟时间、天气与可用行为" icon="🌍" />
 
-      {isLoading && <LoadingSpinner />}
+      {isLoading && <SkeletonList count={1} />}
       {error && <ErrorDisplay error={error} />}
 
       {world && (
         <GlassCard>
+          <h3 className="font-semibold text-sakura-600 mb-4 flex items-center gap-2">
+            <span>🌐</span> 当前状态
+          </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard title="虚拟时间" value={world.world_time} icon="🕐" />
             <StatCard title="天气" value={world.weather} icon="🌤️" color="twilight" />
@@ -29,19 +32,22 @@ function WorldPage() {
       )}
 
       <GlassCard>
-        <h3 className="font-semibold text-sakura-600 mb-4">可用 Action 列表</h3>
+        <h3 className="font-semibold text-sakura-600 mb-4 flex items-center gap-2">
+          <span>🎯</span> 可用 Action
+        </h3>
+        {actionsData?.data?.length === 0 && <EmptyState icon="🎯" title="暂无 Action" />}
         <div className="grid md:grid-cols-2 gap-3">
           {actionsData?.data?.map((action) => (
-            <div key={action.id} className="p-3 rounded-lg bg-white/30">
-              <div className="font-medium text-sakura-600">{action.name}</div>
-              <div className="text-xs text-twilight-400 mt-1">
-                {action.category} · {action.id}
+            <div key={action.id} className="p-4 rounded-xl bg-white/30 border border-white/20 hover:bg-white/40 hover:scale-[1.02] transition-all">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium text-sakura-600">{action.name}</span>
+                <span className="px-2 py-0.5 rounded-full text-xs bg-twilight-100 text-twilight-500">{action.category}</span>
               </div>
               {action.description && (
-                <p className="text-sm text-twilight-500 mt-1">{action.description}</p>
+                <p className="text-sm text-twilight-400 mt-1">{action.description}</p>
               )}
             </div>
-          )) ?? <p className="text-sm text-twilight-400">暂无 Action</p>}
+          )) ?? <p className="text-sm text-twilight-400">加载中...</p>}
         </div>
       </GlassCard>
     </div>
