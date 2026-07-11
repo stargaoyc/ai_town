@@ -126,7 +126,11 @@ def setup_tracing(app: FastAPI) -> None:
         return
     else:
         # 生产环境：OTLP HTTP
-        exporter = OTLPSpanExporter(endpoint=settings.otel_endpoint)  # type: ignore[union-attr]
+        # OTLPSpanExporter 不会自动追加 /v1/traces，需在 endpoint 中包含完整路径
+        endpoint = settings.otel_endpoint.rstrip("/")
+        if not endpoint.endswith("/v1/traces"):
+            endpoint += "/v1/traces"
+        exporter = OTLPSpanExporter(endpoint=endpoint)  # type: ignore[union-attr]
         logger.info(
             "otel_tracing_otlp_exporter",
             endpoint=settings.otel_endpoint,

@@ -82,7 +82,7 @@ class PromptTemplates:
         Args:
             config_dir: 配置文件目录，默认为 configs/prompts
         """
-        self.config_dir = config_dir or Path("configs/prompts")
+        self.config_dir = config_dir or Path(__file__).resolve().parents[4] / "configs" / "prompts"
         self.templates: dict[str, str] = {}
         self._load_templates()
 

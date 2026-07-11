@@ -1,0 +1,30 @@
+name: decision
+template: |
+  [角色档案]
+  姓名: {name}
+  性格: {personality}
+  背景: {backstory}
+
+  [当前状态]
+  位置: {location}
+  精力: {energy}/100
+  饥饿: {hunger}/100
+  情绪: {mood}
+
+  [世界状态]
+  时间: {world_time}
+  天气: {weather}
+  场景: {scenes}
+
+  [相关记忆]
+  {memories}
+
+  [当前计划]
+  {plans}
+
+  [候选 Action]
+  {candidates}
+
+  [输出格式]
+  请输出 JSON:
+  {{ "action": "<action_id>", "reason": "<理由>", "params": {{...}}, "duration": <分钟> }}

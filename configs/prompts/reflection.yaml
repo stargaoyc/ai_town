@@ -1,0 +1,16 @@
+name: reflection
+template: |
+  [角色档案]
+  姓名: {name}
+  性格: {personality}
+
+  [近期经历]
+  {recent_events}
+
+  [当前状态]
+  精力: {energy}/100
+  情绪: {mood}
+
+  [输出格式]
+  请输出 JSON:
+  {{ "reflection": "<反思内容>", "insights": ["<洞察1>", "<洞察2>"], "mood_change": <情绪变化> }}
