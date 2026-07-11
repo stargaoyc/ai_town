@@ -320,13 +320,17 @@ async def lifespan(app: FastAPI):
 async def _character_tick_loop() -> None:
     """Character Tick 后台循环
 
-    定期对所有活跃角色执行 Tick，推进角色状态
+    定期对所有活跃角色执行 Tick，推进角色状态。
+    遇到 LLM 限流 (429) 时自动退避，避免抢占消息处理的 API 配额。
     """
     logger.info("character_tick_loop_started", interval=settings.character_tick_seconds)
 
+    backoff_multiplier = 1  # 限流退避倍数
+    max_backoff = 10        # 最大退避倍数
+
     while True:
         try:
-            await asyncio.sleep(settings.character_tick_seconds)
+            await asyncio.sleep(settings.character_tick_seconds * backoff_multiplier)
 
             if not character_engine or not redis:
                 continue
@@ -340,28 +344,48 @@ async def _character_tick_loop() -> None:
                 logger.debug("no_active_characters")
                 continue
 
-            logger.info("character_tick_batch_start", count=len(characters))
+            logger.info("character_tick_batch_start", count=len(characters), backoff=backoff_multiplier)
 
             # 对每个角色执行 Tick
             success_count = 0
+            rate_limited = False
             for char in characters:
                 try:
                     await character_engine.tick_character(char.id)
                     success_count += 1
                 except Exception as e:
+                    error_str = str(e)
+                    # 检测 LLM 限流 (429)，立即停止当前批次并退避
+                    if "429" in error_str or "RateLimitError" in error_str:
+                        logger.warning(
+                            "character_tick_rate_limited",
+                            character_id=str(char.id),
+                            character_name=char.name,
+                            backoff_multiplier=backoff_multiplier,
+                        )
+                        rate_limited = True
+                        break
                     logger.error(
                         "character_tick_failed",
                         character_id=str(char.id),
                         character_name=char.name,
-                        error=str(e),
+                        error=error_str,
                         exc_info=True,
                     )
+
+            # 限流退避：逐次增加等待时间，成功后逐步恢复
+            if rate_limited:
+                backoff_multiplier = min(backoff_multiplier * 2, max_backoff)
+                logger.warning("character_tick_backoff", multiplier=backoff_multiplier)
+            elif success_count > 0:
+                backoff_multiplier = 1  # 全部或部分成功，恢复正常间隔
 
             logger.info(
                 "character_tick_batch_complete",
                 total=len(characters),
                 success=success_count,
                 failed=len(characters) - success_count,
+                rate_limited=rate_limited,
             )
 
         except asyncio.CancelledError:

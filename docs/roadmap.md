@@ -538,7 +538,7 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 所有 Phase 0-5 已全部完成。后续优化方向：
 
 1. **生产部署**：Docker Compose 编排 + Nginx 反向代理 + HTTPS
-2. **Grafana 统一面板**：集成 Prometheus + Loki + Jaeger 数据源
+2. ~~**Grafana 统一面板**：集成 Prometheus + Loki + Jaeger 数据源~~ ✅ 已完成（3 个预置 Dashboard + Trace↔Logs 联动）
 3. **告警规则**：5xx 错误率 / Tick 延迟 / LLM 失败率 → 飞书通知
 4. **Docker 日志轮转**：json-file + max-size 防磁盘撑满
 5. **数据库备份自动化**：pg_cron + WAL 归档

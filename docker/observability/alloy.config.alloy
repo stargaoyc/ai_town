@@ -1,0 +1,77 @@
+// Grafana Alloy 配置 - AI Town 统一日志采集
+// 采集后端容器日志 → JSON 解析 → 标签提取 → Loki 推送
+
+// ============================================================
+// 日志采集 → Loki
+// ============================================================
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Docker 容器日志发现（通过 Docker Socket）
+discovery.docker "backend" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name = "label"
+    values = ["ai-town-service=backend"]
+  }
+}
+
+// 后端日志管道：JSON 解析 → 标签提取 → Loki 推送
+loki.source.docker "backend_logs" {
+  host       = "unix:///var/run/docker.sock"
+  discovery  = discovery.docker.backend
+  forward_to = [loki.process.backend_pipeline.receiver]
+}
+
+loki.process "backend_pipeline" {
+  forward_to = [loki.write.default.receiver]
+
+  // JSON 解析
+  stage.json {
+    expressions = {
+      level         = "level",
+      event         = "event",
+      trace_id      = "",
+      character_id  = "",
+      error         = "",
+      timestamp     = "timestamp",
+    }
+  }
+
+  // 提取为 Loki 标签（高基数字段不放标签）
+  stage.labels {
+    values = {
+      level = "level",
+    }
+  }
+
+  // 静态标签
+  stage.static_labels {
+    values = {
+      service = "backend",
+    }
+  }
+
+  // 结构化元数据（Loki 3.x，不增加索引基数）
+  stage.loki_metadata {
+    values = {
+      trace_id     = "trace_id",
+      character_id = "character_id",
+      event        = "event",
+    }
+  }
+}
+
+// ============================================================
+// 主机指标采集 → Prometheus（可选，Alloy 也可推送指标）
+// ============================================================
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}

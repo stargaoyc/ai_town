@@ -1,0 +1,77 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "LLM 调用 QPS (by model)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "sum(rate(ai_town_llm_call_total[1m])) by (model)", "legendFormat": "{{model}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    },
+    {
+      "title": "LLM 成本累计 (by model)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "ai_town_llm_cost_total_usd", "legendFormat": "Total USD", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []}
+    },
+    {
+      "title": "Token 消耗速率 (tokens/min, by model+type)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum(rate(ai_town_llm_tokens_total[1m])) by (model, type) * 60", "legendFormat": "{{model}} {{type}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "title": "LLM 调用延迟分布 (by model)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(ai_town_llm_call_duration_seconds_bucket[5m])) by (le, model))", "legendFormat": "{{model}} p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(ai_town_llm_call_duration_seconds_bucket[5m])) by (le, model))", "legendFormat": "{{model}} p95", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(ai_town_llm_call_duration_seconds_bucket[5m])) by (le, model))", "legendFormat": "{{model}} p99", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "title": "LLM 错误率 (%)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 24},
+      "targets": [{"expr": "sum(rate(ai_town_llm_call_total{status=\"failed\"}[5m])) / sum(rate(ai_town_llm_call_total[5m])) * 100", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 5}, {"color": "red", "value": 15}]}}, "overrides": []}
+    },
+    {
+      "title": "LLM 日志流 (含 error)",
+      "type": "logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 28},
+      "targets": [{"expr": "{service=\"backend\"} |= \"llm\"", "refId": "A"}],
+      "options": {"showTime": true, "showLabels": false, "wrapLogMessage": true, "prettifyLogMessage": true, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending"}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["ai-town", "llm"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "AI Town - LLM Monitor",
+  "uid": "ai-town-llm",
+  "version": 1,
+  "weekStart": ""
+}

@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -43,12 +42,14 @@ logger = get_logger(__name__)
 
 
 def _get_default_character_id() -> UUID | None:
-    """从环境变量读取默认对话角色 ID
+    """从配置读取默认对话角色 ID
 
     Returns:
         角色 UUID；未配置或格式非法时返回 None
     """
-    raw = os.environ.get("ONEBOT_DEFAULT_CHARACTER_ID")
+    from src.config import settings
+
+    raw = settings.onebot_default_character_id
     if not raw:
         return None
     try:
@@ -205,13 +206,16 @@ class OneBotAdapter:
                 pass
 
     async def handle_event(self, event: dict, onebot_ws: WebSocket) -> None:
-        """分发 OneBot v12 事件到对应处理器
+        """分发 OneBot 事件到对应处理器（兼容 OneBot 11 和 v12）
+
+        OneBot 11 使用 post_type，OneBot v12 使用 type。
 
         Args:
-            event: OneBot v12 事件字典
+            event: OneBot 事件字典
             onebot_ws: 该事件来源的 WebSocket 连接（用于回推消息）
         """
-        event_type = event.get("type")
+        # 兼容 OneBot 11 (post_type) 和 OneBot v12 (type)
+        event_type = event.get("type") or event.get("post_type")
 
         if event_type == "message":
             await self._handle_message_event(event, onebot_ws)
@@ -225,7 +229,7 @@ class OneBotAdapter:
             logger.debug("onebot_unknown_event", event_type=event_type)
 
     async def _handle_message_event(self, event: dict, onebot_ws: WebSocket) -> None:
-        """处理 OneBot v12 消息事件（私聊 / 群聊）
+        """处理 OneBot 消息事件（私聊 / 群聊），兼容 OneBot 11 和 v12
 
         流程：
         1. 提取 user_id / group_id / message_type / raw_message
@@ -233,7 +237,7 @@ class OneBotAdapter:
         3. 调用 MessageService.handle_user_message 生成角色回复
         4. 通过 send_message 回推回复
         """
-        # OneBot v12: detail_type 取值为 private / group
+        # 兼容 OneBot v12 (detail_type) 和 OneBot 11 (message_type)
         detail_type = event.get("detail_type") or event.get("message_type")
         user_id = event.get("user_id")
         group_id = event.get("group_id")

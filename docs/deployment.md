@@ -193,32 +193,45 @@ services:
     ports: ["4318:4318"]
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
-    ports: ["16686:16686"]
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["16686:16686", "4318:4318"]
 
   prometheus:
-    image: prom/prometheus
-    volumes: ["./prometheus.yml:/etc/prometheus/prometheus.yml"]
+    image: prom/prometheus:latest
+    volumes: ["./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
     ports: ["9090:9090"]
 
+  loki:
+    image: grafana/loki:3.0.0
+    volumes: ["./docker/observability/loki-config.yml:/etc/loki/local-config.yaml:ro"]
+    ports: ["3100:3100"]
+    command: -config.file=/etc/loki/local-config.yaml
+
   grafana:
-    image: grafana/grafana:12.x
+    image: grafana/grafana:12.0.0
     ports: ["3000:3000"]
     environment:
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./docker/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus, loki, jaeger]
 
   # 统一可观测性收集器（取代 Promtail）
   alloy:
     image: grafana/alloy:latest
     volumes:
-      - ./alloy.config.alloy:/etc/alloy/config.alloy
+      - ./docker/observability/alloy.config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     ports: ["12345:12345"]
-    depends_on: [loki, prometheus]
+    depends_on: [loki]
 
   langfuse:
     image: langfuse/langfuse:3
@@ -231,9 +244,10 @@ volumes:
   minio_data:
   grafana_data:
   loki_data:
+  prometheus_data:
 ```
 
-完整编排文件位于仓库根目录 `docker-compose.yml`。
+> **实际配置文件**：可观测性组件的完整配置位于 `docker/observability/` 目录，包含 Prometheus 采集规则、Loki 存储配置、Alloy 采集管道、Grafana 数据源与 3 个预置 Dashboard（Overview / LLM / Character Tick）。本地开发使用 `docker-compose-win.infra.yml`，生产使用 `docker-compose.infra.yml`。详见 [可观测性设计](observability.md#十二部署实现docker-compose)。
 
 ---
 

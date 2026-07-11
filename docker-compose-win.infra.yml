@@ -54,6 +54,93 @@ services:
     networks:
       - aitown-net
 
+  # ============================================================
+  # 可观测性组件
+  # ============================================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aitown-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - aitown-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: aitown-loki
+    restart: unless-stopped
+    volumes:
+      - ./docker/observability/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - ./data/loki:/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - aitown-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: aitown-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      TZ: Asia/Shanghai
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4318:4318"     # OTLP HTTP
+    networks:
+      - aitown-net
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: aitown-alloy
+    restart: unless-stopped
+    volumes:
+      - ./docker/observability/alloy.config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      - loki
+    networks:
+      - aitown-net
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    container_name: aitown-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+      TZ: Asia/Shanghai
+    volumes:
+      - ./docker/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/grafana:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    networks:
+      - aitown-net
+
 networks:
   aitown-net:
     driver: bridge

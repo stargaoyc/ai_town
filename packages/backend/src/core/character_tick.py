@@ -192,12 +192,21 @@ class CharacterTickEngine:
                 world[key] = value.decode()
 
         # 检索相关记忆（需要 db session 创建 RetrievalService）
+        # embedding 失败时降级为空记忆列表，不阻断 Tick
         query = f"角色{character.name}当前在{state.get('location')}，最近在做什么"
-        async with db.session() as session:
-            mem_repo = MemoryRepository(session)
-            retrieval_service = RetrievalService(self.llm, mem_repo)
-            memories = await retrieval_service.search(
-                character_id, query, top_k=10
+        memories = []
+        try:
+            async with db.session() as session:
+                mem_repo = MemoryRepository(session)
+                retrieval_service = RetrievalService(self.llm, mem_repo)
+                memories = await retrieval_service.search(
+                    character_id, query, top_k=10
+                )
+        except Exception as e:
+            logger.warning(
+                "memory_retrieval_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
             )
 
         return {

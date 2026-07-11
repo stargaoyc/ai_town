@@ -376,7 +376,96 @@ OTel Collector 配置 tail-based sampling，错误与慢请求优先保留。
 
 ---
 
-## 十一、相关文档
+## 十二、部署实现（Docker Compose）
+
+> 以下配置已落地，位于 `docker/observability/` 目录与 `docker-compose-win.infra.yml`。
+
+### 12.1 文件清单
+
+| 文件 | 说明 |
+|------|------|
+| `docker/observability/prometheus.yml` | Prometheus 采集配置（后端 /metrics + 自身 + Loki + Jaeger + Alloy） |
+| `docker/observability/loki-config.yml` | Loki 单节点配置（TSDB v13 schema，7 天保留，文件系统存储） |
+| `docker/observability/alloy.config.alloy` | Grafana Alloy 采集管道（Docker 日志 → JSON 解析 → Loki 推送） |
+| `docker/observability/grafana/datasources/datasources.yml` | Grafana 数据源自动配置（Prometheus + Loki + Jaeger，含 Trace↔Logs 联动） |
+| `docker/observability/grafana/dashboards.yml` | Grafana Dashboard Provider 配置 |
+| `docker/observability/grafana/dashboards/ai-town-overview.json` | 总览面板（指标 + 实时日志流） |
+| `docker/observability/grafana/dashboards/ai-town-llm.json` | LLM 监控面板（Token / Cost / 延迟 / 错误率） |
+| `docker/observability/grafana/dashboards/ai-town-character-tick.json` | 角色 Tick 面板（耗时 / 成败 / Action 分布） |
+
+### 12.2 Docker Compose 服务
+
+| 服务 | 镜像 | 端口 | 说明 |
+|------|------|------|------|
+| `prometheus` | `prom/prometheus:latest` | 9090 | 指标采集与存储 |
+| `loki` | `grafana/loki:3.0.0` | 3100 | 日志聚合存储 |
+| `jaeger` | `jaegertracing/all-in-one:1.60` | 16686 (UI), 4318 (OTLP) | 链路追踪存储与查询 |
+| `alloy` | `grafana/alloy:latest` | 12345 | 统一日志采集器（Docker 容器日志 → Loki） |
+| `grafana` | `grafana/grafana:12.0.0` | 3000 | 统一可视化面板 |
+
+### 12.3 启动方式
+
+```bash
+# Windows 本地开发
+docker compose -f docker-compose-win.infra.yml up -d
+
+# Linux/Mac
+docker compose -f docker-compose.infra.yml up -d
+```
+
+### 12.4 访问地址
+
+| 服务 | URL | 账号 |
+|------|-----|------|
+| Grafana | http://localhost:3000 | admin / admin123 |
+| Prometheus | http://localhost:9090 | — |
+| Jaeger UI | http://localhost:16686 | — |
+| Loki API | http://localhost:3100 | — |
+| Alloy UI | http://localhost:12345 | — |
+
+### 12.5 后端接入
+
+`.env` 中配置 OTel endpoint 指向 Jaeger 的 OTLP HTTP 接收端口：
+
+```env
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+后端启动后，OTel SDK 自动将 Trace 发送到 Jaeger，Prometheus 采集 `/metrics` 端点，Alloy 采集后端 stdout 日志推送到 Loki。
+
+### 12.6 Grafana 面板预览
+
+**AI Town Overview**（默认面板）包含：
+- 活跃角色数 / World Tick ID / Redis 状态 / LLM 费用 / HTTP QPS / 5xx 错误率（6 个 Stat）
+- World Tick 耗时 p50/p95/p99（Timeseries）
+- Character Tick 耗时 p50/p95/p99（Timeseries）
+- LLM 调用耗时 by model（Timeseries）
+- LLM Token 消耗速率 by model+type（Timeseries）
+- Action 成功率 / 消息处理速率（Stat）
+- DB 查询耗时 p95（Timeseries）
+- HTTP 请求耗时 by path（Timeseries）
+- 实时日志流（Logs panel，Loki 数据源）
+
+**AI Town - LLM Monitor** 包含：
+- LLM QPS / 成本累计 / Token 速率 / 延迟分布 / 错误率 / LLM 日志流
+
+**AI Town - Character Tick** 包含：
+- Tick 耗时分布 / Tick 频率 / 错误次数 / Action 执行统计 / Tick 日志流
+
+### 12.7 Trace ↔ Logs 联动
+
+Grafana 数据源已配置双向联动：
+
+1. **Trace → Logs**：在 Jaeger Trace 视图中点击任意 Span，自动跳转 Loki 查询该 `trace_id` 的所有日志
+2. **Logs → Trace**：在 Loki 日志视图中，日志行的 `trace_id` 字段显示为可点击链接，跳转 Jaeger 查看完整链路
+
+配置位于 `datasources.yml`：
+- Loki 数据源 `derivedFields` 提取 `trace_id` 并关联 Jaeger（uid: `jaeger`）
+- Jaeger 数据源 `tracesToLogs` 关联 Loki（uid: `loki`），按 `trace_id` 标签过滤
+
+---
+
+## 十三、相关文档
 
 | 主题 | 文档 |
 |------|------|

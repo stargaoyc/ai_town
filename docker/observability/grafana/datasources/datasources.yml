@@ -1,0 +1,52 @@
+# Grafana 数据源配置 - 自动配置 Prometheus / Loki / Jaeger
+
+apiVersion: 1
+
+datasources:
+  # Prometheus - 指标
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+
+  # Loki - 日志
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      # Logs → Trace 联动：日志中 trace_id 跳转 Jaeger
+      derivedFields:
+        - name: TraceID
+          matcherRegex: "trace_id[\"']?[:= ]+[\"']?([0-9a-fA-F]{32})"
+          url: "$${__value.raw}"
+          datasourceUid: jaeger
+          urlDisplayLabel: "View in Jaeger"
+
+  # Jaeger - 链路追踪
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+    jsonData:
+      # Trace → Logs 联动：Trace Span 跳转 Loki 查关联日志
+      tracesToLogs:
+        datasourceUid: loki
+        filterByTraceID: true
+        filterBySpanID: false
+        tags: ["trace_id"]
+        mappedTags:
+          - key: "trace_id"
+            value: "trace_id"
+        mapTagNamesEnabled: true
+      tracesToMetrics:
+        datasourceUid: prometheus

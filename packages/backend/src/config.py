@@ -69,5 +69,8 @@ class Settings(BaseSettings):
     character_max_concurrent: int = 10
     character_lock_ttl_seconds: int = 30
 
+    # OneBot 适配器
+    onebot_default_character_id: str | None = None
+
 
 settings = Settings()
