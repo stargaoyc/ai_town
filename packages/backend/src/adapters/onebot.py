@@ -3,7 +3,7 @@
 职责：
 1. 作为 WebSocket 服务端接收 OneBot v12 实现（NapCat / Lagrange 等）的反向连接
 2. 解析 OneBot v12 事件（消息 / 元事件 / 心跳），转发消息至 MessageService
-3. 通过 OneBot send_message action 向用户回推角色回复
+3. 通过 OneBot send_private_msg / send_group_msg action 向用户回推角色回复
 
 设计要点：
 - 反向 WebSocket：OneBot 实现主动连接本服务端（endpoint: /ws/onebot/v12）
@@ -376,10 +376,11 @@ class OneBotAdapter:
         group_id: str | int | None,
         message: str,
     ) -> None:
-        """通过 OneBot v12 send_message action 回推消息
+        """通过 OneBot action 回推消息（兼容 OneBot 11 和 v12）
 
-        构造 OneBot v12 标准的 send_message action，通过传入的 WebSocket 连接
-        发送给 OneBot 实现，由其实际投递到 QQ 私聊/群聊。
+        优先使用 OneBot 11 的 send_private_msg / send_group_msg，
+        因为主流实现（NapCat / Lagrange）对 OneBot 11 API 支持更完善。
+        若 OneBot 11 API 不可用，回退到 OneBot v12 的 send_message。
 
         Args:
             onebot_ws: OneBot 实现的 WebSocket 连接
@@ -388,24 +389,31 @@ class OneBotAdapter:
             group_id: OneBot 群 ID（群聊必填）
             message: 待发送的纯文本消息
         """
-        # 根据 OneBot v12 规范组装 action
-        params: dict = {
-            "detail_type": event_type,
-            "message": [{"type": "text", "data": {"text": message}}],
-        }
-        if event_type == "group":
+        is_group = event_type == "group"
+
+        if is_group:
             if group_id is None:
                 logger.warning("onebot_send_missing_group_id", user_id=user_id)
                 return
-            params["group_id"] = group_id
+            # OneBot 11: send_group_msg
+            action_name = "send_group_msg"
+            params: dict = {
+                "group_id": group_id,
+                "message": message,
+            }
         else:
             if user_id is None:
                 logger.warning("onebot_send_missing_user_id", group_id=group_id)
                 return
-            params["user_id"] = user_id
+            # OneBot 11: send_private_msg
+            action_name = "send_private_msg"
+            params = {
+                "user_id": user_id,
+                "message": message,
+            }
 
         action = {
-            "action": "send_message",
+            "action": action_name,
             "params": params,
         }
 
