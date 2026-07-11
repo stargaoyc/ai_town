@@ -27,6 +27,7 @@ from src.db.models import ActionRecord
 from src.db.repositories import (
     ActionRepository,
     CharacterRepository,
+    ConversationRepository,
     MemoryRepository,
     PlanRepository,
     ReflectionRepository,
@@ -132,6 +133,19 @@ class CharacterTickEngine:
 
         # 5. 记忆沉淀
         await self._memorize(character_id, decision, context)
+
+        # 6. 主动分享（若 LLM 决策产生分享意图）
+        if decision.proactive_share_intent:
+            try:
+                await self._maybe_proactive_share(character_id, decision, context)
+            except Exception as e:
+                # 分享失败不影响 Tick 主流程
+                logger.warning(
+                    "proactive_share_tick_failed",
+                    character_id=str(character_id),
+                    error=str(e),
+                    exc_info=True,
+                )
 
         from src.observability.metrics import (
             CHARACTER_TICK_DURATION,
@@ -497,6 +511,160 @@ class CharacterTickEngine:
             character_id=str(character_id),
             action=decision.action,
         )
+
+    async def _maybe_proactive_share(
+        self, character_id: UUID, decision: DecisionResult, context: dict
+    ) -> None:
+        """主动分享 - 角色主动向用户推送消息
+
+        触发条件：LLM 决策的 proactive_share_intent=True
+        流程：
+        1. 调用 ProactiveSharingService.evaluate_and_share 生成文案并写入 DB
+        2. 对 QQ 平台用户，通过 OneBotAdapter.push_share 主动推送
+        3. 对 Web 用户，通过 WebSocketManager.send_to_user 推送
+
+        分享失败不中断 Tick 主流程（由调用方 try/except 兜底）。
+
+        Args:
+            character_id: 角色 ID
+            decision: 决策结果
+            context: 感知环境结果
+        """
+        # 延迟导入避免循环依赖（main.py 导入 character_tick）
+        from src.messaging.proactive_sharing import ProactiveSharingService
+
+        # 获取 ActionRecord（evaluate_and_share 需要 action 参数）
+        # 从最近的 ActionRecord 中取本次 Tick 的行为
+        action_record = None
+        try:
+            async with db.session() as session:
+                action_repo = ActionRepository(session)
+                recent_actions = await action_repo.get_by_character(character_id, limit=1)
+                if recent_actions:
+                    action_record = recent_actions[0]
+        except Exception as e:
+            logger.warning(
+                "proactive_share_load_action_failed",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
+        # 调用 ProactiveSharingService 生成分享并写入 DB
+        async with db.session() as session:
+            # 获取 ws_manager（可能为 None，Web 客户端实时推送可选）
+            ws_manager = None
+            try:
+                from src.main import ws_manager as _ws_mgr
+                ws_manager = _ws_mgr
+            except (ImportError, AttributeError):
+                pass
+
+            sharing_svc = ProactiveSharingService(
+                session=session,
+                llm=self.llm,
+                prompts=self.prompts,
+                ws_manager=ws_manager,
+            )
+
+            result = await sharing_svc.evaluate_and_share(
+                character_id=character_id,
+                action=action_record,
+                state=None,  # 从 DB 加载
+            )
+
+        if not result.get("shared"):
+            logger.debug(
+                "proactive_share_skipped",
+                character_id=str(character_id),
+                reason=result.get("reason"),
+            )
+            return
+
+        content = result.get("content", "")
+        recipients = result.get("recipients", 0)
+        logger.info(
+            "proactive_share_delivered",
+            character_id=str(character_id),
+            recipients=recipients,
+            content_length=len(content),
+        )
+
+        # QQ 平台主动推送：查询该角色的 QQ 平台活跃会话，通过 OneBot 推送
+        if content and recipients > 0:
+            await self._push_share_to_qq(character_id, content)
+
+    async def _push_share_to_qq(
+        self, character_id: UUID, content: str
+    ) -> None:
+        """将主动分享推送到 QQ 平台有活跃会话的用户
+
+        查询 conversations 表中 platform=qq 的会话，提取 user_id（格式 qq_{qq_number}），
+        通过 OneBotAdapter.push_share 发送主动消息。
+
+        Args:
+            character_id: 角色 ID
+            content: 分享文案
+        """
+        try:
+            from src.main import onebot_adapter
+        except (ImportError, AttributeError):
+            logger.debug("onebot_adapter_not_available_for_share")
+            return
+
+        if onebot_adapter is None:
+            return
+
+        # 查询 QQ 平台会话
+        try:
+            async with db.session() as session:
+                conv_repo = ConversationRepository(session)
+                conversations = await conv_repo.list_by_character(
+                    character_id=character_id,
+                    limit=100,
+                )
+        except Exception as e:
+            logger.warning(
+                "qq_share_list_conversations_failed",
+                character_id=str(character_id),
+                error=str(e),
+            )
+            return
+
+        # 筛选 QQ 平台会话，提取 QQ 号
+        qq_pushed = 0
+        for conv in conversations:
+            if conv.platform != "qq":
+                continue
+            # user_id 格式：qq_{qq_number}
+            user_id_str = conv.user_id or ""
+            if not user_id_str.startswith("qq_"):
+                continue
+            qq_number = user_id_str[3:]
+            if not qq_number or not qq_number.isdigit():
+                continue
+
+            try:
+                ok = await onebot_adapter.push_share(
+                    user_id=int(qq_number),
+                    group_id=None,
+                    message=content,
+                )
+                if ok:
+                    qq_pushed += 1
+            except Exception as e:
+                logger.warning(
+                    "qq_share_push_failed",
+                    character_id=str(character_id),
+                    qq_number=qq_number,
+                    error=str(e),
+                )
+
+        if qq_pushed > 0:
+            logger.info(
+                "proactive_share_qq_pushed",
+                character_id=str(character_id),
+                pushed=qq_pushed,
+            )
 
     async def tick_all_active(self) -> None:
         """执行所有活跃角色的 Tick

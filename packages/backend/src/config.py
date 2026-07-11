@@ -73,6 +73,12 @@ class Settings(BaseSettings):
 
     # OneBot 适配器
     onebot_default_character_id: str | None = None
+    # 机器人自身 QQ 号（用于群聊 @ 检测，从 OneBot 事件的 self_id 也能获取）
+    onebot_self_id: str | None = None
+    # 群聊是否仅在被 @ 时回复（默认 True，避免刷屏）
+    onebot_group_at_only: bool = True
+    # 群组-角色映射：JSON 字符串 {"群号": "角色UUID"}，未配置的群使用默认角色
+    onebot_group_character_map: str = "{}"
 
 
 settings = Settings()
