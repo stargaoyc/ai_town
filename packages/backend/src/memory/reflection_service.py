@@ -6,7 +6,7 @@ from uuid import UUID
 
 from structlog import get_logger
 
-from src.db.models import Reflection
+from src.db.models import Reflection, ReflectionSource
 from src.db.repositories import MemoryRepository, ReflectionRepository
 from src.llm import LLMClient
 
@@ -62,8 +62,10 @@ class ReflectionService:
         Returns:
             Reflection 实体
         """
-        # 获取未反思记忆（简化：直接取最近 20 条）
-        episodes = await self.mem_repo.recent(character_id, limit=20)
+        # 获取未反思记忆（按时间正序，先入先反思）
+        episodes = await self.mem_repo.fetch_unreflected(character_id, limit=20)
+        if not episodes:
+            return None
 
         # 构建反思 Prompt
         memories_text = "\n".join([
@@ -109,13 +111,21 @@ class ReflectionService:
             for r in result.get("reflections", [])
         ])
 
-        # 写入 Reflection
+        # 写入 Reflection（不含 related_episodes，已移至 reflection_sources 中间表）
         reflection = Reflection(
             character_id=character_id,
             content=content,
-            related_episodes=[e.id for e in episodes],
         )
         saved = await self.ref_repo.add(reflection)
+
+        # 写入 reflection_sources 中间表（复合外键引用 memory_episodes）
+        for episode in episodes:
+            self.ref_repo.session.add(ReflectionSource(
+                reflection_id=saved.id,
+                memory_id=episode.id,
+                memory_character_id=episode.character_id,
+            ))
+        await self.ref_repo.session.flush()
 
         # 标记记忆为已反思
         await self.mem_repo.mark_reflected([e.id for e in episodes])

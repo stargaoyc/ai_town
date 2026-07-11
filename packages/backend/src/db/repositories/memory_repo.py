@@ -76,6 +76,25 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         result = await self.session.execute(stmt)
         return int(result.scalar_one())
 
+    async def fetch_unreflected(
+        self, character_id: UUID, limit: int = 20
+    ) -> list[MemoryEpisode]:
+        """获取角色未反思的记忆（按时间正序，先入先反思）
+
+        利用 idx_mem_unreflected 部分索引加速查询。
+        """
+        stmt = (
+            select(MemoryEpisode)
+            .where(
+                MemoryEpisode.character_id == character_id,
+                MemoryEpisode.is_reflected.is_(False),
+            )
+            .order_by(MemoryEpisode.timestamp.asc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     async def mark_reflected(self, episode_ids: list[UUID]) -> None:
         """将指定记忆批量标记为已反思（ORM 批量 UPDATE）"""
         if not episode_ids:

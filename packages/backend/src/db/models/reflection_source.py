@@ -36,7 +36,7 @@ class ReflectionSource(Base):
         primary_key=True, comment="记忆所属角色 ID（分区键，复合外键组成部分）"
     )
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, server_default="now()", comment="创建时间"
+        TIMESTAMP(timezone=True), server_default="now()", comment="创建时间"
     )
 
     __table_args__ = (

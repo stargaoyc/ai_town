@@ -172,14 +172,31 @@ class LLMClient:
             content = response.content
             logger.debug("chat_completed", model="chat", response_length=len(content))
             elapsed = time.perf_counter() - start_perf
-            from src.observability.metrics import LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED
+
+            # 提取 token 用量（LangChain response_metadata）
+            from src.observability.metrics import (
+                LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED, LLM_COST_TOTAL,
+            )
             LLM_CALL_TOTAL.labels(model=model, status="success").inc()
             LLM_CALL_DURATION.labels(model=model).observe(elapsed)
+            meta = response.response_metadata or {}
+            token_usage = meta.get("token_usage") or meta.get("usage") or {}
+            prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+            completion_tokens = int(token_usage.get("completion_tokens", 0))
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                LLM_TOKENS_USED.labels(model=model, type="prompt").inc(prompt_tokens)
+                LLM_TOKENS_USED.labels(model=model, type="completion").inc(completion_tokens)
+                # 粗略费用估算：agnes-2.0-flash 约 $0.5/M input, $1.5/M output
+                estimated_cost = (prompt_tokens * 0.0000005 + completion_tokens * 0.0000015)
+                LLM_COST_TOTAL.inc(estimated_cost)
+
             from src.observability.langfuse_tracing import trace_llm_call
             trace_llm_call(
                 model=model,
                 prompt=prompt,
                 response=content if isinstance(content, str) else str(content),
+                tokens=total_tokens,
                 latency_ms=int(elapsed * 1000),
             )
             return content if isinstance(content, str) else str(content)
@@ -228,14 +245,27 @@ class LLMClient:
                 response_length=len(resp_content)
             )
             elapsed = time.perf_counter() - start_perf
-            from src.observability.metrics import LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED
+            from src.observability.metrics import (
+                LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED, LLM_COST_TOTAL,
+            )
             LLM_CALL_TOTAL.labels(model=effective_model, status="success").inc()
             LLM_CALL_DURATION.labels(model=effective_model).observe(elapsed)
+            meta = response.response_metadata or {}
+            token_usage = meta.get("token_usage") or meta.get("usage") or {}
+            prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+            completion_tokens = int(token_usage.get("completion_tokens", 0))
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                LLM_TOKENS_USED.labels(model=effective_model, type="prompt").inc(prompt_tokens)
+                LLM_TOKENS_USED.labels(model=effective_model, type="completion").inc(completion_tokens)
+                estimated_cost = (prompt_tokens * 0.0000005 + completion_tokens * 0.0000015)
+                LLM_COST_TOTAL.inc(estimated_cost)
             from src.observability.langfuse_tracing import trace_llm_call
             trace_llm_call(
                 model=effective_model,
                 prompt=str(content),
                 response=resp_content if isinstance(resp_content, str) else str(resp_content),
+                tokens=total_tokens,
                 latency_ms=int(elapsed * 1000),
             )
             return resp_content if isinstance(resp_content, str) else str(resp_content)
@@ -469,15 +499,27 @@ class LLMClient:
             result = await structured_llm.ainvoke(prompt)
             logger.debug("structured_output_completed", result_type=type(result).__name__)
             elapsed = time.perf_counter() - start_perf
-            from src.observability.metrics import LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED
+            from src.observability.metrics import (
+                LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED, LLM_COST_TOTAL,
+            )
             LLM_CALL_TOTAL.labels(model=model, status="success").inc()
             LLM_CALL_DURATION.labels(model=model).observe(elapsed)
+            # structured_output 的 result 是 Pydantic 模型，无 response_metadata
+            # 使用粗略估算：prompt 长度 / 3 ≈ prompt_tokens
+            est_prompt_tokens = max(len(str(prompt)) // 3, 1)
+            est_completion_tokens = max(len(str(result)) // 3, 1)
+            total_tokens = est_prompt_tokens + est_completion_tokens
+            LLM_TOKENS_USED.labels(model=model, type="prompt").inc(est_prompt_tokens)
+            LLM_TOKENS_USED.labels(model=model, type="completion").inc(est_completion_tokens)
+            estimated_cost = (est_prompt_tokens * 0.0000005 + est_completion_tokens * 0.0000015)
+            LLM_COST_TOTAL.inc(estimated_cost)
             from src.observability.langfuse_tracing import trace_llm_call
             result_str = result.model_dump_json() if isinstance(result, BaseModel) else str(result)
             trace_llm_call(
                 model=model,
                 prompt=prompt,
                 response=result_str,
+                tokens=total_tokens,
                 latency_ms=int(elapsed * 1000),
             )
             if isinstance(result, BaseModel):

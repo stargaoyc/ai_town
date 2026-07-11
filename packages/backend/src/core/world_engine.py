@@ -347,6 +347,7 @@ class WorldEngine:
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="time",
+                    event_key="default",
                     payload={"virtual_time": world_time_str, "tick_id": self.tick_id},
                 ))
 
@@ -356,7 +357,8 @@ class WorldEngine:
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="weather",
-                    payload={"weather": weather_str},  # 使用转换后的字符串
+                    event_key="default",
+                    payload={"weather": weather_str},
                 ))
 
             # 场景事件（场景状态变化时写入）
@@ -365,6 +367,7 @@ class WorldEngine:
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="scene",
+                    event_key="default",
                     payload=scenes_state,
                 ))
 
@@ -374,6 +377,7 @@ class WorldEngine:
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="resource",
+                    event_key="default",
                     payload=resources_state,
                 ))
 
@@ -382,6 +386,7 @@ class WorldEngine:
                 events.append(WorldEvent(
                     tick_id=self.tick_id,
                     event_type="event",
+                    event_key="default",
                     payload=list(events_state.values()),
                 ))
 

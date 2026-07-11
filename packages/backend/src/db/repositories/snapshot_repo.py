@@ -19,7 +19,7 @@ logger = get_logger()
 class WorldEventRepository(BaseRepository[WorldEvent]):
     """世界事件 Repository
 
-    事件幂等：UNIQUE(tick_id, event_type) 约束保证单 Tick 单类型事件唯一。
+    事件幂等：UNIQUE(tick_id, event_type, event_key) 约束保证幂等写入。
     add_batch 使用 ON CONFLICT DO NOTHING，重复写入自动跳过。
 
     用法：
@@ -46,7 +46,7 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
         """批量写入世界事件（幂等：重复写入自动跳过）
 
         使用 INSERT ... ON CONFLICT DO NOTHING，
-        配合 UNIQUE(tick_id, event_type) 约束保证幂等性。
+        配合 UNIQUE(tick_id, event_type, event_key) 约束保证幂等性。
         服务重启 / Tick 重试时不会产生重复事件。
         """
         if not events:
@@ -57,6 +57,7 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
                 "id": e.id,
                 "tick_id": e.tick_id,
                 "event_type": e.event_type,
+                "event_key": e.event_key,
                 "payload": e.payload,
                 "created_at": e.created_at,
             }
@@ -64,7 +65,7 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
         ]
         stmt = pg_insert(WorldEvent).values(rows)
         stmt = stmt.on_conflict_do_nothing(
-            constraint="uq_world_events_tick_type"
+            constraint="uq_world_events_tick_type_key"
         )
         result = await self.session.execute(stmt)
         logger.info(

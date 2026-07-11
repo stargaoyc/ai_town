@@ -34,6 +34,9 @@ class EpisodeService:
     ) -> MemoryEpisode:
         """创建记忆片段
 
+        ⚠️ embedding 由 EmbeddingWorker 异步生成，此处不阻塞 Tick 循环。
+        新记忆 materialized=false, embedding=NULL，worker 批量拉取后调 LLM 生成。
+
         Args:
             character_id: 角色 ID
             content: 记忆内容（自然语言描述）
@@ -44,13 +47,11 @@ class EpisodeService:
         Returns:
             MemoryEpisode 实体
         """
-        # 生成向量嵌入
-        embedding = await self.llm.embed(content)
-
         episode = MemoryEpisode(
             character_id=character_id,
             content=content,
-            embedding=embedding,
+            embedding=None,          # 异步 worker 生成
+            materialized=False,      # 标记为未向量化
             importance=importance,
             timestamp=datetime.now(timezone.utc),
             action_id=action_id,

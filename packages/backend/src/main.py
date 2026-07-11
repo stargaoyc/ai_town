@@ -125,8 +125,13 @@ async def lifespan(app: FastAPI):
         # 测试连接
         await redis.ping()
         logger.info("redis_connected", url=settings.redis_url)
+        # 设置 Prometheus Redis 连接状态指标
+        from src.observability.metrics import REDIS_CONNECTED
+        REDIS_CONNECTED.set(1)
     except Exception as e:
         logger.error("redis_connection_failed", error=str(e), exc_info=True)
+        from src.observability.metrics import REDIS_CONNECTED
+        REDIS_CONNECTED.set(0)
         raise
 
     # 1.1 初始化成本控制 + 速率限制器（依赖 Redis）

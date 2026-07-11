@@ -39,10 +39,10 @@ class Character(Base):
     voice_preset: Mapped[str | None] = mapped_column(String(100), comment="语音预设")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否参与世界")
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, server_default="now()", comment="创建时间"
+        TIMESTAMP(timezone=True), server_default="now()", comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, server_default="now()", onupdate=func.now(), comment="更新时间（触发器自动维护）"
+        TIMESTAMP(timezone=True), server_default="now()", onupdate=func.now(), comment="更新时间（触发器自动维护）"
     )
 
     # 关联
@@ -80,7 +80,7 @@ class CharacterState(Base):
         comment="乐观锁版本号（防止并发覆盖）"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, server_default="now()", onupdate=func.now(), comment="更新时间"
+        TIMESTAMP(timezone=True), server_default="now()", onupdate=func.now(), comment="更新时间"
     )
 
     # 关联
