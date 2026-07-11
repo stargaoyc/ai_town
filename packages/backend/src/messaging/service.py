@@ -47,6 +47,9 @@ COMPRESSED_HISTORY_LIMIT = 10     # 压缩后保留最近 10 条原文
 # 默认错误回复（LLM 失败时返回，避免用户会话阻塞）
 DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后再试）"
 
+# 群聊智能回复：非 @ 消息的回复概率上限（避免刷屏）
+GROUP_REPLY_PROBABILITY_CAP = 0.4
+
 
 class MessageService:
     """消息服务 - 用户与角色对话的核心业务层
@@ -87,6 +90,122 @@ class MessageService:
         self.message_repo = MessageRepository(session)
         self.character_repo = CharacterRepository(session)
         self.memory_repo = MemoryRepository(session)
+
+    async def should_reply_in_group(
+        self,
+        character_id: UUID,
+        character_name: str,
+        message: str,
+        sender_user_id: str,
+    ) -> tuple[bool, str]:
+        """群聊智能回复决策 - 判断角色是否应该回复这条非 @ 消息
+
+        决策逻辑（三层过滤，从轻到重）：
+        1. 关键词命中：消息包含角色名 / 别名 → 直接回复
+        2. 启发式规则：疑问句 / @ 他人但内容相关 / 直接对话语气 → 概率回复
+        3. LLM 判断：调用轻量级 LLM 判断相关性（成本控制，仅在 1/2 未命中时）
+
+        成本控制：
+        - 每次调用最多 1 次 LLM 请求（chat 模型）
+        - LLM 判断失败时默认不回复（fail-safe）
+        - 回复概率受 GROUP_REPLY_PROBABILITY_CAP 上限约束
+
+        Args:
+            character_id: 角色 ID（用于加载角色档案）
+            character_name: 角色名（用于关键词匹配）
+            message: 群聊消息纯文本（已移除 @ 前缀）
+            sender_user_id: 发送者内部用户 ID
+
+        Returns:
+            (should_reply, reason)
+            - should_reply: 是否应该回复
+            - reason: 决策原因（用于日志追踪）
+        """
+        if not message or not message.strip():
+            return False, "empty_message"
+
+        text = message.strip()
+
+        # 1. 关键词命中：消息包含角色名
+        if character_name and character_name in text:
+            return True, "name_mentioned"
+
+        # 2. 启发式规则
+        import random
+
+        # 2a. 疑问句（包含问号）
+        if "?" in text or "？" in text or text.endswith("吗") or text.endswith("呢"):
+            # 疑问句有 40% 概率回复
+            if random.random() < GROUP_REPLY_PROBABILITY_CAP:
+                return True, "question_heuristic"
+            return False, "question_skip_probability"
+
+        # 2b. 情绪强烈（包含感叹号或表情）
+        if "！" in text or "!" in text or "[CQ:face" in text:
+            if random.random() < 0.2:
+                return True, "emotion_heuristic"
+            return False, "emotion_skip_probability"
+
+        # 3. LLM 判断：调用轻量级 LLM 判断相关性
+        try:
+            # 加载角色档案以提供上下文
+            character_data = await self.character_repo.get_by_id(character_id)
+            if character_data is None:
+                return False, "character_not_found"
+
+            personality = (character_data.traits or {}).get("personality", [])
+            if isinstance(personality, list):
+                personality_text = "、".join(personality)
+            else:
+                personality_text = str(personality)
+
+            judge_prompt = (
+                f"你是一个群聊助手，判断角色「{character_name}」是否应该回复以下群消息。\n\n"
+                f"角色性格：{personality_text}\n"
+                f"角色背景：{character_data.backstory or '（无）'}\n\n"
+                f"群消息内容：{text}\n\n"
+                f"判断标准（满足任一即应回复）：\n"
+                f"1. 消息与角色兴趣/背景相关\n"
+                f"2. 消息在讨论角色关心的话题\n"
+                f"3. 消息是通用问候且角色性格外向\n"
+                f"4. 消息内容有趣，角色自然会想回应\n\n"
+                f"不回复的标准：\n"
+                f"1. 消息与角色完全无关\n"
+                f"2. 消息是他人之间的私密对话\n"
+                f"3. 消息是纯技术讨论且角色无相关背景\n\n"
+                f"请只输出 JSON：{{\"should_reply\": true/false, \"reason\": \"简短原因\"}}"
+            )
+
+            result = await self.llm.structured_output(
+                judge_prompt,
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "should_reply": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["should_reply", "reason"],
+                },
+                model="chat",
+            )
+
+            should = bool(result.get("should_reply", False))
+            reason = result.get("reason", "llm_judgment")
+
+            # 概率上限控制：即使 LLM 说回复，也受概率上限约束
+            if should and random.random() > GROUP_REPLY_PROBABILITY_CAP:
+                return False, f"llm_yes_but_capped:{reason}"
+
+            return should, f"llm:{reason}"
+
+        except Exception as e:
+            logger.warning(
+                "group_reply_judge_failed",
+                character_id=str(character_id),
+                error=str(e),
+            )
+            # LLM 判断失败时默认不回复（fail-safe）
+            return False, f"llm_judge_error:{type(e).__name__}"
 
     async def handle_user_message(
         self,

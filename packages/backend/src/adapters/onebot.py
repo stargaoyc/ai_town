@@ -478,19 +478,13 @@ class OneBotAdapter:
             logger.info("onebot_empty_message_skipped", user_id=user_id, group_id=group_id)
             return
 
-        # 群聊接入：@ 过滤
+        # 群聊接入：智能回复决策
         if is_group:
             at_only = _get_at_only()
-            if at_only:
-                mentioned = _is_mentioned_self(event, self_id)
-                if not mentioned:
-                    logger.debug(
-                        "onebot_group_not_at_skipped",
-                        group_id=group_id,
-                        user_id=user_id,
-                    )
-                    return
-                # 移除 @机器人 前缀，保留实际内容
+            mentioned = _is_mentioned_self(event, self_id)
+
+            if mentioned:
+                # 被 @ 时总是回复，移除 @ 前缀保留实际内容
                 raw_message = _strip_at_prefix(event, self_id, raw_message)
                 if not raw_message:
                     logger.info(
@@ -499,6 +493,34 @@ class OneBotAdapter:
                         user_id=user_id,
                     )
                     return
+            elif at_only:
+                # at_only 模式下，未 @ 则跳过
+                logger.debug(
+                    "onebot_group_not_at_skipped",
+                    group_id=group_id,
+                    user_id=user_id,
+                )
+                return
+            else:
+                # 智能回复模式：读取所有群消息，决策是否回复
+                should, reason = await self._should_reply_in_group(
+                    raw_message, user_id, onebot_ws
+                )
+                if not should:
+                    logger.info(
+                        "onebot_group_smart_skip",
+                        group_id=group_id,
+                        user_id=user_id,
+                        reason=reason,
+                        message_preview=raw_message[:50],
+                    )
+                    return
+                logger.info(
+                    "onebot_group_smart_reply",
+                    group_id=group_id,
+                    user_id=user_id,
+                    reason=reason,
+                )
 
         # 解析角色 ID
         character_id = _resolve_character_id(is_group, group_id)
@@ -615,6 +637,77 @@ class OneBotAdapter:
             )
         else:
             logger.debug("onebot_meta_event", detail_type=detail_type)
+
+    async def _should_reply_in_group(
+        self, message: str, sender_user_id: str | int | None, onebot_ws: WebSocket
+    ) -> tuple[bool, str]:
+        """群聊智能回复决策 - 调用 MessageService.should_reply_in_group
+
+        流程：
+        1. 获取 LLM 全局实例
+        2. 解析角色 ID 和角色名
+        3. 调用 MessageService.should_reply_in_group 判断是否回复
+
+        Args:
+            message: 群聊消息纯文本
+            sender_user_id: 发送者 QQ 号
+            onebot_ws: OneBot WebSocket 连接
+
+        Returns:
+            (should_reply, reason)
+        """
+        llm_client, prompts_obj = _get_llm_globals()
+        if llm_client is None or prompts_obj is None:
+            return False, "llm_not_ready"
+
+        # 解析角色 ID（群聊场景）
+        character_id = _resolve_character_id(is_group=True, group_id=None)
+        if character_id is None:
+            return False, "character_not_configured"
+
+        # 获取角色名
+        character_name = ""
+        try:
+            async with db.session() as session:
+                from src.db.repositories import CharacterRepository
+
+                char_repo = CharacterRepository(session)
+                character = await char_repo.get_by_id(character_id)
+                if character is not None:
+                    character_name = character.name
+        except Exception as e:
+            logger.warning(
+                "group_reply_load_character_failed",
+                character_id=str(character_id),
+                error=str(e),
+            )
+            return False, "character_load_error"
+
+        if not character_name:
+            return False, "character_name_empty"
+
+        # 调用 MessageService.should_reply_in_group
+        try:
+            async with db.session() as session:
+                svc = MessageService(
+                    session=session,
+                    llm=llm_client,  # type: ignore[arg-type]
+                    prompts=prompts_obj,  # type: ignore[arg-type]
+                )
+                internal_user_id = f"qq_{sender_user_id}" if sender_user_id is not None else "qq_unknown"
+                return await svc.should_reply_in_group(
+                    character_id=character_id,
+                    character_name=character_name,
+                    message=message,
+                    sender_user_id=internal_user_id,
+                )
+        except Exception as e:
+            logger.error(
+                "group_reply_decision_failed",
+                error=str(e),
+                exc_info=True,
+            )
+            return False, f"decision_error:{type(e).__name__}"
 
     async def send_message(
         self,

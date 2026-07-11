@@ -76,9 +76,37 @@
 
 ### 1.7 消息平台
 
+#### OneBot（QQ 接入）
+
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
-| `ONE_BOT_WS_URL` | 否 | — | OneBot v12 WebSocket 地址 |
+| `ONEBOT_DEFAULT_CHARACTER_ID` | 否 | — | 默认对话角色 UUID（私聊和未映射的群聊使用） |
+| `ONEBOT_SELF_ID` | 否 | — | 机器人自身 QQ 号（用于群聊 @ 检测，也可从事件 self_id 读取） |
+| `ONEBOT_GROUP_AT_ONLY` | 否 | `false` | 群聊回复模式：`false`=智能回复（读取所有消息决策）、`true`=仅@回复 |
+| `ONEBOT_GROUP_CHARACTER_MAP` | 否 | `{}` | 群-角色映射 JSON，如 `{"123456": "uuid-..."}`，未配置的群使用默认角色 |
+
+配置示例：
+
+```bash
+# .env
+ONEBOT_DEFAULT_CHARACTER_ID=01923456-7890-7abc-def0-123456789abc
+ONEBOT_SELF_ID=123456789
+ONEBOT_GROUP_AT_ONLY=false
+ONEBOT_GROUP_CHARACTER_MAP={"群号A":"角色UUID-A","群号B":"角色UUID-B"}
+```
+
+群聊智能回复决策流程：
+1. 被 @ 机器人 → 直接回复（移除 @ 前缀）
+2. `ONEBOT_GROUP_AT_ONLY=true` 且未 @ → 跳过
+3. `ONEBOT_GROUP_AT_ONLY=false`（默认）→ 三层智能决策：
+   - 关键词命中（消息含角色名）→ 直接回复
+   - 启发式规则（疑问句 40% / 情绪 20% 概率）→ 概率回复
+   - LLM 相关性判断 → 受 40% 概率上限约束
+
+#### 其他平台
+
+| 变量 | 必填 | 默认 | 说明 |
+|------|------|------|------|
 | `LARK_APP_ID` | 否 | — | 飞书应用 ID |
 | `LARK_APP_SECRET` | 否 | — | 飞书应用密钥 |
 | `WEB_WS_PATH` | 否 | /ws | Web WebSocket 路径 |
