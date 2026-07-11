@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     model_strong: str = "gpt-4o"
     model_flash: str = "gpt-3.5-turbo"
     model_embedding: str = "text-embedding-3-small"
+    embedding_model_key: str | None = None
+    embedding_model_url: str | None = None
     llm_timeout: int = 30
     llm_max_retries: int = 2
     embedding_dim: int = 1536

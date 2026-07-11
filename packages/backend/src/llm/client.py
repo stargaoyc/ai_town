@@ -34,6 +34,16 @@ class LLMClient:
             base_url=settings.openai_base_url,
         )
 
+        # Embedding 专用客户端（独立 API Key + URL，如 OpenRouter）
+        # 未配置时回退到主客户端
+        if settings.embedding_model_key and settings.embedding_model_url:
+            self._embedding_client = AsyncOpenAI(
+                api_key=settings.embedding_model_key,
+                base_url=settings.embedding_model_url,
+            )
+        else:
+            self._embedding_client = self.openai
+
         # LangChain ChatOpenAI（用于结构化输出和 Agent）
         self.chat_llm = ChatOpenAI(
             model=settings.model_chat,
@@ -62,15 +72,16 @@ class LLMClient:
     async def embed(self, text: str) -> list[float]:
         """生成文本嵌入向量
 
-        使用 OpenAI text-embedding-3-small（1536 维）
+        优先使用 embedding 专用客户端（embedding_model_key + embedding_model_url），
+        未配置时回退到主 OpenAI 客户端。
 
         Args:
             text: 输入文本
 
         Returns:
-            嵌入向量列表（1536 维）
+            嵌入向量列表
         """
-        response = await self.openai.embeddings.create(
+        response = await self._embedding_client.embeddings.create(
             model=settings.model_embedding,
             input=text,
         )

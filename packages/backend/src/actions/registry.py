@@ -74,18 +74,18 @@ class ActionRegistry:
     def _has_enough_resources(action: Action, state: dict) -> bool:
         """检查当前状态是否足以承担 Action 的各项消耗"""
         # 体力消耗（energy_cost < 0 表示消耗）
-        if action.energy_cost < 0 and state.get("stamina", 0) < -action.energy_cost:
+        if action.energy_cost < 0 and int(state.get("stamina", 0)) < -action.energy_cost:
             return False
         # 饱腹度消耗
-        if action.satiety_cost < 0 and state.get("satiety", 0) < -action.satiety_cost:
+        if action.satiety_cost < 0 and int(state.get("satiety", 0)) < -action.satiety_cost:
             return False
         # 社交能量消耗
-        if action.social_cost < 0 and state.get("social_energy", 0) < -action.social_cost:
+        if action.social_cost < 0 and int(state.get("social_energy", 0)) < -action.social_cost:
             return False
         # 手机电量消耗
-        if action.phone_battery_cost < 0 and state.get("phone_battery", 0) < -action.phone_battery_cost:
+        if action.phone_battery_cost < 0 and int(state.get("phone_battery", 0)) < -action.phone_battery_cost:
             return False
         # 金钱消耗（money_cost 为正数表示花费）
-        if action.money_cost > 0 and state.get("money", 0) < action.money_cost:
+        if action.money_cost > 0 and int(state.get("money", 0)) < action.money_cost:
             return False
         return True
