@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -108,6 +109,9 @@ class CharacterTickEngine:
         """
         logger.info("character_tick_start", character_id=str(character_id))
 
+        start_perf = time.perf_counter()
+        cid = str(character_id)
+
         # 1. 感知环境
         context = await self._perceive(character_id)
 
@@ -128,6 +132,22 @@ class CharacterTickEngine:
 
         # 5. 记忆沉淀
         await self._memorize(character_id, decision, context)
+
+        from src.observability.metrics import (
+            CHARACTER_TICK_DURATION,
+            CHARACTER_TICK_ERRORS,
+            CHARACTER_TICK_TOTAL,
+        )
+        tick_elapsed = time.perf_counter() - start_perf
+        CHARACTER_TICK_DURATION.observe(tick_elapsed)
+        CHARACTER_TICK_TOTAL.labels(character_id=cid).inc()
+
+        from src.observability.langfuse_tracing import trace_character_tick
+        trace_character_tick(
+            character_id=str(character_id),
+            action=decision.action,
+            duration_ms=int(tick_elapsed * 1000),
+        )
 
         logger.info(
             "character_tick_end",
@@ -174,13 +194,23 @@ class CharacterTickEngine:
             "social_energy": char_state.social_energy,
         }
 
-        # 确保 state 中的值是正确类型
-        for key in ["stamina", "satiety", "mood", "money", "phone_battery", "social_energy"]:
-            if key in state and isinstance(state[key], (bytes, bytearray)):
-                state[key] = int(state[key].decode())
-            elif key not in state:
-                # 使用默认值
+        # 确保 state 中的数值字段是 int 类型（Redis 读取为 str/bytes）
+        _NUMERIC_KEYS = {"stamina", "satiety", "money", "phone_battery", "social_energy"}
+        for key in _NUMERIC_KEYS:
+            if key in state:
+                val = state[key]
+                if isinstance(val, (bytes, bytearray)):
+                    state[key] = int(val.decode())
+                elif isinstance(val, str):
+                    state[key] = int(val)
+            elif char_state:
                 state[key] = getattr(char_state, key, 50)
+
+        # mood 可以是字符串
+        if "mood" in state and isinstance(state["mood"], (bytes, bytearray)):
+            state["mood"] = state["mood"].decode()
+        elif "mood" not in state and char_state:
+            state["mood"] = getattr(char_state, "mood", "calm")
 
         # 从 Redis 读取世界状态
         world_state = await self.redis.hgetall("world:state")
@@ -342,9 +372,12 @@ class CharacterTickEngine:
             decision: 决策结果
             context: 感知环境结果
         """
+        start_perf = time.perf_counter()
         action_def = self.registry.get(decision.action)
         if not action_def:
             logger.error("action_not_found", action=decision.action)
+            from src.observability.metrics import ACTION_EXECUTION_TOTAL
+            ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="failed").inc()
             return
 
         # 计算状态变更
@@ -362,47 +395,57 @@ class CharacterTickEngine:
             new_state["location"] = decision.params["target_scene"]
 
         # 事务化执行
-        async with db.session() as session:
-            action_repo = ActionRepository(session)
-            char_repo = CharacterRepository(session)
+        try:
+            async with db.session() as session:
+                action_repo = ActionRepository(session)
+                char_repo = CharacterRepository(session)
 
-            # 写入行为记录
-            record = ActionRecord(
-                character_id=character_id,
-                action_id=action_def.id,
-                action_name=action_def.name,
-                params=decision.params,
-                reason=decision.reason,
-                duration_minutes=duration,
-                location=new_state.get("location", "unknown"),
-                timestamp=datetime.now(timezone.utc),
+                # 写入行为记录
+                record = ActionRecord(
+                    character_id=character_id,
+                    action_id=action_def.id,
+                    action_name=action_def.name,
+                    params=decision.params,
+                    reason=decision.reason,
+                    duration_minutes=duration,
+                    location=new_state.get("location", "unknown"),
+                    timestamp=datetime.now(timezone.utc),
+                )
+                await action_repo.add(record)
+
+                # 更新 PG 状态（数值字段从 Redis 读取为 str，需转为 int）
+                _INT_FIELDS = {"stamina", "satiety", "money", "phone_battery", "social_energy"}
+                await char_repo.update_state(
+                    character_id,
+                    stamina=int(new_state["stamina"]) if new_state.get("stamina") is not None else None,
+                    satiety=int(new_state["satiety"]) if new_state.get("satiety") is not None else None,
+                    mood=new_state.get("mood"),
+                    money=int(new_state["money"]) if new_state.get("money") is not None else None,
+                    phone_battery=int(new_state["phone_battery"]) if new_state.get("phone_battery") is not None else None,
+                    social_energy=int(new_state["social_energy"]) if new_state.get("social_energy") is not None else None,
+                    location=new_state.get("location"),
+                )
+
+            # 更新 Redis 实时状态
+            await self.redis.hset(
+                f"char:{character_id}:state",
+                mapping={k: str(v) for k, v in new_state.items() if v is not None},
             )
-            await action_repo.add(record)
 
-            # 更新 PG 状态
-            await char_repo.update_state(
-                character_id,
-                stamina=new_state.get("stamina"),
-                satiety=new_state.get("satiety"),
-                mood=new_state.get("mood"),
-                money=new_state.get("money"),
-                phone_battery=new_state.get("phone_battery"),
-                social_energy=new_state.get("social_energy"),
-                location=new_state.get("location"),
+            from src.observability.metrics import ACTION_EXECUTION_TOTAL, ACTION_EXECUTION_DURATION
+            ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="success").inc()
+            ACTION_EXECUTION_DURATION.labels(action_id=decision.action).observe(time.perf_counter() - start_perf)
+
+            logger.info(
+                "action_executed",
+                character_id=str(character_id),
+                action=decision.action,
+                duration=duration,
             )
-
-        # 更新 Redis 实时状态
-        await self.redis.hset(
-            f"char:{character_id}:state",
-            mapping={k: str(v) for k, v in new_state.items() if v is not None},
-        )
-
-        logger.info(
-            "action_executed",
-            character_id=str(character_id),
-            action=decision.action,
-            duration=duration,
-        )
+        except Exception:
+            from src.observability.metrics import ACTION_EXECUTION_TOTAL
+            ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="failed").inc()
+            raise
 
     async def _memorize(
         self, character_id: UUID, decision: DecisionResult, context: dict

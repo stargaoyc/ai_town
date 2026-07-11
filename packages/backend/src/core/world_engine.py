@@ -20,6 +20,7 @@ World Tick 主循环流程：
 
 import asyncio
 import json
+import time
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +32,14 @@ from src.core.evolutions import default_evolutions
 from src.db.models import WorldEvent, WorldSnapshot
 from src.db.repositories import WorldEventRepository, WorldSnapshotRepository
 from src.db.session import db
+from src.observability.metrics import (
+    ACTIVE_CHARACTERS,
+    REDIS_CONNECTED,
+    WORLD_TICK_DURATION,
+    WORLD_TICK_ERRORS,
+    WORLD_TICK_ID,
+    WORLD_TICK_TOTAL,
+)
 
 logger = get_logger(__name__)
 
@@ -175,7 +184,12 @@ class WorldEngine:
         4. 定期持久化快照到 PostgreSQL
         """
         start_time = datetime.now()
+        start_perf = time.perf_counter()
         logger.info("world_tick_start", tick_id=self.tick_id)
+
+        # 更新 Gauge 指标
+        WORLD_TICK_ID.set(self.tick_id)
+        REDIS_CONNECTED.set(1)
 
         try:
             # 1. 读取当前世界状态
@@ -219,6 +233,8 @@ class WorldEngine:
                 await self._save_world_snapshot(world_state)
 
             duration = (datetime.now() - start_time).total_seconds()
+            WORLD_TICK_DURATION.observe(time.perf_counter() - start_perf)
+            WORLD_TICK_TOTAL.inc()
             logger.info(
                 "world_tick_end",
                 tick_id=self.tick_id,
@@ -227,6 +243,7 @@ class WorldEngine:
             )
 
         except Exception as e:
+            WORLD_TICK_ERRORS.inc()
             logger.error(
                 "world_tick_error",
                 tick_id=self.tick_id,

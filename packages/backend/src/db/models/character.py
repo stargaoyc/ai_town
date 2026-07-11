@@ -7,7 +7,7 @@ from datetime import datetime
 from uuid import UUID
 from uuid6 import uuid7
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,7 +42,7 @@ class Character(Base):
         TIMESTAMP, server_default="now()", comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, server_default="now()", onupdate="now()", comment="更新时间（触发器自动维护）"
+        TIMESTAMP, server_default="now()", onupdate=func.now(), comment="更新时间（触发器自动维护）"
     )
 
     # 关联
@@ -80,7 +80,7 @@ class CharacterState(Base):
         comment="乐观锁版本号（防止并发覆盖）"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, server_default="now()", onupdate="now()", comment="更新时间"
+        TIMESTAMP, server_default="now()", onupdate=func.now(), comment="更新时间"
     )
 
     # 关联

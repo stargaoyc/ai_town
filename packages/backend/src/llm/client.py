@@ -10,6 +10,7 @@
 - 图像: {"type": "image_url", "image_url": {"url": "https://..."}}
 """
 import asyncio
+import time
 from typing import Any
 
 import httpx
@@ -165,10 +166,27 @@ class LLMClient:
         if model != "chat":
             logger.warning("chat_model_redirect_to_chat", original_model=model)
 
-        response = await self.chat_llm.ainvoke(prompt)
-        content = response.content
-        logger.debug("chat_completed", model="chat", response_length=len(content))
-        return content if isinstance(content, str) else str(content)
+        start_perf = time.perf_counter()
+        try:
+            response = await self.chat_llm.ainvoke(prompt)
+            content = response.content
+            logger.debug("chat_completed", model="chat", response_length=len(content))
+            elapsed = time.perf_counter() - start_perf
+            from src.observability.metrics import LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED
+            LLM_CALL_TOTAL.labels(model=model, status="success").inc()
+            LLM_CALL_DURATION.labels(model=model).observe(elapsed)
+            from src.observability.langfuse_tracing import trace_llm_call
+            trace_llm_call(
+                model=model,
+                prompt=prompt,
+                response=content if isinstance(content, str) else str(content),
+                latency_ms=int(elapsed * 1000),
+            )
+            return content if isinstance(content, str) else str(content)
+        except Exception:
+            from src.observability.metrics import LLM_CALL_TOTAL
+            LLM_CALL_TOTAL.labels(model=model, status="failed").inc()
+            raise
 
     async def multimodal_chat(
         self,
@@ -199,14 +217,32 @@ class LLMClient:
         # 构建多模态消息
         message = HumanMessage(content=content)  # type: ignore[call-overload]
 
-        response = await self.chat_llm.ainvoke([message])
-        resp_content = response.content
-        logger.debug(
-            "multimodal_chat_completed",
-            content_types=[c.get("type", "text") for c in content],
-            response_length=len(resp_content)
-        )
-        return resp_content if isinstance(resp_content, str) else str(resp_content)
+        effective_model = model or "chat"
+        start_perf = time.perf_counter()
+        try:
+            response = await self.chat_llm.ainvoke([message])
+            resp_content = response.content
+            logger.debug(
+                "multimodal_chat_completed",
+                content_types=[c.get("type", "text") for c in content],
+                response_length=len(resp_content)
+            )
+            elapsed = time.perf_counter() - start_perf
+            from src.observability.metrics import LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED
+            LLM_CALL_TOTAL.labels(model=effective_model, status="success").inc()
+            LLM_CALL_DURATION.labels(model=effective_model).observe(elapsed)
+            from src.observability.langfuse_tracing import trace_llm_call
+            trace_llm_call(
+                model=effective_model,
+                prompt=str(content),
+                response=resp_content if isinstance(resp_content, str) else str(resp_content),
+                latency_ms=int(elapsed * 1000),
+            )
+            return resp_content if isinstance(resp_content, str) else str(resp_content)
+        except Exception:
+            from src.observability.metrics import LLM_CALL_TOTAL
+            LLM_CALL_TOTAL.labels(model=effective_model, status="failed").inc()
+            raise
 
     # === 图像生成（agnes-image-2.1-flash）===
 
@@ -428,11 +464,29 @@ class LLMClient:
         pydantic_model = self._schema_to_pydantic(schema)
         structured_llm = self.chat_llm.with_structured_output(pydantic_model)
 
-        result = await structured_llm.ainvoke(prompt)
-        logger.debug("structured_output_completed", result_type=type(result).__name__)
-        if isinstance(result, BaseModel):
-            return result.model_dump()
-        return result
+        start_perf = time.perf_counter()
+        try:
+            result = await structured_llm.ainvoke(prompt)
+            logger.debug("structured_output_completed", result_type=type(result).__name__)
+            elapsed = time.perf_counter() - start_perf
+            from src.observability.metrics import LLM_CALL_TOTAL, LLM_CALL_DURATION, LLM_TOKENS_USED
+            LLM_CALL_TOTAL.labels(model=model, status="success").inc()
+            LLM_CALL_DURATION.labels(model=model).observe(elapsed)
+            from src.observability.langfuse_tracing import trace_llm_call
+            result_str = result.model_dump_json() if isinstance(result, BaseModel) else str(result)
+            trace_llm_call(
+                model=model,
+                prompt=prompt,
+                response=result_str,
+                latency_ms=int(elapsed * 1000),
+            )
+            if isinstance(result, BaseModel):
+                return result.model_dump()
+            return result
+        except Exception:
+            from src.observability.metrics import LLM_CALL_TOTAL
+            LLM_CALL_TOTAL.labels(model=model, status="failed").inc()
+            raise
 
     async def multimodal_structured_output(
         self,

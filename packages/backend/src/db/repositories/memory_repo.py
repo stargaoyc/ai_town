@@ -226,7 +226,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
     ) -> list[dict]:
         """混合检索（原生 SQL - HNSW + 重要性 + 时间衰减）
 
-        ⚠️ 分区裁剪：WHERE character_id = :cid 触发 HASH 分区裁剪，
+        ⚠️ 分区裁剪：WHERE character_id = $1 触发 HASH 分区裁剪，
         仅搜索单分区，HNSW 只扫描该角色的数据（< 10ms）。
 
         执行流程：
@@ -237,42 +237,44 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         4. 按 final_score 排序取 Top-K
 
         注意：
+        - 使用 asyncpg 原生连接执行，避免 SQLAlchemy text() 与 :: 类型转换冲突
         - SET LOCAL 必须与查询在同一事务内执行
-        - ef_search=100（原 40），因分区后单分区数据量小，可适当提高召回
         - 仅检索 materialized=true 的记忆（embedding 已生成）
         """
-        # 1. 设置 HNSW 检索参数（事务内生效）
-        await self.session.execute(text("SET LOCAL hnsw.ef_search = 100"))
+        # 1. 获取底层 asyncpg 连接
+        connection = await self.session.connection()
+        raw_conn = await connection.get_raw_connection()
+        dbapi_conn = raw_conn.driver_connection
 
-        # 2. 向量召回 + 混合排序（仅检索已向量化的记忆）
-        stmt = text(
-            """
+        # 2. 设置 HNSW 检索参数（事务内生效）
+        await dbapi_conn.execute("SET LOCAL hnsw.ef_search = 100")
+
+        # 3. 向量召回 + 混合排序（使用 asyncpg 原生 $1 占位符）
+        query_sql = """
             WITH candidates AS (
                 SELECT id, content, importance, timestamp,
-                       1 - (embedding <=> :q_vec) AS sim_score
+                       1 - (embedding <=> $2::halfvec) AS sim_score
                 FROM memory_episodes
-                WHERE character_id = :cid AND materialized = TRUE
-                ORDER BY embedding <=> :q_vec
-                LIMIT :limit
+                WHERE character_id = $1 AND materialized = TRUE
+                ORDER BY embedding <=> $2::halfvec
+                LIMIT $3
             )
             SELECT id, content,
                    sim_score * 0.6 + importance * 0.05
                    - EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 * 0.05 AS final_score
             FROM candidates
             ORDER BY final_score DESC
-            LIMIT :top_k;
-            """
+            LIMIT $4
+        """
+        vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
+        result = await dbapi_conn.fetch(
+            query_sql,
+            character_id,
+            vec_str,
+            top_k * 2,
+            top_k,
         )
-        result = await self.session.execute(
-            stmt,
-            {
-                "cid": character_id,
-                "q_vec": str(query_vec),
-                "limit": top_k * 2,
-                "top_k": top_k,
-            },
-        )
-        rows = [dict(row._mapping) for row in result]
+        rows = [dict(row) for row in result]
         logger.info(
             "memory_search_hybrid",
             character_id=str(character_id),

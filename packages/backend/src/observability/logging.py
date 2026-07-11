@@ -5,11 +5,14 @@
 - bind_context / clear_context 基于 contextvars 实现请求级上下文绑定（user_id 等）
 - 标准库 logging 通过 ProcessorFormatter 也走 structlog 渲染，保证 uvicorn /
   sqlalchemy 等第三方库日志同样携带 trace_id，全链路可关联
+- 日志同时输出到 stderr 和文件（data/logs/backend.log），供 Alloy 采集到 Loki
 """
 from __future__ import annotations
 
 import logging
+import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -63,6 +66,17 @@ def add_trace_context(
     return event_dict
 
 
+def _ensure_log_dir() -> Path:
+    """确保日志目录存在
+
+    日志文件路径：{project_root}/data/logs/backend.log
+    """
+    # 从 src/observability/ 向上 4 层到项目根目录
+    log_dir = Path(__file__).resolve().parents[4] / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
 def setup_logging(log_level: str = "info", log_format: str = "json") -> None:
     """初始化 structlog 结构化日志 + 标准库 logging 集成
 
@@ -108,11 +122,36 @@ def setup_logging(log_level: str = "info", log_format: str = "json") -> None:
             renderer,
         ],
     )
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(formatter)
+
+    # Handler 1: stderr（控制台输出）
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+
+    # Handler 2: 文件（JSON 格式，供 Alloy 采集到 Loki）
+    handlers: list[logging.Handler] = [stderr_handler]
+    try:
+        log_dir = _ensure_log_dir()
+        log_file = log_dir / "backend.log"
+        file_handler = logging.FileHandler(
+            str(log_file),
+            encoding="utf-8",
+        )
+        # 文件始终使用 JSON 格式
+        file_formatter = structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=shared_processors,
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.JSONRenderer(),
+            ],
+        )
+        file_handler.setFormatter(file_formatter)
+        handlers.append(file_handler)
+    except Exception:
+        # 日志目录创建失败不影响服务启动
+        pass
 
     root = logging.getLogger()
-    root.handlers = [handler]
+    root.handlers = handlers
     root.setLevel(level_num)
 
 

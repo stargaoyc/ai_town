@@ -7,7 +7,7 @@ from datetime import datetime
 from uuid import UUID
 from uuid6 import uuid7
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,5 +46,5 @@ class Plan(Base):
         TIMESTAMP(timezone=True), server_default="now()", comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default="now()", onupdate="now()", comment="更新时间（触发器自动维护）"
+        TIMESTAMP(timezone=True), server_default="now()", onupdate=func.now(), comment="更新时间（触发器自动维护）"
     )

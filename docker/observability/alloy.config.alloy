@@ -1,5 +1,5 @@
 // Grafana Alloy 配置 - AI Town 统一日志采集
-// 采集后端容器日志 → JSON 解析 → 标签提取 → Loki 推送
+// 采集后端日志文件 → JSON 解析 → 标签提取 → Loki 推送
 
 loki.write "default" {
   endpoint {
@@ -7,17 +7,15 @@ loki.write "default" {
   }
 }
 
-discovery.docker "backend" {
-  host = "unix:///var/run/docker.sock"
-  filter {
-    name = "label"
-    values = ["ai-town-service=backend"]
-  }
+// 从本地日志文件采集（后端以 uvicorn 本地运行，日志写到 data/logs/）
+local.file_match "backend_logs" {
+  path_targets = [{
+    __path__ = "/var/log/aitown/*.log",
+  }]
 }
 
-loki.source.docker "backend_logs" {
-  host       = "unix:///var/run/docker.sock"
-  targets    = discovery.docker.backend.targets   // 修正点1
+loki.source.file "backend_logs" {
+  targets    = local.file_match.backend_logs.targets
   forward_to = [loki.process.backend_pipeline.receiver]
 }
 
@@ -47,7 +45,7 @@ loki.process "backend_pipeline" {
     }
   }
 
-  // 修正点2：使用 structured_metadata
+  // 使用 structured_metadata
   stage.structured_metadata {
     values = {
       trace_id     = "trace_id",

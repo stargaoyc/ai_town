@@ -349,21 +349,22 @@ class OneBotAdapter:
             )
 
     async def _handle_meta_event(self, event: dict) -> None:
-        """处理 OneBot v12 元事件（心跳 / 生命周期）
+        """处理 OneBot 元事件（心跳 / 生命周期）
 
+        兼容 OneBot v12 (detail_type) 和 OneBot 11 (meta_event_type)。
         仅记录日志，不做业务处理。
         """
-        detail_type = event.get("detail_type")
+        detail_type = event.get("detail_type") or event.get("meta_event_type")
         if detail_type == "heartbeat":
             logger.debug(
                 "onebot_heartbeat",
                 status=event.get("status"),
                 interval=event.get("interval"),
             )
-        elif detail_type == "lifecycle":
+        elif detail_type in ("lifecycle", "enable", "disable"):
             logger.info(
                 "onebot_lifecycle",
-                sub_type=event.get("sub_type"),
+                sub_type=event.get("sub_type") or detail_type,
             )
         else:
             logger.debug("onebot_meta_event", detail_type=detail_type)

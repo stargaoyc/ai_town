@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -123,6 +124,7 @@ class MessageService:
             }
         """
         # 0. Prompt 注入检测 + 输入消毒
+        start_perf = time.perf_counter()
         is_safe, matched_pattern = _prompt_guard.check_injection(content)
         if not is_safe:
             logger.warning(
@@ -131,6 +133,8 @@ class MessageService:
                 user_id=user_id,
                 pattern=matched_pattern,
             )
+            from src.observability.metrics import MESSAGE_PROCESSED_TOTAL
+            MESSAGE_PROCESSED_TOTAL.labels(platform=platform, status="failed").inc()
             return {
                 "conversation_id": None,
                 "message_id": None,
@@ -172,6 +176,8 @@ class MessageService:
                 content=f"角色 {character_id} 不存在或已下线",
             )
             await self.session.commit()
+            from src.observability.metrics import MESSAGE_PROCESSED_TOTAL
+            MESSAGE_PROCESSED_TOTAL.labels(platform=platform, status="failed").inc()
             return {
                 "conversation_id": conversation.id,
                 "message_id": None,
@@ -219,6 +225,14 @@ class MessageService:
         await self._maybe_compress_context(conversation, character)
 
         await self.session.commit()
+
+        from src.observability.metrics import MESSAGE_PROCESSED_TOTAL, MESSAGE_PROCESSING_DURATION
+        duration = time.perf_counter() - start_perf
+        if error:
+            MESSAGE_PROCESSED_TOTAL.labels(platform=platform, status="failed").inc()
+        else:
+            MESSAGE_PROCESSED_TOTAL.labels(platform=platform, status="success").inc()
+            MESSAGE_PROCESSING_DURATION.observe(duration)
 
         logger.info(
             "message_handled",

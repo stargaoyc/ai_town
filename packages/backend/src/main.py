@@ -277,6 +277,10 @@ async def lifespan(app: FastAPI):
     # === Shutdown ===
     logger.info("ai_town_backend_shutting_down")
 
+    # 刷新 Langfuse 缓冲区，确保追踪数据已发送
+    from src.observability.langfuse_tracing import flush_langfuse
+    flush_langfuse()
+
     # 停止 OneBot 适配器
     try:
         await onebot_adapter.stop()
@@ -346,6 +350,10 @@ async def _character_tick_loop() -> None:
                 logger.debug("no_active_characters")
                 continue
 
+            # 更新活跃角色数 Gauge
+            from src.observability.metrics import ACTIVE_CHARACTERS
+            ACTIVE_CHARACTERS.set(len(characters))
+
             logger.info("character_tick_batch_start", count=len(characters), backoff=backoff_multiplier)
 
             # 对每个角色执行 Tick
@@ -357,6 +365,9 @@ async def _character_tick_loop() -> None:
                     success_count += 1
                 except Exception as e:
                     error_str = str(e)
+                    # 记录 Character Tick 错误指标
+                    from src.observability.metrics import CHARACTER_TICK_ERRORS
+                    CHARACTER_TICK_ERRORS.labels(character_id=str(char.id)).inc()
                     # 检测 LLM 限流 (429)，立即停止当前批次并退避
                     if "429" in error_str or "RateLimitError" in error_str:
                         logger.warning(
@@ -399,21 +410,6 @@ async def _character_tick_loop() -> None:
 
 
 # === FastAPI 应用实例 ===
-# /health 和 /ws 端点无需鉴权，所有 /api/v1/ 路由强制鉴权
-async def _api_auth(request: Request) -> dict | None:
-    """条件鉴权：仅 /api/ 路径需要鉴权（登录接口豁免）
-
-    WebSocket 路径跳过鉴权（Request 依赖在 WebSocket 上下文中不可用）。
-    """
-    path = request.url.path
-    # WebSocket 路径和登录接口跳过鉴权
-    if path.startswith("/ws/") or path == "/api/v1/auth/login":
-        return None
-    if path.startswith("/api/"):
-        return await auth_dependency(request)
-    return None
-
-
 app = FastAPI(
     title="AI Town Backend",
     description="二次元 AI 小镇陪伴智能体 - World Engine + LangGraph",

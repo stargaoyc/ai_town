@@ -16,7 +16,7 @@ from datetime import datetime
 from uuid import UUID
 from uuid6 import uuid7
 
-from pgvector.sqlalchemy import Vector
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
@@ -52,7 +52,7 @@ class MemoryEpisode(Base):
     )
     content: Mapped[str] = mapped_column(Text, comment="记忆内容（自然语言）")
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(settings.embedding_dim), nullable=True,
+        HALFVEC(settings.embedding_dim), nullable=True,
         comment="向量嵌入（materialized=false 时为 NULL）"
     )
     importance: Mapped[int] = mapped_column(
