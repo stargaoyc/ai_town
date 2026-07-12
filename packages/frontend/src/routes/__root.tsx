@@ -1,6 +1,6 @@
 import { createRootRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useRouterState } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/router-devtools";
+import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { NavLayout } from "@/components/ui";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AnimeBackground } from "@/components/AnimeBackground";
