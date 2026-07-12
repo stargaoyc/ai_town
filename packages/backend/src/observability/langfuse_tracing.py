@@ -65,7 +65,7 @@ def trace_llm_call(
             model=model,
             input=_truncate(prompt),
             output=_truncate(response),
-            usage={"total_tokens": tokens} if tokens else None,
+            usage={"total_tokens": tokens} if tokens else None,  # type: ignore[arg-type]
             metadata=metadata,
         )
     except Exception:

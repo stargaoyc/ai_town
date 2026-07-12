@@ -96,7 +96,7 @@ async def test_image_generation(client: AsyncOpenAI, model: str, name: str) -> d
             timeout=30.0,
         )
         elapsed = time.perf_counter() - start
-        image_url = response.data[0].url
+        image_url = response.data[0].url if response.data else None
         return {
             "name": name,
             "model": model,
@@ -214,7 +214,7 @@ async def test_embedding_multimodal(client: AsyncOpenAI, model: str, name: str) 
                     {"type": "text", "text": "What is in this image?"},
                     {"type": "image_url", "image_url": {"url": "https://live.staticflickr.com/3851/14825276609_098cac593d_b.jpg"}}
                 ]
-            }],
+            }],  # type: ignore[arg-type]
             encoding_format="float",
             extra_headers={
                 "HTTP-Referer": "https://github.com/ai-town",

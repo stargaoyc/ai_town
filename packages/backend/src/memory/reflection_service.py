@@ -47,7 +47,7 @@ class ReflectionService:
         )
         return reflection
 
-    async def _do_reflection(self, character_id: UUID) -> Reflection:
+    async def _do_reflection(self, character_id: UUID) -> Reflection | None:
         """执行反思
 
         流程：
@@ -60,7 +60,7 @@ class ReflectionService:
             character_id: 角色 ID
 
         Returns:
-            Reflection 实体
+            Reflection 实体；无未反思记忆时返回 None
         """
         # 获取未反思记忆（按时间正序，先入先反思）
         episodes = await self.mem_repo.fetch_unreflected(character_id, limit=20)

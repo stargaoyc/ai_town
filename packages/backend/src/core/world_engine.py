@@ -328,7 +328,7 @@ class WorldEngine:
         if temperature is not None:
             mapping["temperature"] = str(temperature)
 
-        await self.redis.hset("world:state", mapping=mapping)
+        await self.redis.hset("world:state", mapping=mapping)  # type: ignore[arg-type]
 
         logger.debug("world_state_saved", tick_id=self.tick_id)
 

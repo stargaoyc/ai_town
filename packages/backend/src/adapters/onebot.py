@@ -657,7 +657,7 @@ class OneBotAdapter:
         Returns:
             (should_reply, reason)
         """
-        llm_client, prompts_obj = _get_llm_globals()
+        llm_client, prompts_obj, redis_client = _get_llm_globals()
         if llm_client is None or prompts_obj is None:
             return False, "llm_not_ready"
 

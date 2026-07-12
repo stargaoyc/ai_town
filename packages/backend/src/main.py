@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
         import json
         raw_overrides = await redis.get("config:overrides")
         if raw_overrides:
-            overrides = json.loads(raw_overrides) if isinstance(raw_overrides, str) else json.loads(raw_overrides.decode())
+            overrides = json.loads(raw_overrides)  # type: ignore[arg-type]
             applied = 0
             for key, value in overrides.items():
                 if hasattr(settings, key):
@@ -2762,7 +2762,7 @@ async def get_runtime_config():
         raw = await redis.get("config:overrides")
         if raw:
             try:
-                overrides = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+                overrides = json.loads(raw)  # type: ignore[arg-type]
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -2805,7 +2805,7 @@ async def update_runtime_config(updates: dict = Body(...)):
     overrides = {}
     if raw:
         try:
-            overrides = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+            overrides = json.loads(raw)  # type: ignore[arg-type]
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -2861,7 +2861,7 @@ async def reset_config_item(key: str):
     raw = await redis.get("config:overrides")
     if raw:
         try:
-            overrides = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+            overrides = json.loads(raw)  # type: ignore[arg-type]
         except (json.JSONDecodeError, TypeError):
             overrides = {}
 
@@ -2870,7 +2870,7 @@ async def reset_config_item(key: str):
             await redis.set("config:overrides", json.dumps(overrides))
 
     # 恢复默认值到 settings 对象
-    default_val = getattr(Settings(), key, None)
+    default_val = getattr(Settings(), key, None)  # type: ignore[call-arg]
     setattr(settings, key, default_val)
 
     return {"success": True, "key": key, "reset_to": default_val}
@@ -2892,6 +2892,9 @@ async def _create_notification(
     """创建通知并写入 Redis（内部函数，可被其他模块调用）"""
     import json
     from uuid6 import uuid7
+
+    if redis is None:
+        raise RuntimeError("Redis not initialized")
 
     notif = {
         "id": str(uuid7()),
@@ -2926,12 +2929,14 @@ async def list_notifications(
 
     user_id = user["user_id"]
     limit = min(max(limit, 1), 200)
+    if redis is None:
+        raise HTTPException(500, "Redis not available")
     raw_list = await redis.lrange(_notif_key(user_id), 0, limit - 1)
 
     notifications = []
     for raw in raw_list:
         try:
-            notif = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+            notif = json.loads(raw)  # type: ignore[arg-type]
             if unread_only and notif.get("read"):
                 continue
             notifications.append(notif)
@@ -2976,10 +2981,12 @@ async def mark_notification_read(
     import json
 
     user_id = user["user_id"]
+    if redis is None:
+        raise HTTPException(500, "Redis not available")
     raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
     for i, raw in enumerate(raw_list):
         try:
-            notif = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+            notif = json.loads(raw)  # type: ignore[arg-type]
             if notif.get("id") == notif_id:
                 notif["read"] = True
                 await redis.lset(_notif_key(user_id), i, json.dumps(notif))
@@ -2998,11 +3005,13 @@ async def mark_all_notifications_read(
     import json
 
     user_id = user["user_id"]
+    if redis is None:
+        raise HTTPException(500, "Redis not available")
     raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
     updated = 0
     for i, raw in enumerate(raw_list):
         try:
-            notif = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+            notif = json.loads(raw)  # type: ignore[arg-type]
             if not notif.get("read"):
                 notif["read"] = True
                 await redis.lset(_notif_key(user_id), i, json.dumps(notif))
@@ -3022,13 +3031,15 @@ async def delete_notification(
     import json
 
     user_id = user["user_id"]
+    if redis is None:
+        raise HTTPException(500, "Redis not available")
     raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
     for raw in raw_list:
         try:
-            notif = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+            notif = json.loads(raw)  # type: ignore[arg-type]
             if notif.get("id") == notif_id:
                 # LREM 按 value 删除（需要精确匹配原始 JSON 字符串）
-                await redis.lrem(_notif_key(user_id), 1, raw)
+                await redis.lrem(_notif_key(user_id), 1, raw)  # type: ignore[arg-type]
                 return {"success": True, "id": notif_id}
         except (json.JSONDecodeError, TypeError):
             continue
@@ -3042,5 +3053,7 @@ async def clear_all_notifications(
 ):
     """清除所有通知"""
     user_id = user["user_id"]
+    if redis is None:
+        raise HTTPException(500, "Redis not available")
     await redis.delete(_notif_key(user_id))
     return {"success": True}

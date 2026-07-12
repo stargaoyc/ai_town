@@ -92,4 +92,4 @@ class Settings(BaseSettings):
     onebot_group_character_map: str = "{}"
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

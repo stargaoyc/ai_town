@@ -264,6 +264,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         connection = await self.session.connection()
         raw_conn = await connection.get_raw_connection()
         dbapi_conn = raw_conn.driver_connection
+        assert dbapi_conn is not None
 
         # 2. 设置 HNSW 检索参数（事务内生效）
         await dbapi_conn.execute("SET LOCAL hnsw.ef_search = 100")

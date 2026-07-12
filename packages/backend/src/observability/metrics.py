@@ -22,7 +22,7 @@ import time
 from fastapi import FastAPI
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
 from starlette.requests import Request
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from structlog import get_logger
 
 logger = get_logger(__name__)
@@ -87,7 +87,7 @@ LLM_CALL_DURATION = Histogram(
 LLM_TOKENS_USED = Counter(
     "ai_town_llm_tokens_total",
     "LLM token 消耗",
-    ["model", "type"],  # type: prompt/completion
+    ["model", "type"],
 )
 LLM_COST_TOTAL = Counter(
     "ai_town_llm_cost_total_usd",
@@ -160,7 +160,7 @@ class PrometheusMiddleware:
         start_time = time.perf_counter()
         status_code = 500
 
-        async def send_with_status(message: dict) -> None:
+        async def send_with_status(message: Message) -> None:
             nonlocal status_code
             if message["type"] == "http.response.start":
                 status_code = message.get("status", 500)

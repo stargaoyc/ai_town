@@ -94,7 +94,7 @@ class LLMClient:
         if is_openrouter:
             response = await self._embedding_client.embeddings.create(
                 model=settings.model_embedding,
-                input=[{"content": [{"type": "text", "text": text}]}],
+                input=[{"content": [{"type": "text", "text": text}]}],  # type: ignore[arg-type]
                 encoding_format="float",
                 extra_headers={
                     "HTTP-Referer": "https://github.com/ai-town",
@@ -136,7 +136,7 @@ class LLMClient:
 
         response = await self._embedding_client.embeddings.create(
             model=settings.model_embedding,
-            input=[{"content": content}],
+            input=[{"content": content}],  # type: ignore[arg-type]
             encoding_format="float",
             extra_headers={
                 "HTTP-Referer": "https://github.com/ai-town",
@@ -313,6 +313,8 @@ class LLMClient:
         )
 
         # 提取结果
+        if not response.data:
+            raise ValueError("image_generation_empty_response")
         if return_base64:
             result = response.data[0].b64_json
         else:

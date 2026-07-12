@@ -27,7 +27,7 @@ async def test():
         # 等待回复（最多 60 秒）
         try:
             reply = await asyncio.wait_for(ws.recv(), timeout=60)
-            safe = reply.encode("utf-8", errors="replace").decode("utf-8")
+            safe = reply.decode("utf-8", errors="replace") if isinstance(reply, bytes) else reply
             print(f"Reply ({len(reply)} bytes): {safe[:800]}")
         except asyncio.TimeoutError:
             print("Timeout - no reply in 60s")
