@@ -125,7 +125,10 @@ export const api = {
       : "";
     return request<{ data: Character[]; total: number }>(`/characters${qs}`);
   },
-  getCharacter: (id: string) => request<Character>(`/characters/${id}`),
+  getCharacter: (id: string) =>
+    request<{ character: Character; state: Partial<CharacterState> }>(
+      `/characters/${id}`,
+    ).then((res) => ({ ...res.character, state: res.state })),
 
   getWorld: () => request<WorldState>("/world"),
   getWorldEvents: (tickId: number) =>
@@ -149,7 +152,7 @@ export const api = {
     ),
   getHistory: (characterId: string, limit = 20) =>
     request<{ data: Message[] }>(
-      `/messages/history?character_id=${characterId}&limit=${limit}`,
+      `/characters/${characterId}/messages?limit=${limit}`,
     ),
   getConversations: () => request<{ data: Conversation[] }>("/conversations"),
 
@@ -158,4 +161,236 @@ export const api = {
 
   getScenes: () => request<{ data: Scene[] }>("/town/scenes"),
   getScene: (id: string) => request<Scene>(`/town/scenes/${id}`),
+
+  // ===== 扩展 API（新功能） =====
+
+  // 角色导入
+  importCharacter: (yaml: string) =>
+    request("/admin/characters/import", {
+      method: "POST",
+      body: JSON.stringify({ yaml }),
+    }),
+  importCharacterBatch: (yaml: string) =>
+    request("/admin/characters/import-batch", {
+      method: "POST",
+      body: JSON.stringify({ yaml }),
+    }),
+
+  // 角色状态历史
+  getCharacterStateHistory: (id: string, limit = 50) =>
+    request<{ data: StateHistoryEntry[]; total: number }>(
+      `/characters/${id}/state-history?limit=${limit}`,
+    ),
+
+  // 世界事件范围查询
+  getWorldEventsRange: (params: {
+    start_tick?: number;
+    end_tick?: number;
+    event_type?: string;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).reduce((acc, [k, v]) => {
+        if (v !== undefined && v !== null) acc[k] = String(v);
+        return acc;
+      }, {} as Record<string, string>),
+    ).toString();
+    return request<{ data: WorldEventEntry[]; total: number }>(
+      `/world/events?${qs}`,
+    );
+  },
+
+  // 反思
+  getReflections: (characterId: string) =>
+    request<{ data: ReflectionEntry[] }>(
+      `/characters/${characterId}/reflections`,
+    ),
+
+  // 规划
+  getPlans: (characterId: string) =>
+    request<{ data: PlanEntry[] }>(`/characters/${characterId}/plans`),
+
+  // 角色行为日志
+  getCharacterActions: (characterId: string, limit = 50) =>
+    request<{ data: ActionEntry[]; total: number }>(
+      `/characters/${characterId}/actions?limit=${limit}`,
+    ),
+
+  // 角色关系
+  getRelations: (characterId: string) =>
+    request<{ data: RelationEntry[] }>(`/characters/${characterId}/relations`),
+
+  // QQ 消息监控
+  getOnebotMessages: (limit = 50) =>
+    request<{ data: OnebotMessageEntry[]; total: number }>(
+      `/admin/onebot/messages?limit=${limit}`,
+    ),
+
+  // 主动分享历史
+  getProactiveShares: (limit = 50) =>
+    request<{ data: ShareEntry[]; total: number }>(
+      `/admin/proactive-shares?limit=${limit}`,
+    ),
+
+  // 向量检索测试
+  vectorSearch: (characterId: string, query: string, topK = 10) =>
+    request<{ data: VectorSearchResult[]; total: number; query: string }>(
+      `/admin/vector-search?character_id=${characterId}&query=${encodeURIComponent(query)}&top_k=${topK}`,
+      { method: "POST" },
+    ),
+
+  // 世界快照
+  getWorldSnapshots: (limit = 20) =>
+    request<{ data: SnapshotEntry[]; total: number }>(
+      `/admin/world/snapshots?limit=${limit}`,
+    ),
+
+  // 消息统计
+  getMessageStats: (params?: {
+    character_id?: string;
+    start_date?: string;
+    end_date?: string;
+  }) => {
+    const qs = params
+      ? "?" + new URLSearchParams(params as Record<string, string>).toString()
+      : "";
+    return request<MessageStats>(`/messages/stats${qs}`);
+  },
+
+  // 模块列表
+  getModules: () => request<{ data: ModuleEntry[]; total: number }>("/modules"),
+
+  // MCP 服务器
+  getMcpServers: () => request<{ data: McpServerEntry[] }>("/mcp/servers"),
+  getMcpTools: () => request<{ data: McpToolEntry[] }>("/mcp/tools"),
 };
+
+// ===== 扩展类型定义 =====
+
+export interface StateHistoryEntry {
+  stamina: number;
+  satiety: number;
+  mood: string;
+  money: number;
+  phone_battery: number;
+  social_energy: number;
+  location: string;
+  updated_at: string;
+}
+
+export interface WorldEventEntry {
+  id: string;
+  tick_id: number;
+  event_type: string;
+  event_key: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ReflectionEntry {
+  id: string;
+  character_id: string;
+  content: string;
+  created_at: string;
+}
+
+export interface PlanEntry {
+  id: string;
+  character_id: string;
+  description: string;
+  status: string;
+  priority?: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ActionEntry {
+  id: string;
+  character_id?: string;
+  action_id: string;
+  action_name?: string;
+  params?: Record<string, unknown>;
+  reason?: string;
+  result?: Record<string, unknown> | null;
+  duration_minutes?: number;
+  duration?: number;
+  location?: string;
+  related_characters?: string[];
+  timestamp?: string;
+  created_at?: string;
+}
+
+export interface RelationEntry {
+  target_id: string;
+  target_name?: string;
+  relation_type: string;
+  trust: number;
+  intimacy: number;
+}
+
+export interface OnebotMessageEntry {
+  message_id: string;
+  conversation_id: string;
+  character_id: string;
+  user_id: string;
+  sender: string;
+  content: string;
+  tokens?: number;
+  cost?: number;
+  created_at: string;
+}
+
+export interface ShareEntry {
+  message_id: string;
+  conversation_id: string;
+  sender: string;
+  content: string;
+  tokens?: number;
+  cost?: number;
+  created_at: string;
+}
+
+export interface VectorSearchResult {
+  id: string;
+  content: string;
+  importance: number;
+  timestamp: string;
+  similarity: number;
+  is_reflected: boolean;
+  source_type: string;
+}
+
+export interface SnapshotEntry {
+  id: string;
+  tick_id: number;
+  state: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MessageStats {
+  total_messages: number;
+  total_tokens: number;
+  total_cost: number;
+  by_character?: Record<string, { messages: number; tokens: number; cost: number }>;
+  by_day?: Record<string, { messages: number; tokens: number; cost: number }>;
+}
+
+export interface ModuleEntry {
+  name: string;
+  type: string;
+  status: string;
+  description: string;
+}
+
+export interface McpServerEntry {
+  name: string;
+  type: string;
+  description?: string;
+  status?: string;
+}
+
+export interface McpToolEntry {
+  name: string;
+  server: string;
+  server_type: string;
+}

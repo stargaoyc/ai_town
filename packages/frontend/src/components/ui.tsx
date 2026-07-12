@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode, MouseEventHandler } from "react";
 import { motion } from "framer-motion";
 import { LogOut, User } from "lucide-react";
@@ -63,12 +64,36 @@ export function GlassCard({
 export function NavLayout({ children }: { children: ReactNode }) {
   const userId = useAuthStore((s) => s.userId);
   const logout = useAuthStore((s) => s.logout);
+  const [moreOpen, setMoreOpen] = useState(false);
   const links = [
     { to: "/", label: "总览", icon: "🏠" },
     { to: "/characters", label: "角色", icon: "👥" },
     { to: "/world", label: "世界", icon: "🌍" },
     { to: "/map", label: "地图", icon: "🗺️" },
     { to: "/admin", label: "管理", icon: "⚙️" },
+  ];
+
+  const moreLinks = [
+    { to: "/import", label: "角色导入", icon: "📥" },
+    { to: "/state-charts", label: "状态图表", icon: "📊" },
+    { to: "/memories", label: "记忆时间线", icon: "🧠" },
+    { to: "/reflections", label: "反思查看", icon: "💭" },
+    { to: "/plans", label: "规划系统", icon: "📋" },
+    { to: "/relationships", label: "关系图谱", icon: "🔗" },
+    { to: "/metrics", label: "指标面板", icon: "📈" },
+    { to: "/cost", label: "成本仪表", icon: "💰" },
+    { to: "/events", label: "事件时间线", icon: "⏱️" },
+    { to: "/actions", label: "行为日志", icon: "📝" },
+    { to: "/qq-monitor", label: "QQ监控", icon: "💬" },
+    { to: "/shares", label: "主动分享", icon: "📤" },
+    { to: "/export", label: "导出", icon: "📦" },
+    { to: "/conversations", label: "会话管理", icon: "🗨️" },
+    { to: "/vector-search", label: "向量检索", icon: "🔍" },
+    { to: "/snapshots", label: "快照管理", icon: "📸" },
+    { to: "/character-card", label: "角色卡", icon: "🎴" },
+    { to: "/compare", label: "角色对比", icon: "🔄" },
+    { to: "/notifications", label: "通知中心", icon: "🔔" },
+    { to: "/settings", label: "设置", icon: "🔧" },
   ];
 
   const initials = userId ? userId.slice(0, 2).toUpperCase() : "??";
@@ -85,7 +110,7 @@ export function NavLayout({ children }: { children: ReactNode }) {
               <span className="text-2xl">🌸</span>
               <span>AI Town</span>
             </Link>
-            <div className="hidden md:flex gap-1">
+            <div className="hidden md:flex gap-1 items-center">
               {links.map((link) => (
                 <Link
                   key={link.to}
@@ -99,6 +124,40 @@ export function NavLayout({ children }: { children: ReactNode }) {
                   {link.label}
                 </Link>
               ))}
+              {/* 更多下拉菜单 */}
+              <div
+                className="relative"
+                onMouseEnter={() => setMoreOpen(true)}
+                onMouseLeave={() => setMoreOpen(false)}
+              >
+                <button className="px-3 py-1.5 rounded-xl text-sm text-twilight-500 hover:bg-sakura-100/60 hover:text-sakura-600 transition-all hover:scale-105 flex items-center gap-1">
+                  <span>📂</span>
+                  <span>更多</span>
+                  <span className="text-xs">▾</span>
+                </button>
+                {moreOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="absolute top-full left-0 mt-1 w-56 max-h-[70vh] overflow-y-auto bg-white/90 backdrop-blur-xl rounded-2xl border border-white/50 shadow-soft-lg p-2 grid grid-cols-1 gap-0.5"
+                  >
+                    {moreLinks.map((link) => (
+                      <Link
+                        key={link.to}
+                        to={link.to}
+                        className="px-3 py-2 rounded-xl text-sm text-twilight-500 hover:bg-sakura-100/60 hover:text-sakura-600 transition-all flex items-center gap-2"
+                        activeProps={{
+                          className:
+                            "bg-sakura-200/60 text-sakura-700 font-medium",
+                        }}
+                      >
+                        <span>{link.icon}</span>
+                        <span>{link.label}</span>
+                      </Link>
+                    ))}
+                  </motion.div>
+                )}
+              </div>
             </div>
           </div>
 

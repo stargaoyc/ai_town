@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import re
 import time
 from datetime import datetime, timezone
 from uuid import UUID
@@ -48,7 +49,17 @@ COMPRESSED_HISTORY_LIMIT = 10     # 压缩后保留最近 10 条原文
 DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后再试）"
 
 # 群聊智能回复：非 @ 消息的回复概率上限（避免刷屏）
-GROUP_REPLY_PROBABILITY_CAP = 0.4
+GROUP_REPLY_PROBABILITY_CAP = 0.7
+
+# 群聊智能回复：常见问候语关键词（命中则直接回复）
+GREETING_KEYWORDS = frozenset({
+    "你好", "您好", "嗨", "哈喽", "hello", "hi", "hey", "早上好",
+    "下午好", "晚上好", "早安", "晚安", "午安", "在吗", "在不在",
+    "有人吗", "你好呀", "你好啊", "哈喽啊", "大家好",
+})
+
+# 匹配 [CQ:xxx,...] 码（OneBot 图片/表情/at 等）
+_CQ_CODE_PATTERN = re.compile(r"\[CQ:[^\]]+\]")
 
 
 class MessageService:
@@ -100,15 +111,16 @@ class MessageService:
     ) -> tuple[bool, str]:
         """群聊智能回复决策 - 判断角色是否应该回复这条非 @ 消息
 
-        决策逻辑（三层过滤，从轻到重）：
-        1. 关键词命中：消息包含角色名 / 别名 → 直接回复
-        2. 启发式规则：疑问句 / @ 他人但内容相关 / 直接对话语气 → 概率回复
-        3. LLM 判断：调用轻量级 LLM 判断相关性（成本控制，仅在 1/2 未命中时）
+        决策逻辑（四层过滤，从轻到重）：
+        1. 关键词命中：消息包含角色名 / 问候语 → 直接回复
+        2. 启发式规则：疑问句 / 情绪强烈 → 概率回复
+        3. LLM 判断：调用轻量级 LLM 判断相关性
+        4. 概率兜底：LLM 未命中时小概率主动回复
 
         成本控制：
         - 每次调用最多 1 次 LLM 请求（chat 模型）
-        - LLM 判断失败时默认不回复（fail-safe）
-        - 回复概率受 GROUP_REPLY_PROBABILITY_CAP 上限约束
+        - LLM 判断失败时小概率回复（fail-open，更积极）
+        - CQ 码（图片/表情等）在判断前清理，避免 URL 中 ? 误判为疑问句
 
         Args:
             character_id: 角色 ID（用于加载角色档案）
@@ -124,31 +136,42 @@ class MessageService:
         if not message or not message.strip():
             return False, "empty_message"
 
-        text = message.strip()
+        # 清理 CQ 码（图片/表情/at 等），避免 URL 中的 ? 误判为疑问句
+        raw_text = message.strip()
+        text = _CQ_CODE_PATTERN.sub("", raw_text).strip()
 
-        # 1. 关键词命中：消息包含角色名
+        # 如果清理后为空（纯图片/表情消息），用原始消息做后续判断
+        if not text:
+            text = raw_text
+
+        import random
+
+        # 1. 关键词命中
+        # 1a. 消息包含角色名 → 直接回复
         if character_name and character_name in text:
             return True, "name_mentioned"
 
-        # 2. 启发式规则
-        import random
+        # 1b. 问候语关键词 → 直接回复（性格外向的角色会回应问候）
+        text_lower = text.lower()
+        for keyword in GREETING_KEYWORDS:
+            if keyword in text_lower:
+                return True, f"greeting:{keyword}"
 
-        # 2a. 疑问句（包含问号）
+        # 2. 启发式规则（概率回复）
+        # 2a. 疑问句（包含问号或疑问词结尾）
         if "?" in text or "？" in text or text.endswith("吗") or text.endswith("呢"):
-            # 疑问句有 40% 概率回复
             if random.random() < GROUP_REPLY_PROBABILITY_CAP:
                 return True, "question_heuristic"
             return False, "question_skip_probability"
 
-        # 2b. 情绪强烈（包含感叹号或表情）
-        if "！" in text or "!" in text or "[CQ:face" in text:
-            if random.random() < 0.2:
+        # 2b. 情绪强烈（包含感叹号或 QQ 表情）
+        if "！" in text or "!" in text or "[CQ:face" in raw_text:
+            if random.random() < 0.5:
                 return True, "emotion_heuristic"
             return False, "emotion_skip_probability"
 
         # 3. LLM 判断：调用轻量级 LLM 判断相关性
         try:
-            # 加载角色档案以提供上下文
             character_data = await self.character_repo.get_by_id(character_id)
             if character_data is None:
                 return False, "character_not_found"
@@ -168,9 +191,10 @@ class MessageService:
                 f"1. 消息与角色兴趣/背景相关\n"
                 f"2. 消息在讨论角色关心的话题\n"
                 f"3. 消息是通用问候且角色性格外向\n"
-                f"4. 消息内容有趣，角色自然会想回应\n\n"
+                f"4. 消息内容有趣，角色自然会想回应\n"
+                f"5. 消息是日常闲聊，角色性格外向时应积极参与\n\n"
                 f"不回复的标准：\n"
-                f"1. 消息与角色完全无关\n"
+                f"1. 消息与角色完全无关且无趣\n"
                 f"2. 消息是他人之间的私密对话\n"
                 f"3. 消息是纯技术讨论且角色无相关背景\n\n"
                 f"请只输出 JSON：{{\"should_reply\": true/false, \"reason\": \"简短原因\"}}"
@@ -192,11 +216,15 @@ class MessageService:
             should = bool(result.get("should_reply", False))
             reason = result.get("reason", "llm_judgment")
 
-            # 概率上限控制：即使 LLM 说回复，也受概率上限约束
-            if should and random.random() > GROUP_REPLY_PROBABILITY_CAP:
-                return False, f"llm_yes_but_capped:{reason}"
+            # LLM 判断为回复时，不再受概率上限约束（LLM 已做了相关性判断）
+            if should:
+                return True, f"llm:{reason}"
 
-            return should, f"llm:{reason}"
+            # 4. 概率兜底：LLM 说不回复时，仍有 15% 概率主动回复（增加活跃度）
+            if random.random() < 0.15:
+                return True, f"random_fallback:{reason}"
+
+            return False, f"llm_no:{reason}"
 
         except Exception as e:
             logger.warning(
@@ -204,7 +232,9 @@ class MessageService:
                 character_id=str(character_id),
                 error=str(e),
             )
-            # LLM 判断失败时默认不回复（fail-safe）
+            # LLM 判断失败时 30% 概率回复（fail-open，更积极）
+            if random.random() < 0.3:
+                return True, f"llm_error_fallback:{type(e).__name__}"
             return False, f"llm_judge_error:{type(e).__name__}"
 
     async def handle_user_message(

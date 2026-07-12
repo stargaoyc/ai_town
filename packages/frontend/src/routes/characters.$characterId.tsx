@@ -56,7 +56,18 @@ function CharacterDetailPage() {
   if (error) return <ErrorDisplay error={error} />;
   if (!character) return <EmptyState title="角色不存在" />;
 
-  const state = character.state;
+  const state = character.state
+    ? {
+        location: character.state.location,
+        stamina: character.state.stamina ?? 0,
+        satiety: character.state.satiety ?? 0,
+        mood: character.state.mood,
+        money: character.state.money ?? 0,
+        phone_battery: character.state.phone_battery ?? 0,
+        social_energy: character.state.social_energy ?? 0,
+        version: character.state.version ?? 0,
+      }
+    : undefined;
 
   return (
     <motion.div

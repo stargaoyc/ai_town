@@ -436,7 +436,31 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class AuthMiddleware:
-    """ASGI 鉴权中间件：仅 /api/ 路径需要鉴权，WebSocket 和其他路径豁免"""
+    """ASGI 鉴权中间件：仅 /api/ 路径需要鉴权，WebSocket 和其他路径豁免
+
+    鉴权策略：
+    - 非 /api/ 路径（/health, /metrics, /docs 等）→ 豁免
+    - /api/v1/auth/login → 豁免（登录接口）
+    - GET /api/v1/ 只读公开端点 → 豁免（Dashboard 无需登录可查看）
+    - 其他 /api/ 请求（POST/PUT/DELETE）→ 需要 JWT 或 API Key
+    """
+
+    # 公开只读 GET 路径前缀（无需登录即可查看）
+    PUBLIC_GET_PREFIXES = (
+        "/api/v1/world",
+        "/api/v1/characters",
+        "/api/v1/actions",
+        "/api/v1/town/scenes",
+        "/api/v1/memories",
+        "/api/v1/messages/history",
+        "/api/v1/conversations",
+        "/api/v1/admin/onebot/messages",
+        "/api/v1/admin/proactive-shares",
+        "/api/v1/admin/world/snapshots",
+        "/api/v1/mcp/servers",
+        "/api/v1/mcp/tools",
+        "/api/v1/modules",
+    )
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -448,10 +472,19 @@ class AuthMiddleware:
             return
 
         path = scope.get("path", "")
+        method = scope.get("method", "GET")
+
         # 豁免：非 /api/ 路径、登录接口
         if not path.startswith("/api/") or path == "/api/v1/auth/login":
             await self.app(scope, receive, send)
             return
+
+        # 豁免：GET 只读公开端点（Dashboard 无需登录可查看）
+        if method == "GET":
+            for prefix in self.PUBLIC_GET_PREFIXES:
+                if path.startswith(prefix):
+                    await self.app(scope, receive, send)
+                    return
 
         # 从 headers 中提取 Authorization
         headers = dict(scope.get("headers", []))
@@ -1832,4 +1865,335 @@ async def list_modules():
     return {
         "data": modules,
         "total": len(modules),
+    }
+
+
+# =========================================================
+# 扩展 API 端点（前端功能支持）
+# =========================================================
+
+
+@app.get("/api/v1/characters/{character_id}/state-history")
+async def get_character_state_history(character_id: UUID, limit: int = 50):
+    """获取角色状态历史记录（用于状态图表）
+
+    Args:
+        character_id: 角色 ID
+        limit: 返回记录数（默认 50）
+
+    Returns:
+        状态历史列表（按时间倒序）
+    """
+    from sqlalchemy import desc, select
+
+    from src.db.models import CharacterState
+
+    async with db.session() as session:
+        stmt = (
+            select(CharacterState)
+            .where(CharacterState.character_id == character_id)
+            .order_by(desc(CharacterState.updated_at))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        states = list(result.scalars())
+
+    return {
+        "data": [
+            {
+                "stamina": s.stamina,
+                "satiety": s.satiety,
+                "mood": s.mood,
+                "money": s.money,
+                "phone_battery": s.phone_battery,
+                "social_energy": s.social_energy,
+                "location": s.location,
+                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+            }
+            for s in reversed(states)
+        ],
+        "total": len(states),
+    }
+
+
+@app.get("/api/v1/characters/{character_id}/messages")
+async def get_character_messages(character_id: UUID, limit: int = 50):
+    """获取角色的所有消息历史（跨会话）
+
+    Args:
+        character_id: 角色 ID
+        limit: 返回数量上限
+
+    Returns:
+        消息列表（按时间正序）
+    """
+    async with db.session() as session:
+        conv_repo = ConversationRepository(session)
+        msg_repo = MessageRepository(session)
+        conversations = await conv_repo.list_by_character(character_id, limit=100)
+        if not conversations:
+            return {"data": [], "total": 0}
+        all_messages = []
+        for conv in conversations:
+            msgs = await msg_repo.list_by_conversation(
+                conversation_id=conv.id,
+                limit=limit,
+                order_desc=True,
+            )
+            all_messages.extend(msgs)
+        # 按时间倒序排序后截断
+        all_messages.sort(
+            key=lambda m: m.created_at or datetime.min,
+            reverse=True,
+        )
+        all_messages = all_messages[:limit]
+        # 返回正序（旧到新）
+        all_messages.reverse()
+    return {
+        "data": [
+            {
+                "id": str(m.id),
+                "conversation_id": str(m.conversation_id),
+                "sender": m.sender,
+                "content": m.content,
+                "timestamp": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in all_messages
+        ],
+        "total": len(all_messages),
+    }
+
+
+@app.get("/api/v1/world/events")
+async def get_world_events_range(
+    start_tick: int = 0,
+    end_tick: int = 0,
+    event_type: str | None = None,
+    limit: int = 100,
+):
+    """查询 Tick 区间内的所有世界事件（用于事件时间线）
+
+    Args:
+        start_tick: 起始 Tick（默认 0）
+        end_tick: 结束 Tick（默认 0 表示当前 tick_id）
+        event_type: 事件类型过滤（可选）
+        limit: 返回数量上限
+
+    Returns:
+        世界事件列表（按 tick_id, created_at 排序）
+    """
+    if end_tick == 0 and world_engine:
+        end_tick = world_engine.tick_id
+
+    from sqlalchemy import select
+
+    from src.db.models import WorldEvent
+
+    async with db.session() as session:
+        stmt = (
+            select(WorldEvent)
+            .where(
+                WorldEvent.tick_id >= start_tick,
+                WorldEvent.tick_id <= end_tick,
+            )
+            .order_by(WorldEvent.tick_id, WorldEvent.created_at)
+            .limit(limit)
+        )
+        if event_type:
+            stmt = stmt.where(WorldEvent.event_type == event_type)
+
+        result = await session.execute(stmt)
+        events = list(result.scalars())
+
+    return {
+        "data": [
+            {
+                "id": str(e.id),
+                "tick_id": e.tick_id,
+                "event_type": e.event_type,
+                "event_key": e.event_key,
+                "payload": e.payload,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in events
+        ],
+        "total": len(events),
+    }
+
+
+@app.get("/api/v1/admin/onebot/messages")
+async def get_onebot_messages(limit: int = 50):
+    """获取 QQ 消息记录（用于 QQ 消息监控）
+
+    查询 platform=qq 的会话中的最近消息，包含发送者和内容。
+
+    Returns:
+        消息列表（按时间倒序）
+    """
+    from sqlalchemy import desc, select
+
+    from src.db.models import Conversation, Message
+
+    async with db.session() as session:
+        # 联合查询 Conversation + Message
+        stmt = (
+            select(Message, Conversation)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(Conversation.platform == "qq")
+            .order_by(desc(Message.created_at))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        rows = result.all()
+
+    return {
+        "data": [
+            {
+                "message_id": str(msg.id),
+                "conversation_id": str(conv.id),
+                "character_id": str(conv.character_id),
+                "user_id": conv.user_id,
+                "sender": msg.sender,
+                "content": msg.content,
+                "tokens": msg.tokens,
+                "cost": msg.cost,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            }
+            for msg, conv in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@app.get("/api/v1/admin/proactive-shares")
+async def get_proactive_shares(limit: int = 50):
+    """获取主动分享历史记录
+
+    查询 sender=character 且 content 以特定标记开头的消息，
+    或 source_type 包含 proactive 的记忆片段。
+
+    Returns:
+        分享记录列表
+    """
+    from sqlalchemy import desc, select
+
+    from src.db.models import Message
+
+    async with db.session() as session:
+        # 查询角色主动发送的消息（sender=character）
+        stmt = (
+            select(Message)
+            .where(Message.sender == "character")
+            .order_by(desc(Message.created_at))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        messages = list(result.scalars())
+
+    return {
+        "data": [
+            {
+                "message_id": str(m.id),
+                "conversation_id": str(m.conversation_id),
+                "sender": m.sender,
+                "content": m.content,
+                "tokens": m.tokens,
+                "cost": m.cost,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in messages
+        ],
+        "total": len(messages),
+    }
+
+
+@app.post("/api/v1/admin/vector-search")
+async def vector_search(
+    character_id: UUID,
+    query: str,
+    top_k: int = 10,
+):
+    """向量检索测试 - 调试 pgvector 检索
+
+    Args:
+        character_id: 角色 ID
+        query: 查询文本
+        top_k: 返回结果数
+
+    Returns:
+        检索结果列表（含相似度分数）
+    """
+    if not llm:
+        raise HTTPException(503, "LLM client not initialized")
+
+    if not query.strip():
+        raise HTTPException(400, "Query text is required")
+
+    try:
+        # 生成查询向量
+        query_embedding = await llm.embed(query)
+
+        # 使用 MemoryRepository 进行向量检索
+        from src.db.repositories import MemoryRepository
+
+        async with db.session() as session:
+            repo = MemoryRepository(session)
+            results = await repo.search_hybrid(
+                character_id=character_id,
+                query_embedding=query_embedding,
+                top_k=top_k,
+            )
+
+        return {
+            "query": query,
+            "character_id": str(character_id),
+            "data": [
+                {
+                    "id": str(ep.id),
+                    "content": ep.content,
+                    "importance": ep.importance,
+                    "timestamp": ep.timestamp.isoformat() if ep.timestamp else None,
+                    "similarity": float(ep.similarity) if hasattr(ep, "similarity") else 0.0,
+                    "is_reflected": ep.is_reflected,
+                    "source_type": ep.source_type,
+                }
+                for ep in results
+            ],
+            "total": len(results),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Vector search failed: {e}")
+
+
+@app.get("/api/v1/admin/world/snapshots")
+async def get_world_snapshots(limit: int = 20):
+    """获取世界快照列表（用于冷启动恢复管理）
+
+    Returns:
+        快照列表（按 tick_id 倒序）
+    """
+    from sqlalchemy import desc, select
+
+    from src.db.models import WorldSnapshot
+
+    async with db.session() as session:
+        stmt = (
+            select(WorldSnapshot)
+            .order_by(desc(WorldSnapshot.tick_id))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        snapshots = list(result.scalars())
+
+    return {
+        "data": [
+            {
+                "id": str(s.id),
+                "tick_id": s.tick_id,
+                "state": s.state if isinstance(s.state, dict) else {},
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in snapshots
+        ],
+        "total": len(snapshots),
     }

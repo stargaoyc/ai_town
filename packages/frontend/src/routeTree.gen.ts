@@ -10,16 +10,97 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorldRouteImport } from './routes/world'
+import { Route as VectorSearchRouteImport } from './routes/vector-search'
+import { Route as StateChartsRouteImport } from './routes/state-charts'
+import { Route as SnapshotsRouteImport } from './routes/snapshots'
+import { Route as SharesRouteImport } from './routes/shares'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RelationshipsRouteImport } from './routes/relationships'
+import { Route as ReflectionsRouteImport } from './routes/reflections'
+import { Route as QqMonitorRouteImport } from './routes/qq-monitor'
+import { Route as PlansRouteImport } from './routes/plans'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as MetricsRouteImport } from './routes/metrics'
+import { Route as MemoriesRouteImport } from './routes/memories'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ImportRouteImport } from './routes/import'
+import { Route as ExportRouteImport } from './routes/export'
+import { Route as EventsRouteImport } from './routes/events'
+import { Route as CostRouteImport } from './routes/cost'
+import { Route as ConversationsRouteImport } from './routes/conversations'
+import { Route as CompareRouteImport } from './routes/compare'
 import { Route as CharactersRouteImport } from './routes/characters'
+import { Route as CharacterCardRouteImport } from './routes/character-card'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ActionsRouteImport } from './routes/actions'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CharactersIndexRouteImport } from './routes/characters.index'
 import { Route as CharactersCharacterIdRouteImport } from './routes/characters.$characterId'
 
 const WorldRoute = WorldRouteImport.update({
   id: '/world',
   path: '/world',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VectorSearchRoute = VectorSearchRouteImport.update({
+  id: '/vector-search',
+  path: '/vector-search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StateChartsRoute = StateChartsRouteImport.update({
+  id: '/state-charts',
+  path: '/state-charts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnapshotsRoute = SnapshotsRouteImport.update({
+  id: '/snapshots',
+  path: '/snapshots',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SharesRoute = SharesRouteImport.update({
+  id: '/shares',
+  path: '/shares',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RelationshipsRoute = RelationshipsRouteImport.update({
+  id: '/relationships',
+  path: '/relationships',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReflectionsRoute = ReflectionsRouteImport.update({
+  id: '/reflections',
+  path: '/reflections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QqMonitorRoute = QqMonitorRouteImport.update({
+  id: '/qq-monitor',
+  path: '/qq-monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlansRoute = PlansRouteImport.update({
+  id: '/plans',
+  path: '/plans',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MetricsRoute = MetricsRouteImport.update({
+  id: '/metrics',
+  path: '/metrics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MemoriesRoute = MemoriesRouteImport.update({
+  id: '/memories',
+  path: '/memories',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MapRoute = MapRouteImport.update({
@@ -32,9 +113,44 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExportRoute = ExportRouteImport.update({
+  id: '/export',
+  path: '/export',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventsRoute = EventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CostRoute = CostRouteImport.update({
+  id: '/cost',
+  path: '/cost',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConversationsRoute = ConversationsRouteImport.update({
+  id: '/conversations',
+  path: '/conversations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompareRoute = CompareRouteImport.update({
+  id: '/compare',
+  path: '/compare',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CharactersRoute = CharactersRouteImport.update({
   id: '/characters',
   path: '/characters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CharacterCardRoute = CharacterCardRouteImport.update({
+  id: '/character-card',
+  path: '/character-card',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -42,10 +158,20 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ActionsRoute = ActionsRouteImport.update({
+  id: '/actions',
+  path: '/actions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const CharactersIndexRoute = CharactersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CharactersRoute,
 } as any)
 const CharactersCharacterIdRoute = CharactersCharacterIdRouteImport.update({
   id: '/$characterId',
@@ -55,68 +181,212 @@ const CharactersCharacterIdRoute = CharactersCharacterIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/actions': typeof ActionsRoute
   '/admin': typeof AdminRoute
+  '/character-card': typeof CharacterCardRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/compare': typeof CompareRoute
+  '/conversations': typeof ConversationsRoute
+  '/cost': typeof CostRoute
+  '/events': typeof EventsRoute
+  '/export': typeof ExportRoute
+  '/import': typeof ImportRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/memories': typeof MemoriesRoute
+  '/metrics': typeof MetricsRoute
+  '/notifications': typeof NotificationsRoute
+  '/plans': typeof PlansRoute
+  '/qq-monitor': typeof QqMonitorRoute
+  '/reflections': typeof ReflectionsRoute
+  '/relationships': typeof RelationshipsRoute
+  '/settings': typeof SettingsRoute
+  '/shares': typeof SharesRoute
+  '/snapshots': typeof SnapshotsRoute
+  '/state-charts': typeof StateChartsRoute
+  '/vector-search': typeof VectorSearchRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
+  '/characters/': typeof CharactersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/actions': typeof ActionsRoute
   '/admin': typeof AdminRoute
-  '/characters': typeof CharactersRouteWithChildren
+  '/character-card': typeof CharacterCardRoute
+  '/compare': typeof CompareRoute
+  '/conversations': typeof ConversationsRoute
+  '/cost': typeof CostRoute
+  '/events': typeof EventsRoute
+  '/export': typeof ExportRoute
+  '/import': typeof ImportRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/memories': typeof MemoriesRoute
+  '/metrics': typeof MetricsRoute
+  '/notifications': typeof NotificationsRoute
+  '/plans': typeof PlansRoute
+  '/qq-monitor': typeof QqMonitorRoute
+  '/reflections': typeof ReflectionsRoute
+  '/relationships': typeof RelationshipsRoute
+  '/settings': typeof SettingsRoute
+  '/shares': typeof SharesRoute
+  '/snapshots': typeof SnapshotsRoute
+  '/state-charts': typeof StateChartsRoute
+  '/vector-search': typeof VectorSearchRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
+  '/characters': typeof CharactersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/actions': typeof ActionsRoute
   '/admin': typeof AdminRoute
+  '/character-card': typeof CharacterCardRoute
   '/characters': typeof CharactersRouteWithChildren
+  '/compare': typeof CompareRoute
+  '/conversations': typeof ConversationsRoute
+  '/cost': typeof CostRoute
+  '/events': typeof EventsRoute
+  '/export': typeof ExportRoute
+  '/import': typeof ImportRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/memories': typeof MemoriesRoute
+  '/metrics': typeof MetricsRoute
+  '/notifications': typeof NotificationsRoute
+  '/plans': typeof PlansRoute
+  '/qq-monitor': typeof QqMonitorRoute
+  '/reflections': typeof ReflectionsRoute
+  '/relationships': typeof RelationshipsRoute
+  '/settings': typeof SettingsRoute
+  '/shares': typeof SharesRoute
+  '/snapshots': typeof SnapshotsRoute
+  '/state-charts': typeof StateChartsRoute
+  '/vector-search': typeof VectorSearchRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
+  '/characters/': typeof CharactersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/actions'
     | '/admin'
+    | '/character-card'
     | '/characters'
+    | '/compare'
+    | '/conversations'
+    | '/cost'
+    | '/events'
+    | '/export'
+    | '/import'
     | '/login'
     | '/map'
+    | '/memories'
+    | '/metrics'
+    | '/notifications'
+    | '/plans'
+    | '/qq-monitor'
+    | '/reflections'
+    | '/relationships'
+    | '/settings'
+    | '/shares'
+    | '/snapshots'
+    | '/state-charts'
+    | '/vector-search'
     | '/world'
     | '/characters/$characterId'
+    | '/characters/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/actions'
     | '/admin'
-    | '/characters'
+    | '/character-card'
+    | '/compare'
+    | '/conversations'
+    | '/cost'
+    | '/events'
+    | '/export'
+    | '/import'
     | '/login'
     | '/map'
+    | '/memories'
+    | '/metrics'
+    | '/notifications'
+    | '/plans'
+    | '/qq-monitor'
+    | '/reflections'
+    | '/relationships'
+    | '/settings'
+    | '/shares'
+    | '/snapshots'
+    | '/state-charts'
+    | '/vector-search'
     | '/world'
     | '/characters/$characterId'
+    | '/characters'
   id:
     | '__root__'
     | '/'
+    | '/actions'
     | '/admin'
+    | '/character-card'
     | '/characters'
+    | '/compare'
+    | '/conversations'
+    | '/cost'
+    | '/events'
+    | '/export'
+    | '/import'
     | '/login'
     | '/map'
+    | '/memories'
+    | '/metrics'
+    | '/notifications'
+    | '/plans'
+    | '/qq-monitor'
+    | '/reflections'
+    | '/relationships'
+    | '/settings'
+    | '/shares'
+    | '/snapshots'
+    | '/state-charts'
+    | '/vector-search'
     | '/world'
     | '/characters/$characterId'
+    | '/characters/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ActionsRoute: typeof ActionsRoute
   AdminRoute: typeof AdminRoute
+  CharacterCardRoute: typeof CharacterCardRoute
   CharactersRoute: typeof CharactersRouteWithChildren
+  CompareRoute: typeof CompareRoute
+  ConversationsRoute: typeof ConversationsRoute
+  CostRoute: typeof CostRoute
+  EventsRoute: typeof EventsRoute
+  ExportRoute: typeof ExportRoute
+  ImportRoute: typeof ImportRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
+  MemoriesRoute: typeof MemoriesRoute
+  MetricsRoute: typeof MetricsRoute
+  NotificationsRoute: typeof NotificationsRoute
+  PlansRoute: typeof PlansRoute
+  QqMonitorRoute: typeof QqMonitorRoute
+  ReflectionsRoute: typeof ReflectionsRoute
+  RelationshipsRoute: typeof RelationshipsRoute
+  SettingsRoute: typeof SettingsRoute
+  SharesRoute: typeof SharesRoute
+  SnapshotsRoute: typeof SnapshotsRoute
+  StateChartsRoute: typeof StateChartsRoute
+  VectorSearchRoute: typeof VectorSearchRoute
   WorldRoute: typeof WorldRoute
 }
 
@@ -127,6 +397,90 @@ declare module '@tanstack/react-router' {
       path: '/world'
       fullPath: '/world'
       preLoaderRoute: typeof WorldRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vector-search': {
+      id: '/vector-search'
+      path: '/vector-search'
+      fullPath: '/vector-search'
+      preLoaderRoute: typeof VectorSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/state-charts': {
+      id: '/state-charts'
+      path: '/state-charts'
+      fullPath: '/state-charts'
+      preLoaderRoute: typeof StateChartsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/snapshots': {
+      id: '/snapshots'
+      path: '/snapshots'
+      fullPath: '/snapshots'
+      preLoaderRoute: typeof SnapshotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shares': {
+      id: '/shares'
+      path: '/shares'
+      fullPath: '/shares'
+      preLoaderRoute: typeof SharesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/relationships': {
+      id: '/relationships'
+      path: '/relationships'
+      fullPath: '/relationships'
+      preLoaderRoute: typeof RelationshipsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reflections': {
+      id: '/reflections'
+      path: '/reflections'
+      fullPath: '/reflections'
+      preLoaderRoute: typeof ReflectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/qq-monitor': {
+      id: '/qq-monitor'
+      path: '/qq-monitor'
+      fullPath: '/qq-monitor'
+      preLoaderRoute: typeof QqMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plans': {
+      id: '/plans'
+      path: '/plans'
+      fullPath: '/plans'
+      preLoaderRoute: typeof PlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/metrics': {
+      id: '/metrics'
+      path: '/metrics'
+      fullPath: '/metrics'
+      preLoaderRoute: typeof MetricsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/memories': {
+      id: '/memories'
+      path: '/memories'
+      fullPath: '/memories'
+      preLoaderRoute: typeof MemoriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/map': {
@@ -143,11 +497,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/export': {
+      id: '/export'
+      path: '/export'
+      fullPath: '/export'
+      preLoaderRoute: typeof ExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/events': {
+      id: '/events'
+      path: '/events'
+      fullPath: '/events'
+      preLoaderRoute: typeof EventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cost': {
+      id: '/cost'
+      path: '/cost'
+      fullPath: '/cost'
+      preLoaderRoute: typeof CostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conversations': {
+      id: '/conversations'
+      path: '/conversations'
+      fullPath: '/conversations'
+      preLoaderRoute: typeof ConversationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compare': {
+      id: '/compare'
+      path: '/compare'
+      fullPath: '/compare'
+      preLoaderRoute: typeof CompareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/characters': {
       id: '/characters'
       path: '/characters'
       fullPath: '/characters'
       preLoaderRoute: typeof CharactersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/character-card': {
+      id: '/character-card'
+      path: '/character-card'
+      fullPath: '/character-card'
+      preLoaderRoute: typeof CharacterCardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -157,12 +560,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/actions': {
+      id: '/actions'
+      path: '/actions'
+      fullPath: '/actions'
+      preLoaderRoute: typeof ActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/characters/': {
+      id: '/characters/'
+      path: '/'
+      fullPath: '/characters/'
+      preLoaderRoute: typeof CharactersIndexRouteImport
+      parentRoute: typeof CharactersRoute
     }
     '/characters/$characterId': {
       id: '/characters/$characterId'
@@ -176,10 +593,12 @@ declare module '@tanstack/react-router' {
 
 interface CharactersRouteChildren {
   CharactersCharacterIdRoute: typeof CharactersCharacterIdRoute
+  CharactersIndexRoute: typeof CharactersIndexRoute
 }
 
 const CharactersRouteChildren: CharactersRouteChildren = {
   CharactersCharacterIdRoute: CharactersCharacterIdRoute,
+  CharactersIndexRoute: CharactersIndexRoute,
 }
 
 const CharactersRouteWithChildren = CharactersRoute._addFileChildren(
@@ -188,10 +607,30 @@ const CharactersRouteWithChildren = CharactersRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ActionsRoute: ActionsRoute,
   AdminRoute: AdminRoute,
+  CharacterCardRoute: CharacterCardRoute,
   CharactersRoute: CharactersRouteWithChildren,
+  CompareRoute: CompareRoute,
+  ConversationsRoute: ConversationsRoute,
+  CostRoute: CostRoute,
+  EventsRoute: EventsRoute,
+  ExportRoute: ExportRoute,
+  ImportRoute: ImportRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
+  MemoriesRoute: MemoriesRoute,
+  MetricsRoute: MetricsRoute,
+  NotificationsRoute: NotificationsRoute,
+  PlansRoute: PlansRoute,
+  QqMonitorRoute: QqMonitorRoute,
+  ReflectionsRoute: ReflectionsRoute,
+  RelationshipsRoute: RelationshipsRoute,
+  SettingsRoute: SettingsRoute,
+  SharesRoute: SharesRoute,
+  SnapshotsRoute: SnapshotsRoute,
+  StateChartsRoute: StateChartsRoute,
+  VectorSearchRoute: VectorSearchRoute,
   WorldRoute: WorldRoute,
 }
 export const routeTree = rootRouteImport
