@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { MessageCircle, User, Bot, Clock } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -26,6 +25,14 @@ const item = {
   hidden: { opacity: 0, y: 12 },
   show: { opacity: 1, y: 0 },
 };
+
+// CQ 码清理正则：匹配 [CQ:xxx,data=...] 格式
+const CQ_CODE_PATTERN = /\[CQ:[^\]]+\]/g;
+
+function cleanCQCodes(text: string): string {
+  if (!text) return "";
+  return text.replace(CQ_CODE_PATTERN, "").trim();
+}
 
 // 将时间戳格式化为相对时间（如"3分钟前"）
 function formatRelativeTime(dateStr: string): string {
@@ -61,7 +68,6 @@ function QqMonitorPage() {
   ).length;
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="QQ 消息监控"
@@ -177,7 +183,7 @@ function QqMonitorPage() {
                           )}
                         </div>
                         <div className="text-sm break-words whitespace-pre-wrap">
-                          {msg.content}
+                          {cleanCQCodes(msg.content) || "（空消息或含特殊格式码）"}
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <Clock className="w-3 h-3 text-twilight-300" />
@@ -204,6 +210,5 @@ function QqMonitorPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

@@ -13,7 +13,6 @@ import {
 } from "recharts";
 import { Activity, Database, DollarSign, Cpu, Clock } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -62,28 +61,30 @@ function parseMetrics(text: string): MetricsData {
     const value = parseFloat(valueStr ?? "");
     if (isNaN(value)) continue;
 
+    // 后端指标以 ai_town_ 为前缀
     switch (name) {
-      case "world_tick_total":
+      case "ai_town_world_tick_total":
         data.world_tick_total = value;
         break;
-      case "world_tick_id":
+      case "ai_town_world_tick_id":
         data.world_tick_id = value;
         break;
-      case "character_tick_total":
-        data.character_tick_total = value;
+      case "ai_town_character_tick_total":
+        // 带标签的 Counter 需要累加
+        data.character_tick_total += value;
         break;
-      case "llm_tokens_total":
+      case "ai_town_llm_tokens_total":
         // 根据 label 区分 prompt / completion
         if (labels && labels.includes('"prompt"')) {
-          data.llm_tokens_prompt = value;
+          data.llm_tokens_prompt += value;
         } else if (labels && labels.includes('"completion"')) {
-          data.llm_tokens_completion = value;
+          data.llm_tokens_completion += value;
         }
         break;
-      case "llm_cost_total_usd_total":
-        data.llm_cost_total_usd = value;
+      case "ai_town_llm_cost_total_usd_total":
+        data.llm_cost_total_usd += value;
         break;
-      case "redis_connected":
+      case "ai_town_redis_connected":
         data.redis_connected = value;
         break;
     }
@@ -141,7 +142,6 @@ function MetricsPage() {
     : [];
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="Prometheus 指标面板"
@@ -182,7 +182,7 @@ function MetricsPage() {
           >
             {/* 大数字指标卡片 */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <div title="world_tick_total — 世界引擎累计运行的 Tick 总数">
+              <div title="ai_town_world_tick_total — 世界引擎累计运行的 Tick 总数">
                 <StatCard
                   title="World Tick 总数"
                   value={formatNum(data.world_tick_total)}
@@ -190,7 +190,7 @@ function MetricsPage() {
                   color="sakura"
                 />
               </div>
-              <div title="world_tick_id — 当前世界 Tick ID（自增序列号）">
+              <div title="ai_town_world_tick_id — 当前世界 Tick ID（自增序列号）">
                 <StatCard
                   title="当前 Tick ID"
                   value={`#${data.world_tick_id}`}
@@ -198,7 +198,7 @@ function MetricsPage() {
                   color="sky"
                 />
               </div>
-              <div title="character_tick_total — 角色引擎累计处理的 Tick 总数">
+              <div title="ai_town_character_tick_total — 角色引擎累计处理的 Tick 总数">
                 <StatCard
                   title="Character Tick 总数"
                   value={formatNum(data.character_tick_total)}
@@ -206,7 +206,7 @@ function MetricsPage() {
                   color="twilight"
                 />
               </div>
-              <div title="llm_cost_total_usd_total — LLM 调用累计成本（美元）">
+              <div title="ai_town_llm_cost_total_usd_total — LLM 调用累计成本（美元）">
                 <StatCard
                   title="LLM 累计成本"
                   value={`$${data.llm_cost_total_usd.toFixed(4)}`}
@@ -214,7 +214,7 @@ function MetricsPage() {
                   color="sakura"
                 />
               </div>
-              <div title="redis_connected — Redis 连接状态（1=已连接, 0=断开）">
+              <div title="ai_town_redis_connected — Redis 连接状态（1=已连接, 0=断开）">
                 <div className="p-5 rounded-2xl bg-gradient-to-br from-white/40 to-sky-soft-100/40 border border-white/50 backdrop-blur-sm shadow-soft h-full">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-twilight-400 font-medium flex items-center gap-1">
@@ -288,7 +288,7 @@ function MetricsPage() {
               <div className="grid md:grid-cols-2 gap-3 text-sm">
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-sakura-50/50">
                   <span className="text-sakura-500 font-mono text-xs mt-0.5 shrink-0">
-                    world_tick_total
+                    ai_town_world_tick_total
                   </span>
                   <span className="text-twilight-400">
                     世界引擎累计运行的 Tick 总数
@@ -296,7 +296,7 @@ function MetricsPage() {
                 </div>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-soft-50/50">
                   <span className="text-sky-soft-500 font-mono text-xs mt-0.5 shrink-0">
-                    world_tick_id
+                    ai_town_world_tick_id
                   </span>
                   <span className="text-twilight-400">
                     当前世界 Tick ID（自增序列号）
@@ -304,7 +304,7 @@ function MetricsPage() {
                 </div>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-twilight-50/50">
                   <span className="text-twilight-500 font-mono text-xs mt-0.5 shrink-0">
-                    character_tick_total
+                    ai_town_character_tick_total
                   </span>
                   <span className="text-twilight-400">
                     角色引擎累计处理的 Tick 总数
@@ -312,7 +312,7 @@ function MetricsPage() {
                 </div>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-sakura-50/50">
                   <span className="text-sakura-500 font-mono text-xs mt-0.5 shrink-0">
-                    llm_tokens_total
+                    ai_town_llm_tokens_total
                   </span>
                   <span className="text-twilight-400">
                     LLM Token 使用量（按 prompt/completion 分组）
@@ -320,7 +320,7 @@ function MetricsPage() {
                 </div>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-soft-50/50">
                   <span className="text-sky-soft-500 font-mono text-xs mt-0.5 shrink-0">
-                    llm_cost_total_usd_total
+                    ai_town_llm_cost_total_usd_total
                   </span>
                   <span className="text-twilight-400">
                     LLM 调用累计成本（美元）
@@ -328,7 +328,7 @@ function MetricsPage() {
                 </div>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-twilight-50/50">
                   <span className="text-twilight-500 font-mono text-xs mt-0.5 shrink-0">
-                    redis_connected
+                    ai_town_redis_connected
                   </span>
                   <span className="text-twilight-400">
                     Redis 连接状态（1=已连接, 0=断开）
@@ -364,6 +364,5 @@ function MetricsPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

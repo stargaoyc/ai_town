@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, ChevronDown, Database, Hash } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -151,7 +150,6 @@ function SnapshotsPage() {
   }, [snapshots]);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="世界快照管理"
@@ -205,6 +203,5 @@ function SnapshotsPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

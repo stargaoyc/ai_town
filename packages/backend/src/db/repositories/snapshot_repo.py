@@ -52,14 +52,13 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
         if not events:
             return
         # 使用 PostgreSQL 原生 INSERT ... ON CONFLICT DO NOTHING
+        # 注意：不传 id 和 created_at，让数据库默认值（uuidv7() 和 now()）自动生成
         rows = [
             {
-                "id": e.id,
                 "tick_id": e.tick_id,
                 "event_type": e.event_type,
                 "event_key": e.event_key,
                 "payload": e.payload,
-                "created_at": e.created_at,
             }
             for e in events
         ]

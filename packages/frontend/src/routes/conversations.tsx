@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Clock, MessageCircle, User, Bot } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -128,7 +127,6 @@ function ConversationsPage() {
   }, [conversations]);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="会话管理"
@@ -276,6 +274,5 @@ function ConversationsPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

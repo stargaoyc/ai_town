@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Users, Heart, Shield, Link2 } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -44,18 +43,24 @@ function intimacyWidth(intimacy: number): number {
 // 关系类型对应的标签样式
 const relationTypeColors: Record<string, string> = {
   friend: "bg-sakura-100 text-sakura-600 border-sakura-200/50",
+  close_friend: "bg-sakura-100 text-sakura-600 border-sakura-200/50",
+  best_friend: "bg-sakura-100 text-sakura-600 border-sakura-200/50",
   family: "bg-twilight-100 text-twilight-500 border-twilight-200/50",
   colleague: "bg-sky-soft-100 text-sky-soft-600 border-sky-soft-200/50",
   acquaintance: "bg-gray-100 text-gray-500 border-gray-200/50",
+  stranger: "bg-gray-100 text-gray-500 border-gray-200/50",
   rival: "bg-red-100 text-red-500 border-red-200/50",
 };
 
 function relationLabel(type: string): string {
   const map: Record<string, string> = {
     friend: "朋友",
+    close_friend: "密友",
+    best_friend: "挚友",
     family: "家人",
     colleague: "同事",
     acquaintance: "熟人",
+    stranger: "陌生人",
     rival: "对手",
     lover: "恋人",
   };
@@ -91,16 +96,15 @@ function RelationshipsPage() {
     return { center, nodes };
   }, [relations]);
 
-  // 平均信任度 / 亲密度
+  // 平均信任度 / 亲密度（后端使用 strength 字段，映射为 trust 和 intimacy）
   const avg = useMemo(() => {
     if (relations.length === 0) return { trust: 0, intimacy: 0 };
-    const t = relations.reduce((s, r) => s + (r.trust ?? 0), 0) / relations.length;
-    const i = relations.reduce((s, r) => s + (r.intimacy ?? 0), 0) / relations.length;
+    const t = relations.reduce((s, r) => s + (r.strength ?? r.trust ?? 0), 0) / relations.length;
+    const i = relations.reduce((s, r) => s + (r.strength ?? r.intimacy ?? 0), 0) / relations.length;
     return { trust: Math.round(t), intimacy: Math.round(i) };
   }, [relations]);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="关系图谱"
@@ -198,8 +202,9 @@ function RelationshipsPage() {
                   >
                     {/* 连线 */}
                     {graph.nodes.map((node, i) => {
-                      const color = trustColor(node.rel.trust ?? 0);
-                      const width = intimacyWidth(node.rel.intimacy ?? 0);
+                      const strength = node.rel.strength ?? node.rel.trust ?? 0;
+                      const color = trustColor(strength);
+                      const width = intimacyWidth(strength);
                       return (
                         <line
                           key={`line-${i}`}
@@ -217,8 +222,8 @@ function RelationshipsPage() {
 
                     {/* 关联节点 */}
                     {graph.nodes.map((node, i) => {
-                      const trust = node.rel.trust ?? 0;
-                      const color = trustColor(trust);
+                      const strength = node.rel.strength ?? node.rel.trust ?? 0;
+                      const color = trustColor(strength);
                       const label =
                         node.rel.target_name ?? node.rel.target_id ?? "?";
                       return (
@@ -304,9 +309,11 @@ function RelationshipsPage() {
               className="space-y-3"
             >
               {relations.map((rel: RelationEntry, i) => {
+                const relType = rel.relationship_type ?? rel.relation_type ?? "stranger";
                 const typeColor =
-                  relationTypeColors[rel.relation_type] ??
+                  relationTypeColors[relType] ??
                   "bg-gray-100 text-gray-500 border-gray-200/50";
+                const strength = rel.strength ?? rel.trust ?? 0;
                 return (
                   <motion.div key={`${rel.target_id}-${i}`} variants={item}>
                     <GlassCard className="space-y-3" hover>
@@ -322,31 +329,31 @@ function RelationshipsPage() {
                             <span
                               className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-medium border ${typeColor}`}
                             >
-                              {relationLabel(rel.relation_type)}
+                              {relationLabel(relType)}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* 信任度 */}
+                      {/* 关系强度 */}
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-twilight-400 flex items-center gap-1">
                             <Shield className="w-3 h-3" />
-                            信任度
+                            关系强度
                           </span>
                           <span className="font-semibold text-sky-soft-600">
-                            {rel.trust ?? 0}
+                            {strength}
                           </span>
                         </div>
                         <ProgressBar
-                          value={rel.trust ?? 0}
+                          value={strength}
                           max={100}
                           color="sky"
                         />
                       </div>
 
-                      {/* 亲密度 */}
+                      {/* 亲密度（使用 strength 作为近似） */}
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-twilight-400 flex items-center gap-1">
@@ -354,11 +361,11 @@ function RelationshipsPage() {
                             亲密度
                           </span>
                           <span className="font-semibold text-sakura-600">
-                            {rel.intimacy ?? 0}
+                            {rel.intimacy ?? strength}
                           </span>
                         </div>
                         <ProgressBar
-                          value={rel.intimacy ?? 0}
+                          value={rel.intimacy ?? strength}
                           max={100}
                           color="sakura"
                         />
@@ -390,6 +397,5 @@ function RelationshipsPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

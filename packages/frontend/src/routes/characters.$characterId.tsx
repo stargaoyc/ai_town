@@ -18,6 +18,7 @@ import {
   useMessages,
   useSendMessage,
 } from "@/lib/queries";
+import type { Message } from "@/lib/api";
 
 export const Route = createFileRoute("/characters/$characterId")({
   component: CharacterDetailPage,
@@ -33,6 +34,14 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+// CQ 码清理正则：匹配 [CQ:xxx,data=...] 格式
+const CQ_CODE_PATTERN = /\[CQ:[^\]]+\]/g;
+
+function cleanCQCodes(text: string): string {
+  if (!text) return "";
+  return text.replace(CQ_CODE_PATTERN, "").trim();
+}
+
 function CharacterDetailPage() {
   const { characterId } = Route.useParams();
   const { data: character, isLoading, error } = useCharacter(characterId);
@@ -40,15 +49,63 @@ function CharacterDetailPage() {
   const { data: messagesData } = useMessages(characterId);
   const sendMessage = useSendMessage();
   const [input, setInput] = useState("");
+  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 合并服务端消息和乐观更新的消息
+  const allMessages = [
+    ...optimisticMessages,
+    ...(messagesData?.data ?? []),
+  ];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messagesData?.data?.length]);
+  }, [allMessages.length]);
 
   const handleSend = () => {
     if (!input.trim()) return;
-    sendMessage.mutate({ characterId, userId: "web_user", content: input });
+    const content = input.trim();
+
+    // 乐观更新：立即显示用户消息
+    const optimisticMsg: Message = {
+      id: `temp-${Date.now()}`,
+      conversation_id: "",
+      sender: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
+    setOptimisticMessages((prev) => [...prev, optimisticMsg]);
+
+    sendMessage.mutate(
+      { characterId, userId: "web_user", content },
+      {
+        onSuccess: (data) => {
+          // 移除乐观消息，服务端会返回完整列表
+          setOptimisticMessages((prev) =>
+            prev.filter((m) => m.id !== optimisticMsg.id),
+          );
+          // 如果有角色回复，也乐观添加
+          if (data?.data?.content) {
+            const replyMsg: Message = {
+              id: data.data.message_id ?? `reply-${Date.now()}`,
+              conversation_id: data.data.conversation_id,
+              sender: "character",
+              content: data.data.content,
+              tokens: data.data.tokens ?? undefined,
+              cost: data.data.cost ?? undefined,
+              created_at: new Date().toISOString(),
+            };
+            setOptimisticMessages((prev) => [...prev, replyMsg]);
+          }
+        },
+        onError: () => {
+          // 发送失败也移除乐观消息
+          setOptimisticMessages((prev) =>
+            prev.filter((m) => m.id !== optimisticMsg.id),
+          );
+        },
+      },
+    );
     setInput("");
   };
 
@@ -189,29 +246,33 @@ function CharacterDetailPage() {
             <MessageCircle className="w-5 h-5" /> 对话
           </h3>
           <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-2">
-            {messagesData?.data?.length === 0 && (
+            {allMessages.length === 0 && (
               <EmptyState
                 icon="💌"
                 title="暂无消息"
                 subtitle="发送第一条消息开始对话吧"
               />
             )}
-            {messagesData?.data?.map((msg) => (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`p-3 rounded-2xl text-sm ${
-                  msg.sender === "user"
-                    ? "bg-gradient-to-r from-sakura-100 to-sakura-200/50 text-sakura-700 ml-8 rounded-tr-sm"
-                    : msg.sender === "character"
-                      ? "bg-gradient-to-r from-sky-soft-100 to-sky-soft-200/50 text-sky-soft-600 mr-8 rounded-tl-sm"
-                      : "bg-white/50 text-twilight-500"
-                }`}
-              >
-                {msg.content}
-              </motion.div>
-            )) ?? <p className="text-sm text-twilight-400">加载中...</p>}
+            {allMessages.map((msg) => {
+              const displayContent = cleanCQCodes(msg.content);
+              if (!displayContent) return null;
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`p-3 rounded-2xl text-sm ${
+                    msg.sender === "user"
+                      ? "bg-gradient-to-r from-sakura-100 to-sakura-200/50 text-sakura-700 ml-8 rounded-tr-sm"
+                      : msg.sender === "character"
+                        ? "bg-gradient-to-r from-sky-soft-100 to-sky-soft-200/50 text-sky-soft-600 mr-8 rounded-tl-sm"
+                        : "bg-white/50 text-twilight-500"
+                  }`}
+                >
+                  {displayContent}
+                </motion.div>
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
           <div className="flex gap-2">

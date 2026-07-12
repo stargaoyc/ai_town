@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     world_tick_seconds: int = 30
     world_tick_minutes: int = 10
     world_weather_interval: int = 60
-    world_snapshot_interval: int = 120  # 每 N Tick 持久化差分事件到 world_events
+    world_snapshot_interval: int = 10  # 每 N Tick 持久化差分事件到 world_events（降低以让前端事件时间线更快有数据）
     world_full_snapshot_interval: int = 1000  # 每 N Tick 存一次完整快照到 world_snapshots（冷启动恢复）
     character_tick_seconds: int = 30
     character_max_concurrent: int = 10

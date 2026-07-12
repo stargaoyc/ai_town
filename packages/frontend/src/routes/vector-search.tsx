@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Search, Clock, Star, Sliders } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -122,7 +121,6 @@ function VectorSearchPage() {
     searchMutation.isSuccess;
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="向量检索测试"
@@ -359,6 +357,5 @@ function VectorSearchPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

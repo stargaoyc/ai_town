@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Brain, Clock, Sparkles, Search } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -102,7 +101,6 @@ function ReflectionsPage() {
   );
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="反思查看器"
@@ -293,6 +291,5 @@ function ReflectionsPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

@@ -3,7 +3,6 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, ChevronDown, Activity, Hash } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -183,7 +182,6 @@ function ActionsPage() {
   const uniqueActionCount = new Set(actions.map((a) => a.action_id)).size;
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="角色行为日志"
@@ -305,6 +303,5 @@ function ActionsPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

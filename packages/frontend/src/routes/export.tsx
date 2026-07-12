@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Download, FileJson, FileText, User, Bot, Clock } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -159,7 +158,6 @@ function ExportPage() {
   };
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="聊天记录导出"
@@ -359,6 +357,5 @@ function ExportPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

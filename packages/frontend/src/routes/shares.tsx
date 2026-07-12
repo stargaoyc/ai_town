@@ -3,7 +3,6 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Clock, Bot, Coins, Hash } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -63,7 +62,6 @@ function SharesPage() {
   }, [shares]);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="主动分享历史"
@@ -178,6 +176,5 @@ function SharesPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

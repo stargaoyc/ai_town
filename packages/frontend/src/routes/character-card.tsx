@@ -11,7 +11,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   LoadingSpinner,
@@ -176,7 +175,6 @@ function CharacterCardPage() {
   };
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="角色卡预览"
@@ -367,6 +365,5 @@ function CharacterCardPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

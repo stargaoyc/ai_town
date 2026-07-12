@@ -18,7 +18,6 @@ import {
 } from "recharts";
 import { DollarSign, MessageSquare, Cpu, TrendingUp } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -85,7 +84,6 @@ function CostPage() {
   const hasData = data && (data.total_messages > 0 || dailyData.length > 0);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="LLM 成本仪表盘"
@@ -382,6 +380,5 @@ function CostPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

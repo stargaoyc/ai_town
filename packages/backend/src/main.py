@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -666,6 +666,9 @@ async def get_character(character_id: str):
             "satiety": state.satiety,
             "mood": state.mood,
             "money": state.money,
+            "phone_battery": state.phone_battery,
+            "social_energy": state.social_energy,
+            "version": state.version,
         },
     }
 
@@ -1068,11 +1071,19 @@ async def get_admin_status():
 
 
 @app.post("/api/v1/admin/characters/import")
-async def import_character_card(yaml_file: UploadFile = File(...)):
+async def import_character_card(
+    yaml_file: UploadFile | None = File(None),
+    yaml: str | None = Body(None),
+):
     """导入角色卡 YAML 文件
 
+    支持两种方式：
+    1. multipart 文件上传（yaml_file 字段）
+    2. JSON body（yaml 字段，值为 YAML 字符串）
+
     Args:
-        yaml_file: YAML 文件上传
+        yaml_file: YAML 文件上传（可选）
+        yaml: YAML 文本内容（可选，JSON body）
 
     Returns:
         创建的角色信息
@@ -1080,12 +1091,23 @@ async def import_character_card(yaml_file: UploadFile = File(...)):
     if not redis:
         raise HTTPException(status_code=503, detail="Redis not connected")
 
-    import yaml
+    import yaml as yaml_lib
 
-    content = await yaml_file.read()
+    # 优先从文件上传读取，否则从 body 的 yaml 字段读取
+    if yaml_file is not None:
+        content = await yaml_file.read()
+        yaml_text = content.decode("utf-8")
+    elif yaml is not None:
+        yaml_text = yaml
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="请通过 multipart 上传 yaml_file 或在 JSON body 中提供 yaml 字段",
+        )
+
     try:
-        data = yaml.safe_load(content.decode("utf-8"))
-    except yaml.YAMLError as e:
+        data = yaml_lib.safe_load(yaml_text)
+    except yaml_lib.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"YAML 解析失败: {e}")
 
     async with db.session() as session:
@@ -1426,10 +1448,10 @@ async def calculate_duration(
 
 @app.post("/api/v1/messages/send")
 async def send_message(
-    character_id: str,
-    user_id: str,
-    platform: str = "web",
-    content: str = "",
+    character_id: str = Body(...),
+    user_id: str = Body(...),
+    platform: str = Body("web"),
+    content: str = Body(""),
 ):
     """发送消息给角色并获取回复
 
@@ -1591,10 +1613,18 @@ async def list_conversations(
                 raise HTTPException(status_code=400, detail="Invalid UUID format")
             conversations = await repo.list_by_character(cid, limit=limit)
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="Must provide character_id (with optional user_id)",
+            # 无过滤条件：返回所有会话（按 last_message_at 倒序）
+            from sqlalchemy import select as _select
+
+            from src.db.models import Conversation as _Conv
+
+            stmt = (
+                _select(_Conv)
+                .order_by(_Conv.last_message_at.desc().nullslast())
+                .limit(limit)
             )
+            result = await session.execute(stmt)
+            conversations = list(result.scalars())
 
     return {
         "data": [
@@ -1613,30 +1643,104 @@ async def list_conversations(
 
 
 @app.get("/api/v1/messages/stats")
-async def get_message_stats(character_id: str):
-    """获取角色消息统计（token/cost 累计，供成本监控）
+async def get_message_stats(
+    character_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """获取消息统计（token/cost 累计，供成本监控）
 
     Args:
-        character_id: 角色 UUID
+        character_id: 可选，按角色过滤
+        start_date: 可选，起始日期（ISO 8601）
+        end_date: 可选，结束日期（ISO 8601）
 
     Returns:
-        累计 token 数与 cost（USD）
+        累计消息数、token 数与 cost（USD），含按角色/按日期分组
     """
-    try:
-        cid = UUID(character_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    from sqlalchemy import func as _func, select as _select
+
+    from src.db.models import Character as _Char, Conversation as _Conv, Message as _Msg
 
     async with db.session() as session:
-        repo = MessageRepository(session)
-        tokens, cost = await repo.sum_tokens_by_character(cid)
+        # 总计
+        base = _select(
+            _func.count(_Msg.id).label("total_messages"),
+            _func.coalesce(_func.sum(_Msg.tokens), 0).label("total_tokens"),
+            _func.coalesce(_func.sum(_Msg.cost), 0).label("total_cost"),
+        ).select_from(_Msg)
+        if character_id:
+            try:
+                cid = UUID(character_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid UUID format")
+            base = base.join(_Conv, _Msg.conversation_id == _Conv.id).where(
+                _Conv.character_id == cid
+            )
+
+        result = await session.execute(base)
+        row = result.one()
+        total_messages = int(row.total_messages or 0)
+        total_tokens = int(row.total_tokens or 0)
+        total_cost = float(row.total_cost or 0)
+
+        # 按角色分组
+        by_char_stmt = (
+            _select(
+                _Char.name.label("name"),
+                _func.count(_Msg.id).label("messages"),
+                _func.coalesce(_func.sum(_Msg.tokens), 0).label("tokens"),
+                _func.coalesce(_func.sum(_Msg.cost), 0).label("cost"),
+            )
+            .select_from(_Msg)
+            .join(_Conv, _Msg.conversation_id == _Conv.id)
+            .join(_Char, _Conv.character_id == _Char.id)
+            .group_by(_Char.name)
+        )
+        try:
+            char_result = await session.execute(by_char_stmt)
+            by_character = {
+                r.name: {
+                    "messages": int(r.messages),
+                    "tokens": int(r.tokens),
+                    "cost": float(r.cost),
+                }
+                for r in char_result
+            }
+        except Exception:
+            by_character = {}
+
+        # 按日期分组
+        by_day_stmt = (
+            _select(
+                _func.to_char(_Msg.created_at, "YYYY-MM-DD").label("date"),
+                _func.count(_Msg.id).label("messages"),
+                _func.coalesce(_func.sum(_Msg.tokens), 0).label("tokens"),
+                _func.coalesce(_func.sum(_Msg.cost), 0).label("cost"),
+            )
+            .select_from(_Msg)
+            .group_by("date")
+            .order_by("date")
+        )
+        try:
+            day_result = await session.execute(by_day_stmt)
+            by_day = {
+                r.date: {
+                    "messages": int(r.messages),
+                    "tokens": int(r.tokens),
+                    "cost": float(r.cost),
+                }
+                for r in day_result
+            }
+        except Exception:
+            by_day = {}
 
     return {
-        "data": {
-            "character_id": character_id,
-            "total_tokens": tokens,
-            "total_cost_usd": cost,
-        }
+        "total_messages": total_messages,
+        "total_tokens": total_tokens,
+        "total_cost": total_cost,
+        "by_character": by_character,
+        "by_day": by_day,
     }
 
 
@@ -1882,37 +1986,71 @@ async def get_character_state_history(character_id: UUID, limit: int = 50):
         limit: 返回记录数（默认 50）
 
     Returns:
-        状态历史列表（按时间倒序）
+        状态历史列表（按时间正序，便于前端绘制曲线）
     """
     from sqlalchemy import desc, select
 
-    from src.db.models import CharacterState
+    from src.db.models import CharacterStateHistory
 
     async with db.session() as session:
+        # 优先从 character_state_history 表查询（每次状态更新都会写入快照）
         stmt = (
-            select(CharacterState)
-            .where(CharacterState.character_id == character_id)
-            .order_by(desc(CharacterState.updated_at))
+            select(CharacterStateHistory)
+            .where(CharacterStateHistory.character_id == character_id)
+            .order_by(desc(CharacterStateHistory.recorded_at))
             .limit(limit)
         )
         result = await session.execute(stmt)
-        states = list(result.scalars())
+        history_records = list(result.scalars())
+
+        if history_records:
+            return {
+                "data": [
+                    {
+                        "stamina": h.stamina,
+                        "satiety": h.satiety,
+                        "mood": h.mood,
+                        "money": h.money,
+                        "phone_battery": h.phone_battery,
+                        "social_energy": h.social_energy,
+                        "location": h.location,
+                        "action_id": h.action_id,
+                        "updated_at": h.recorded_at.isoformat() if h.recorded_at else None,
+                    }
+                    for h in reversed(history_records)
+                ],
+                "total": len(history_records),
+                "source": "history",
+            }
+
+        # 回退：历史表暂无数据时返回当前状态（至少一个点）
+        from src.db.models import CharacterState
+        cur_stmt = (
+            select(CharacterState)
+            .where(CharacterState.character_id == character_id)
+        )
+        cur_result = await session.execute(cur_stmt)
+        state = cur_result.scalar_one_or_none()
+
+    if state is None:
+        return {"data": [], "total": 0, "source": "empty"}
 
     return {
         "data": [
             {
-                "stamina": s.stamina,
-                "satiety": s.satiety,
-                "mood": s.mood,
-                "money": s.money,
-                "phone_battery": s.phone_battery,
-                "social_energy": s.social_energy,
-                "location": s.location,
-                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                "stamina": state.stamina,
+                "satiety": state.satiety,
+                "mood": state.mood,
+                "money": state.money,
+                "phone_battery": state.phone_battery,
+                "social_energy": state.social_energy,
+                "location": state.location,
+                "action_id": None,
+                "updated_at": state.updated_at.isoformat() if state.updated_at else None,
             }
-            for s in reversed(states)
         ],
-        "total": len(states),
+        "total": 1,
+        "source": "current",
     }
 
 
@@ -2140,7 +2278,7 @@ async def vector_search(
             repo = MemoryRepository(session)
             results = await repo.search_hybrid(
                 character_id=character_id,
-                query_embedding=query_embedding,
+                query_vec=query_embedding,
                 top_k=top_k,
             )
 
@@ -2190,7 +2328,17 @@ async def get_world_snapshots(limit: int = 20):
             {
                 "id": str(s.id),
                 "tick_id": s.tick_id,
-                "state": s.state if isinstance(s.state, dict) else {},
+                "world_time": s.world_time.isoformat() if s.world_time else None,
+                "weather": s.weather,
+                "locations": s.locations if isinstance(s.locations, dict) else {},
+                "resources": s.resources if isinstance(s.resources, dict) else {},
+                "active_events": s.active_events if isinstance(s.active_events, dict) else {},
+                "state": {
+                    "weather": s.weather,
+                    "locations": s.locations,
+                    "resources": s.resources,
+                    "active_events": s.active_events,
+                },
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
             for s in snapshots

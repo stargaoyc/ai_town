@@ -13,7 +13,6 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -112,7 +111,6 @@ function ComparePage() {
   };
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="多角色对比"
@@ -360,6 +358,5 @@ function ComparePage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

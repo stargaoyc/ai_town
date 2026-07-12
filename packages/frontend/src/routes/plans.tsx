@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { ClipboardList, Clock, Flag, RefreshCw } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -130,7 +129,6 @@ function PlansPage() {
   ];
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="规划系统"
@@ -259,6 +257,7 @@ function PlansPage() {
                 barColor: "twilight" as const,
               };
               const priority = plan.priority ?? 0;
+              const progress = plan.progress ?? conf.progress;
               return (
                 <motion.div key={plan.id} variants={item}>
                   <GlassCard className="space-y-3" hover>
@@ -270,9 +269,16 @@ function PlansPage() {
                       </span>
                     </div>
 
-                    <p className="text-sm text-twilight-700 leading-relaxed">
-                      {plan.description}
-                    </p>
+                    <div className="space-y-1">
+                      <p className="text-base font-semibold text-twilight-700 leading-relaxed">
+                        {plan.title || plan.description || "（未命名计划）"}
+                      </p>
+                      {plan.description && plan.description !== plan.title && (
+                        <p className="text-sm text-twilight-400 leading-relaxed">
+                          {plan.description}
+                        </p>
+                      )}
+                    </div>
 
                     {/* 优先级进度条 */}
                     <div className="space-y-1.5">
@@ -293,11 +299,11 @@ function PlansPage() {
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-twilight-400">执行进度</span>
                         <span className="font-semibold text-twilight-500">
-                          {conf.progress}%
+                          {progress}%
                         </span>
                       </div>
                       <ProgressBar
-                        value={conf.progress}
+                        value={progress}
                         max={100}
                         color={conf.barColor}
                       />
@@ -328,6 +334,5 @@ function PlansPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

@@ -13,7 +13,6 @@ import {
   Clock,
 } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -229,7 +228,6 @@ function NotificationsPage() {
     notifications.filter((n) => n.type === type).length;
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="通知中心"
@@ -404,6 +402,5 @@ function NotificationsPage() {
           </motion.div>
         )}
       </div>
-    </NavLayout>
   );
 }

@@ -20,7 +20,6 @@ import {
   Activity,
 } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -135,7 +134,6 @@ function StateChartsPage() {
   }, [history]);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="角色状态图表"
@@ -380,6 +378,5 @@ function StateChartsPage() {
             </motion.div>
           )}
       </div>
-    </NavLayout>
   );
 }

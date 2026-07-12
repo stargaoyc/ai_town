@@ -20,6 +20,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
+    // 401 未认证：清除 token 并跳转登录页
+    if (res.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user_id");
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+      throw new Error("未认证，请重新登录");
+    }
     const error = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(error.detail || `HTTP ${res.status}`);
   }
@@ -139,17 +148,23 @@ export const api = {
     request<{ data: Memory[] }>(`/memories/${characterId}?limit=${limit}`),
 
   sendMessage: (characterId: string, userId: string, content: string) =>
-    request<{ conversation_id: string; message_id: string; content: string }>(
-      "/messages/send",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          character_id: characterId,
-          user_id: userId,
-          content,
-        }),
-      },
-    ),
+    request<{
+      data: {
+        conversation_id: string;
+        message_id: string | null;
+        content: string;
+        tokens: number | null;
+        cost: number | null;
+        error: string | null;
+      };
+    }>("/messages/send", {
+      method: "POST",
+      body: JSON.stringify({
+        character_id: characterId,
+        user_id: userId,
+        content,
+      }),
+    }),
   getHistory: (characterId: string, limit = 20) =>
     request<{ data: Message[] }>(
       `/characters/${characterId}/messages?limit=${limit}`,
@@ -297,9 +312,13 @@ export interface ReflectionEntry {
 export interface PlanEntry {
   id: string;
   character_id: string;
-  description: string;
+  title: string;
+  description?: string;
+  type?: string;
   status: string;
   priority?: number;
+  progress?: number;
+  deadline?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -324,8 +343,12 @@ export interface RelationEntry {
   target_id: string;
   target_name?: string;
   relation_type: string;
+  relationship_type?: string;
   trust: number;
   intimacy: number;
+  strength: number;
+  last_interaction_at?: string;
+  notes?: string;
 }
 
 export interface OnebotMessageEntry {

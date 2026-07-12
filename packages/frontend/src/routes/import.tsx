@@ -3,7 +3,6 @@ import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { Upload, FileText, Download, CheckCircle2, XCircle } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   AnimeButton,
@@ -125,7 +124,6 @@ function ImportPage() {
   const isPending = importSingle.isPending || importBatch.isPending;
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="角色导入"
@@ -285,6 +283,5 @@ function ImportPage() {
           </ul>
         </GlassCard>
       </div>
-    </NavLayout>
   );
 }

@@ -352,7 +352,8 @@ class CharacterTickEngine:
             action_id = "wait" if "wait" in valid_action_ids else valid_action_ids[0]
 
         # 防御性处理 LLM 返回值类型
-        raw_plan_changes = result.get("planChanges", [])
+        # 注意：LLM 可能返回 "planChanges": null，此时 dict.get() 返回 None 而非默认值 []
+        raw_plan_changes = result.get("planChanges") or []
         plan_changes = [
             pc if isinstance(pc, dict) else {"description": str(pc)}
             for pc in raw_plan_changes
@@ -408,6 +409,19 @@ class CharacterTickEngine:
         if decision.action == "move" and decision.params.get("target_scene"):
             new_state["location"] = decision.params["target_scene"]
 
+        # 被动恢复：手机电量/社交能量在非消耗类 Action 下缓慢回升
+        # 避免 LLM 不主动选择 charge_phone/social 时资源永久为 0
+        _PASSIVE_RECOVERY = {
+            "phone_battery": 3,   # 每 Tick 恢复 3（非使用手机类动作）
+            "social_energy": 5,   # 每 Tick 恢复 5（非社交消耗类动作）
+        }
+        if decision.action not in ("use_phone", "charge_phone"):
+            cur_pb = int(new_state.get("phone_battery", 0) or 0)
+            new_state["phone_battery"] = min(100, cur_pb + _PASSIVE_RECOVERY["phone_battery"])
+        if decision.action not in ("chat_with",):
+            cur_se = int(new_state.get("social_energy", 0) or 0)
+            new_state["social_energy"] = min(100, cur_se + _PASSIVE_RECOVERY["social_energy"])
+
         # 事务化执行
         try:
             async with db.session() as session:
@@ -439,6 +453,22 @@ class CharacterTickEngine:
                     social_energy=int(new_state["social_energy"]) if new_state.get("social_energy") is not None else None,
                     location=new_state.get("location"),
                 )
+
+                # 写入状态历史快照（支持前端状态趋势图表）
+                from src.db.models import CharacterStateHistory
+                history = CharacterStateHistory(
+                    character_id=character_id,
+                    location=new_state.get("location"),
+                    stamina=int(new_state.get("stamina", 0) or 0),
+                    satiety=int(new_state.get("satiety", 0) or 0),
+                    mood=new_state.get("mood"),
+                    money=int(new_state.get("money", 0) or 0),
+                    phone_battery=int(new_state.get("phone_battery", 0) or 0),
+                    social_energy=int(new_state.get("social_energy", 0) or 0),
+                    action_id=decision.action,
+                    recorded_at=datetime.now(timezone.utc),
+                )
+                session.add(history)
 
             # 更新 Redis 实时状态
             await self.redis.hset(
@@ -495,12 +525,29 @@ class CharacterTickEngine:
             reflection_service = ReflectionService(self.llm, mem_repo, ref_repo)
 
             # 写入记忆片段
+            # 根据动作类型动态计算重要性（1-10）
+            _ACTION_IMPORTANCE = {
+                "wait": 2, "rest": 3, "sleep": 3,
+                "eat": 4, "drink": 4,
+                "move": 4, "go_out": 5,
+                "work": 6, "study": 6, "practice": 6,
+                "social": 7, "chat": 7, "play": 6,
+                "shop": 5, "buy": 5,
+                "explore": 7, "adventure": 8,
+            }
+            base_importance = _ACTION_IMPORTANCE.get(decision.action, 5)
+            # 如果理由中包含情绪关键词，提升重要性
+            reason_lower = (decision.reason or "").lower()
+            if any(kw in reason_lower for kw in ["开心", "兴奋", "生气", "难过", "惊讶", "重要", "特别"]):
+                base_importance = min(10, base_importance + 2)
+            importance = max(1, min(10, base_importance))
+
             await episode_service.create_episode(
                 character_id,
                 memory_content,
                 action_id=decision.action,
                 location=state.get("location"),
-                importance=5,  # 默认重要性
+                importance=importance,
             )
 
             # 检查反思

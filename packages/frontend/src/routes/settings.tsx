@@ -13,7 +13,6 @@ import {
   Boxes,
 } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -75,7 +74,6 @@ function SettingsPage() {
     adminLoading || modulesLoading || serversLoading || toolsLoading;
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="系统设置"
@@ -448,6 +446,5 @@ function SettingsPage() {
           </motion.div>
         </motion.div>
       </div>
-    </NavLayout>
   );
 }

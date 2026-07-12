@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Search, Star, Brain, Filter } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -114,7 +113,6 @@ function MemoriesPage() {
   };
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="记忆时间线"
@@ -321,6 +319,5 @@ function MemoriesPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

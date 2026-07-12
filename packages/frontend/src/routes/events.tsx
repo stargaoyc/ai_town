@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Clock, Layers } from "lucide-react";
 import {
-  NavLayout,
   GlassCard,
   PageHeader,
   StatCard,
@@ -134,7 +133,6 @@ function EventsPage() {
   }, [events]);
 
   return (
-    <NavLayout>
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="世界事件时间线"
@@ -321,6 +319,5 @@ function EventsPage() {
           </GlassCard>
         )}
       </div>
-    </NavLayout>
   );
 }

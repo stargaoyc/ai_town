@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { User, Lock, Sparkles } from "lucide-react";
@@ -11,7 +11,6 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +28,8 @@ function LoginPage() {
     const result = await login(username.trim(), password.trim());
     setLoading(false);
     if (result.success) {
-      navigate({ to: "/" });
+      // 使用硬跳转确保完全重新初始化（避免界面不完整）
+      window.location.href = "/";
     } else {
       setError(result.error || "登录失败");
     }
