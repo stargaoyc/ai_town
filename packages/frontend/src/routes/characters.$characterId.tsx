@@ -56,7 +56,10 @@ function CharacterDetailPage() {
   const allMessages = [
     ...(messagesData?.data ?? []),
     ...optimisticMessages,
-  ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  ].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -185,7 +188,11 @@ function CharacterDetailPage() {
               />
               <StatCard
                 title="当前行为"
-                value={state.current_action?.action_name ?? state.current_action?.action_id ?? "无"}
+                value={
+                  state.current_action?.action_name ??
+                  state.current_action?.action_id ??
+                  "无"
+                }
                 icon="🎯"
                 color="sakura"
               />

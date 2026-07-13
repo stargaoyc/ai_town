@@ -150,60 +150,60 @@ function SnapshotsPage() {
   }, [snapshots]);
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="世界快照管理"
-          subtitle="世界状态的完整快照记录，每 1000 Tick 自动创建一次"
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="世界快照管理"
+        subtitle="世界状态的完整快照记录，每 1000 Tick 自动创建一次"
+        icon="📸"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
+
+      {/* 顶部统计 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="快照总数"
+          value={data?.total ?? snapshots.length}
           icon="📸"
-          backTo="/admin"
-          backLabel="返回管理"
+          color="sakura"
         />
-
-        {/* 顶部统计 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard
-            title="快照总数"
-            value={data?.total ?? snapshots.length}
-            icon="📸"
-            color="sakura"
-          />
-          <StatCard
-            title="最新快照 Tick"
-            value={tickStats.latest}
-            icon="🆕"
-            color="sky"
-          />
-          <StatCard
-            title="最早快照 Tick"
-            value={tickStats.earliest}
-            icon="📜"
-            color="twilight"
-          />
-        </div>
-
-        {isLoading && <LoadingSpinner text="正在加载世界快照..." />}
-        {error && <ErrorDisplay error={error} />}
-        {!isLoading && !error && snapshots.length === 0 && (
-          <EmptyState
-            icon="📸"
-            title="暂无世界快照"
-            subtitle="暂无世界快照，每 1000 Tick 会自动创建一次完整快照"
-          />
-        )}
-
-        {/* 快照列表 */}
-        {snapshots.length > 0 && (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="space-y-4"
-          >
-            {snapshots.map((snapshot) => (
-              <SnapshotCard key={snapshot.id} snapshot={snapshot} />
-            ))}
-          </motion.div>
-        )}
+        <StatCard
+          title="最新快照 Tick"
+          value={tickStats.latest}
+          icon="🆕"
+          color="sky"
+        />
+        <StatCard
+          title="最早快照 Tick"
+          value={tickStats.earliest}
+          icon="📜"
+          color="twilight"
+        />
       </div>
+
+      {isLoading && <LoadingSpinner text="正在加载世界快照..." />}
+      {error && <ErrorDisplay error={error} />}
+      {!isLoading && !error && snapshots.length === 0 && (
+        <EmptyState
+          icon="📸"
+          title="暂无世界快照"
+          subtitle="暂无世界快照，每 1000 Tick 会自动创建一次完整快照"
+        />
+      )}
+
+      {/* 快照列表 */}
+      {snapshots.length > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="space-y-4"
+        >
+          {snapshots.map((snapshot) => (
+            <SnapshotCard key={snapshot.id} snapshot={snapshot} />
+          ))}
+        </motion.div>
+      )}
+    </div>
   );
 }

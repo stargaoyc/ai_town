@@ -14,13 +14,6 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str
 
-    # Storage
-    minio_endpoint: str
-    minio_access_key: str
-    minio_secret_key: str
-    minio_bucket: str = "ai-town"
-    minio_secure: bool = False
-
     # LLM
     openai_api_key: str
     openai_base_url: str = "https://api.openai.com/v1"
@@ -55,6 +48,8 @@ class Settings(BaseSettings):
     api_key: str | None = None
     admin_username: str = "admin"
     admin_password: str = "admin123"
+    # RBAC 角色配置（逗号分隔的用户名:角色列表）
+    rbac_roles: str = ""  # 如 "admin:admin,viewer1:viewer,operator1:operator"
 
     # Cost Control
     llm_daily_budget_usd: float = 10.0
@@ -67,6 +62,7 @@ class Settings(BaseSettings):
     # World Engine
     world_tick_seconds: int = 30
     world_tick_minutes: int = 10
+    world_initial_time: str = ""  # 虚拟世界初始时间（ISO 格式，如 "2026-07-01T08:00:00"）；留空则使用当前现实日期 08:00
     world_weather_interval: int = 60
     world_snapshot_interval: int = 10  # 每 N Tick 持久化差分事件到 world_events（降低以让前端事件时间线更快有数据）
     world_full_snapshot_interval: int = 1000  # 每 N Tick 存一次完整快照到 world_snapshots（冷启动恢复）

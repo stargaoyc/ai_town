@@ -80,11 +80,16 @@ const typeConfig: Record<
 };
 
 // 模拟通知模板（用于测试）
-const mockTemplates: { type: NotificationType; title: string; content: string }[] = [
+const mockTemplates: {
+  type: NotificationType;
+  title: string;
+  content: string;
+}[] = [
   {
     type: "share",
     title: "角色主动分享了动态",
-    content: "樱花酱主动向你分享了一张图书馆窗外的夕阳照片，并附言「今天的天空好美呀~」",
+    content:
+      "樱花酱主动向你分享了一张图书馆窗外的夕阳照片，并附言「今天的天空好美呀~」",
   },
   {
     type: "system",
@@ -222,7 +227,9 @@ function NotificationsPage() {
               className="ml-1 p-1 rounded-lg text-twilight-400 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
               title="刷新"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -285,7 +292,8 @@ function NotificationsPage() {
           className="space-y-3"
         >
           {notifications.map((notif) => {
-            const cfg = typeConfig[notif.type as NotificationType] ?? typeConfig.system;
+            const cfg =
+              typeConfig[notif.type as NotificationType] ?? typeConfig.system;
             const Icon = cfg.icon;
             return (
               <motion.div key={notif.id} variants={item}>

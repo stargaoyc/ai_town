@@ -498,6 +498,28 @@ GET /api/v1/admin/logs?lines=200&level=ERROR
 
 ---
 
+## 十四、日志级别使用规范
+
+### 14.1 级别定义
+
+| 级别 | 使用场景 | 示例 |
+|------|----------|------|
+| DEBUG | 开发调试信息，生产环境关闭 | `logger.debug("world_state_loaded", tick_id=self.tick_id)` |
+| INFO | 正常业务流程关键节点 | `logger.info("character_tick_completed", character_id=..., duration_ms=...)` |
+| WARNING | 异常但可恢复，需关注 | `logger.warning("rate_limit_exceeded", key=..., remaining=0)` |
+| ERROR | 异常且不可恢复，需立即处理 | `logger.error("redis_connection_failed", error=str(e), exc_info=True)` |
+| CRITICAL | 系统级故障，需紧急处理 | `logger.critical("all_llm_sources_unavailable")` |
+
+### 14.2 强制规范
+
+1. **ERROR 级别必须包含 exc_info=True**：确保堆栈信息被记录
+2. **结构化日志必须使用 key=value 格式**：`logger.info("event_name", key1=value1, key2=value2)`
+3. **禁止使用 f-string 拼接日志内容**：错误做法 `logger.info(f"Tick {tick_id} completed")`，正确做法 `logger.info("tick_completed", tick_id=tick_id)`
+4. **敏感信息脱敏**：URL 中的密码、API Key、JWT Token 不得出现在日志中
+5. **事件名使用 snake_case**：`logger.info("character_tick_started")` 而非 `logger.info("CharacterTickStarted")`
+
+---
+
 ## 十三、相关文档
 
 | 主题 | 文档 |

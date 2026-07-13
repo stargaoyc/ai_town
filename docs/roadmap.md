@@ -72,7 +72,7 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 | 初始化 backend（Python 3.13 + uv） | ✅ | `uv sync` + `uvicorn` 启动 |
 | 初始化 frontend（React 19 + Vite 8） | ✅ | `pnpm dev` 启动 |
 | 数据库 DDL（pgvector + pg_uuidv7 + HNSW） | ✅ | `alembic upgrade head` 成功 |
-| Docker Compose 基础设施 | ✅ | postgres/redis/minio 可启动 |
+| Docker Compose 基础设施 | ✅ | postgres/redis 可启动 |
 | 环境变量 `.env.example` | ✅ | 含所有必填变量 |
 
 ---
@@ -547,7 +547,6 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 8. **数据库备份自动化**：pg_cron + WAL 归档
 9. **world_events 按月分区**：待数据量达标后实施
 10. **跨角色全局向量检索**：维护全局非分区向量索引（未来需求）
-11. **冷热分离**：3 个月前 action_records.params 迁移至对象存储
 
 ---
 

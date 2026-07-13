@@ -63,14 +63,15 @@ function formatLogTime(ts?: string): string {
 }
 
 // 日志级别颜色
-const levelColors: Record<string, { bg: string; text: string; icon: string }> = {
-  debug: { bg: "bg-gray-100", text: "text-gray-500", icon: "🔍" },
-  info: { bg: "bg-sky-soft-100", text: "text-sky-soft-600", icon: "ℹ️" },
-  warning: { bg: "bg-amber-100", text: "text-amber-600", icon: "⚠️" },
-  warn: { bg: "bg-amber-100", text: "text-amber-600", icon: "⚠️" },
-  error: { bg: "bg-red-100", text: "text-red-600", icon: "❌" },
-  critical: { bg: "bg-red-200", text: "text-red-700", icon: "🔥" },
-};
+const levelColors: Record<string, { bg: string; text: string; icon: string }> =
+  {
+    debug: { bg: "bg-gray-100", text: "text-gray-500", icon: "🔍" },
+    info: { bg: "bg-sky-soft-100", text: "text-sky-soft-600", icon: "ℹ️" },
+    warning: { bg: "bg-amber-100", text: "text-amber-600", icon: "⚠️" },
+    warn: { bg: "bg-amber-100", text: "text-amber-600", icon: "⚠️" },
+    error: { bg: "bg-red-100", text: "text-red-600", icon: "❌" },
+    critical: { bg: "bg-red-200", text: "text-red-700", icon: "🔥" },
+  };
 
 // 饼图颜色（樱花粉/天空蓝/暮光紫/绿/黄）
 const PIE_COLORS = ["#FF8FAB", "#7EC8E3", "#B19CD9", "#6FCF97", "#F2C94C"];
@@ -89,10 +90,16 @@ function MonitoringPage() {
   const [logLevel, setLogLevel] = useState<string | undefined>(undefined);
   const [logLines, setLogLines] = useState(100);
 
-  const { data: metricsData, isLoading: metricsLoading, error: metricsError } =
-    useDetailedMetrics(5000);
-  const { data: logsData, isLoading: logsLoading, error: logsError } =
-    useLogs(logLines, logLevel, 5000);
+  const {
+    data: metricsData,
+    isLoading: metricsLoading,
+    error: metricsError,
+  } = useDetailedMetrics(5000);
+  const {
+    data: logsData,
+    isLoading: logsLoading,
+    error: logsError,
+  } = useLogs(logLines, logLevel, 5000);
 
   const metrics = metricsData?.data;
   const logs = logsData?.data ?? [];
@@ -173,7 +180,9 @@ function MonitoringPage() {
       {metricsLoading && !metrics && (
         <LoadingSpinner text="正在拉取监控指标..." />
       )}
-      {metricsError && !metrics && <ErrorDisplay error={metricsError as Error} />}
+      {metricsError && !metrics && (
+        <ErrorDisplay error={metricsError as Error} />
+      )}
 
       {metrics && (
         <motion.div
@@ -235,8 +244,12 @@ function MonitoringPage() {
                   </div>
                 </div>
                 <StatusBadge
-                  status={metrics.system?.redis_connected === 1 ? "ok" : "error"}
-                  label={metrics.system?.redis_connected === 1 ? "已连接" : "已断开"}
+                  status={
+                    metrics.system?.redis_connected === 1 ? "ok" : "error"
+                  }
+                  label={
+                    metrics.system?.redis_connected === 1 ? "已连接" : "已断开"
+                  }
                 />
               </div>
               <div className="p-5 rounded-2xl bg-gradient-to-br from-white/40 to-sakura-100/40 border border-white/50 backdrop-blur-sm shadow-soft">
@@ -244,7 +257,9 @@ function MonitoringPage() {
                   <AlertTriangle className="w-4 h-4" />
                   World 错误
                 </div>
-                <div className={`text-xl font-bold ${metrics.world?.errors_total ? "text-red-500" : "text-emerald-500"}`}>
+                <div
+                  className={`text-xl font-bold ${metrics.world?.errors_total ? "text-red-500" : "text-emerald-500"}`}
+                >
                   {metrics.world?.errors_total ?? 0}
                 </div>
               </div>
@@ -288,7 +303,10 @@ function MonitoringPage() {
                       data={actionChartData}
                       margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(122,95,195,0.15)" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="rgba(122,95,195,0.15)"
+                      />
                       <XAxis
                         dataKey="name"
                         tick={{ fill: "#7a5fc3", fontSize: 11 }}
@@ -310,8 +328,18 @@ function MonitoringPage() {
                         }}
                       />
                       <Legend />
-                      <Bar dataKey="成功" stackId="a" fill="#6FCF97" radius={[0, 0, 0, 0]} />
-                      <Bar dataKey="失败" stackId="a" fill="#FF8FAB" radius={[8, 8, 0, 0]} />
+                      <Bar
+                        dataKey="成功"
+                        stackId="a"
+                        fill="#6FCF97"
+                        radius={[0, 0, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="失败"
+                        stackId="a"
+                        fill="#FF8FAB"
+                        radius={[8, 8, 0, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -347,7 +375,13 @@ function MonitoringPage() {
                           dataKey="value"
                         >
                           {tokenPieData.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length] ?? "#FF8FAB"} />
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={
+                                PIE_COLORS[index % PIE_COLORS.length] ??
+                                "#FF8FAB"
+                              }
+                            />
                           ))}
                         </Pie>
                         <Tooltip
@@ -381,7 +415,10 @@ function MonitoringPage() {
                         layout="vertical"
                         margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(122,95,195,0.15)" />
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="rgba(122,95,195,0.15)"
+                        />
                         <XAxis
                           type="number"
                           tick={{ fill: "#7a5fc3", fontSize: 12 }}
@@ -401,7 +438,12 @@ function MonitoringPage() {
                             borderRadius: "12px",
                           }}
                         />
-                        <Bar dataKey="ticks" name="Tick 次数" fill="#7EC8E3" radius={[0, 8, 8, 0]} />
+                        <Bar
+                          dataKey="ticks"
+                          name="Tick 次数"
+                          fill="#7EC8E3"
+                          radius={[0, 8, 8, 0]}
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -428,7 +470,10 @@ function MonitoringPage() {
                       layout="vertical"
                       margin={{ top: 5, right: 20, left: 40, bottom: 5 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(122,95,195,0.15)" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="rgba(122,95,195,0.15)"
+                      />
                       <XAxis
                         type="number"
                         tick={{ fill: "#7a5fc3", fontSize: 12 }}
@@ -448,7 +493,11 @@ function MonitoringPage() {
                           borderRadius: "12px",
                         }}
                       />
-                      <Bar dataKey="请求数" fill="#B19CD9" radius={[0, 8, 8, 0]} />
+                      <Bar
+                        dataKey="请求数"
+                        fill="#B19CD9"
+                        radius={[0, 8, 8, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -457,33 +506,41 @@ function MonitoringPage() {
           )}
 
           {/* 消息处理统计 */}
-          {metrics.messages?.by_platform && Object.keys(metrics.messages.by_platform).length > 0 && (
-            <motion.div variants={item}>
-              <GlassCard hover={false}>
-                <h3 className="font-semibold text-sakura-600 mb-4 flex items-center gap-2 text-lg">
-                  <CheckCircle className="w-5 h-5" />
-                  消息处理统计（按平台）
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {Object.entries(metrics.messages.by_platform).map(([platform, counts]) => (
-                    <div key={platform} className="p-4 rounded-xl bg-white/40 border border-white/50">
-                      <div className="text-sm text-twilight-400 font-medium mb-2">{platform}</div>
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1 text-emerald-600 text-sm font-semibold">
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          {counts.success}
-                        </span>
-                        <span className="flex items-center gap-1 text-red-500 text-sm font-semibold">
-                          <XCircle className="w-3.5 h-3.5" />
-                          {counts.failed}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-            </motion.div>
-          )}
+          {metrics.messages?.by_platform &&
+            Object.keys(metrics.messages.by_platform).length > 0 && (
+              <motion.div variants={item}>
+                <GlassCard hover={false}>
+                  <h3 className="font-semibold text-sakura-600 mb-4 flex items-center gap-2 text-lg">
+                    <CheckCircle className="w-5 h-5" />
+                    消息处理统计（按平台）
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {Object.entries(metrics.messages.by_platform).map(
+                      ([platform, counts]) => (
+                        <div
+                          key={platform}
+                          className="p-4 rounded-xl bg-white/40 border border-white/50"
+                        >
+                          <div className="text-sm text-twilight-400 font-medium mb-2">
+                            {platform}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center gap-1 text-emerald-600 text-sm font-semibold">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              {counts.success}
+                            </span>
+                            <span className="flex items-center gap-1 text-red-500 text-sm font-semibold">
+                              <XCircle className="w-3.5 h-3.5" />
+                              {counts.failed}
+                            </span>
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </GlassCard>
+              </motion.div>
+            )}
         </motion.div>
       )}
 
@@ -523,7 +580,10 @@ function MonitoringPage() {
               <option value={500}>500 行</option>
             </select>
             <span className="text-xs text-twilight-400 flex items-center gap-1">
-              <RefreshCw className="w-3 h-3 animate-spin" style={{ animationDuration: "5s" }} />
+              <RefreshCw
+                className="w-3 h-3 animate-spin"
+                style={{ animationDuration: "5s" }}
+              />
               自动刷新
             </span>
           </div>
@@ -547,11 +607,21 @@ function MonitoringPage() {
           <div className="max-h-[600px] overflow-y-auto rounded-xl bg-gray-900/90 border border-white/10 p-3 space-y-1 font-mono text-xs">
             {logs.map((log, idx) => {
               const level = (log.level ?? "info").toLowerCase();
-              const lc = levelColors[level] ?? levelColors.info ?? { bg: "bg-gray-100", text: "text-gray-500", icon: "📝" };
-              const event = String(log.event ?? log.message ?? JSON.stringify(log));
+              const lc = levelColors[level] ??
+                levelColors.info ?? {
+                  bg: "bg-gray-100",
+                  text: "text-gray-500",
+                  icon: "📝",
+                };
+              const event = String(
+                log.event ?? log.message ?? JSON.stringify(log),
+              );
               // 截取其他字段（排除已展示的）
               const otherFields = Object.entries(log)
-                .filter(([k]) => !["timestamp", "level", "event", "message"].includes(k))
+                .filter(
+                  ([k]) =>
+                    !["timestamp", "level", "event", "message"].includes(k),
+                )
                 .slice(0, 4);
               return (
                 <div
@@ -568,7 +638,12 @@ function MonitoringPage() {
                     {event}
                     {otherFields.length > 0 && (
                       <span className="text-gray-500 ml-2">
-                        {otherFields.map(([k, v]) => `${k}=${typeof v === "string" ? v.slice(0, 50) : JSON.stringify(v)?.slice(0, 50) ?? ""}`).join(" ")}
+                        {otherFields
+                          .map(
+                            ([k, v]) =>
+                              `${k}=${typeof v === "string" ? v.slice(0, 50) : (JSON.stringify(v)?.slice(0, 50) ?? "")}`,
+                          )
+                          .join(" ")}
                       </span>
                     )}
                   </span>

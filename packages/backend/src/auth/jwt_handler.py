@@ -47,6 +47,7 @@ class JWTHandler:
             "sub": user_id,
             "iat": now,
             "exp": now + timedelta(hours=self.expire_hours),
+            "role": _resolve_role(user_id),
         }
         if claims:
             payload.update(claims)
@@ -88,6 +89,28 @@ _handler = JWTHandler(
     algorithm=settings.jwt_algorithm,
     expire_hours=settings.jwt_expire_hours,
 )
+
+
+def _resolve_role(user_id: str) -> str:
+    """根据用户名解析 RBAC 角色
+
+    角色解析规则：
+    1. 若 settings.rbac_roles 为空（未配置），默认返回 "admin"（向后兼容）
+    2. 若已配置 rbac_roles，解析 "user:role" 映射
+    3. 用户名命中映射则返回对应角色
+    4. 用户名未命中映射则返回 "viewer"（最小权限原则）
+    """
+    raw = settings.rbac_roles
+    if not raw:
+        return "admin"
+    mapping: dict[str, str] = {}
+    for item in raw.split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        name, role = item.split(":", 1)
+        mapping[name.strip()] = role.strip()
+    return mapping.get(user_id, "viewer")
 
 
 def create_token(user_id: str, claims: dict[str, Any] | None = None) -> str:

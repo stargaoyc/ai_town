@@ -11,7 +11,7 @@
 - 用户映射：Lark open_id -> (user_id="lark_{open_id}", platform="lark")
 - 角色 ID：通过环境变量 LARK_DEFAULT_CHARACTER_ID 指定默认对话角色
 - tenant_access_token 带过期缓存（默认 7000s，留 200s 缓冲），避免每次调用都申请
-- LLM 客户端通过 `from src.main import llm, prompts` 延迟获取，避免循环导入
+- LLM 客户端通过 `from src.runtime import get_llm, get_prompts` 延迟获取，避免循环导入
 - HTTP 调用使用 httpx.AsyncClient
 - 错误处理：捕获异常并记录日志，webhook 始终返回 200 避免 Lark 重试风暴
 
@@ -76,9 +76,9 @@ def _get_llm_globals() -> tuple[object | None, object | None]:
     Returns:
         (llm, prompts) 元组，启动期可能为 (None, None)
     """
-    from src.main import llm, prompts  # type: ignore
+    from src.runtime import get_llm, get_prompts
 
-    return llm, prompts
+    return get_llm(), get_prompts()
 
 
 def _extract_text_content(content: str | None) -> str:

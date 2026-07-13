@@ -709,12 +709,8 @@ class CharacterTickEngine:
         # 调用 ProactiveSharingService 生成分享并写入 DB
         async with db.session() as session:
             # 获取 ws_manager（可能为 None，Web 客户端实时推送可选）
-            ws_manager = None
-            try:
-                from src.main import ws_manager as _ws_mgr
-                ws_manager = _ws_mgr
-            except (ImportError, AttributeError):
-                pass
+            from src.runtime import get_ws_manager
+            ws_manager = get_ws_manager()
 
             sharing_svc = ProactiveSharingService(
                 session=session,
@@ -764,7 +760,8 @@ class CharacterTickEngine:
             content: 分享文案
         """
         try:
-            from src.main import onebot_adapter
+            from src.runtime import get_onebot_adapter
+            onebot_adapter = get_onebot_adapter()
         except (ImportError, AttributeError):
             logger.debug("onebot_adapter_not_available_for_share")
             return

@@ -30,11 +30,33 @@ const item = {
 // 功能导航项（从原"更多"下拉菜单迁移）
 const toolLinks = [
   { to: "/import", label: "角色导入", icon: "📥", desc: "导入 YAML 角色卡" },
-  { to: "/state-charts", label: "状态图表", icon: "📊", desc: "角色状态趋势可视化" },
-  { to: "/memories", label: "记忆时间线", icon: "🧠", desc: "查看角色记忆片段" },
+  {
+    to: "/state-charts",
+    label: "状态图表",
+    icon: "📊",
+    desc: "角色状态趋势可视化",
+  },
+  {
+    to: "/memories",
+    label: "记忆时间线",
+    icon: "🧠",
+    desc: "查看角色记忆片段",
+  },
+  { to: "/diaries", label: "角色日记", icon: "📖", desc: "基于记忆的叙事归档" },
+  {
+    to: "/person-memory",
+    label: "用户记忆",
+    icon: "👤",
+    desc: "角色对用户的记忆",
+  },
   { to: "/reflections", label: "反思查看", icon: "💭", desc: "角色反思与洞察" },
   { to: "/plans", label: "规划系统", icon: "📋", desc: "角色计划与进度" },
-  { to: "/relationships", label: "关系图谱", icon: "🔗", desc: "角色社交关系网络" },
+  {
+    to: "/relationships",
+    label: "关系图谱",
+    icon: "🔗",
+    desc: "角色社交关系网络",
+  },
   { to: "/metrics", label: "指标面板", icon: "📈", desc: "Prometheus 指标" },
   { to: "/monitoring", label: "系统监控", icon: "📡", desc: "指标与日志监控" },
   { to: "/cost", label: "成本仪表", icon: "💰", desc: "LLM 调用成本分析" },
@@ -56,7 +78,11 @@ function AdminPage() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <PageHeader title="系统管理" subtitle="运维操作、状态监控与功能导航" icon="⚙️" />
+      <PageHeader
+        title="系统管理"
+        subtitle="运维操作、状态监控与功能导航"
+        icon="⚙️"
+      />
 
       {/* 功能导航区 */}
       <motion.div variants={container} initial="hidden" animate="show">

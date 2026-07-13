@@ -24,12 +24,12 @@
 │   静态文件/CDN      │     │   World Engine + LangGraph │
 └─────────────────────┘     └────────────┬──────────────┘
                                          │
-                    ┌────────────────────┼────────────────────┐
-                    │                    │                    │
-           ┌────────▼────────┐  ┌────────▼────────┐  ┌──────▼──────┐
-           │   PostgreSQL    │  │     Redis       │  │  对象存储   │
-           │   (+pgvector)   │  │  (缓存/队列)    │  │  (MinIO)    │
-           └─────────────────┘  └─────────────────┘  └─────────────┘
+                    ┌────────────────────┐
+                    │                    │
+           ┌────────▼────────┐  ┌────────▼────────┐
+           │   PostgreSQL    │  │     Redis       │
+           │   (+pgvector)   │  │  (缓存/队列)    │
+           └─────────────────┘  └─────────────────┘
                     │
            ┌────────▼────────┐
            │   MCP Servers   │
@@ -47,7 +47,6 @@
 | PostgreSQL | `pgvector/pgvector:pg17` + pg_uuidv7 | 5432 | 主数据库 |
 | PgBouncer | `edoburu/pgbouncer` | 6432 | 连接池 |
 | Redis | `redis:8.0-alpine` | 6379 | 缓存/队列 |
-| MinIO | `minio/minio` | 9000/9001 | 对象存储 |
 | MCP Servers | 自构 + 社区 | 8001–8006 | 工具服务 |
 | Jaeger | `jaegertracing/all-in-one` | 16686 | 链路追踪 |
 | Prometheus | `prom/prometheus` | 9090 | 指标 |
@@ -159,15 +158,6 @@ services:
     ports: ["6379:6379"]
     volumes: [redis_data:/data]
 
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
-    ports: ["9000:9000", "9001:9001"]
-    volumes: [minio_data:/data]
-
   backend:
     build: ./packages/backend
     env_file: .env
@@ -243,7 +233,6 @@ services:
 volumes:
   pg_data:
   redis_data:
-  minio_data:
   grafana_data:
   loki_data:
   prometheus_data:
@@ -275,12 +264,6 @@ EMBEDDING_MODEL=text-embedding-3-small
 
 # ===== Redis =====
 REDIS_URL=redis://localhost:6379/0
-
-# ===== 对象存储 =====
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=xxx
-MINIO_SECRET_KEY=xxx
-MINIO_BUCKET=ai-town
 
 # ===== LLM 配置 =====
 OPENAI_API_KEY=xxx
@@ -362,7 +345,7 @@ curl -X POST http://localhost:8000/api/v1/admin/partitions/precreate \
 | 流复制 | 1 主 + 2 从，同步复制 |
 | Patroni | 自动故障转移 |
 | PgBouncer | 连接池中间件 |
-| 异地备份 | 每日全量 + WAL 归档到对象存储 |
+| 异地备份 | 每日全量 + WAL 归档 |
 
 ### 5.2 Redis 高可用
 
@@ -415,11 +398,7 @@ curl -X POST http://localhost:8000/api/v1/admin/partitions/precreate \
 
 主要存储实时状态与缓存，50 角色约 50MB，连接池上限 1000。
 
-### 6.3 对象存储
-
-头像、生成图片、附件，按需扩容。
-
-### 6.4 LLM 成本
+### 6.3 LLM 成本
 
 | 模型 | 单价（参考） | 单次决策成本 |
 |------|--------------|--------------|
@@ -438,7 +417,6 @@ curl -X POST http://localhost:8000/api/v1/admin/partitions/precreate \
 |------|------|------|
 | PostgreSQL | `pg_dump` 全量 + WAL 归档 | 每日全量 + 实时归档 |
 | Redis | RDB 快照 + AOF | 每 10 分钟 RDB |
-| MinIO | 跨区域复制 | 实时 |
 
 ### 7.2 恢复演练
 

@@ -22,6 +22,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, UploadFile, File
@@ -31,6 +32,7 @@ from structlog import get_logger
 
 from src.actions import ActionRegistry, register_all
 from src.auth import auth_dependency, create_token, get_current_user
+from src.auth.rbac import require_role
 from src.config import settings, Settings
 from src.core import WorldEngine
 from src.cost_control.budget_manager import set_budget_manager
@@ -51,6 +53,9 @@ from src.memory import EpisodeService, ReflectionService, RetrievalService
 from src.memory.embedding_worker import EmbeddingWorker
 from src.messaging import MessageService, WebSocketManager
 from src.messaging.websocket import router as ws_router
+from src.api.notifications import router as notifications_router
+from src.api.mcp import router as mcp_router, _MCP_SERVERS_CONFIG
+from src.api.memory import router as memory_ext_router
 from src.modules import (
     CharacterImporter,
     DurationCalculator,
@@ -65,7 +70,9 @@ from src.observability import (
     setup_metrics,
     setup_tracing,
 )
+from src.observability.sanitizer import sanitize_url
 from src.scheduler import PartitionScheduler
+from src.security.rate_limit_dep import rate_limit
 from src.security.rate_limiter import RateLimiter
 from src.adapters import OneBotAdapter
 
@@ -97,6 +104,8 @@ ws_manager = WebSocketManager()
 # OneBot v12 适配器（QQ 机器人接入）
 onebot_adapter = OneBotAdapter()
 
+from src import runtime
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,11 +118,27 @@ async def lifespan(app: FastAPI):
     4. World Engine
     5. Character Tick Engine（如果可用）
     """
+    # === 模块降级策略 ===
+    # 必须模块（失败则中断启动）:
+    #   - Redis（状态真相源）
+    #   - LLM 客户端（核心能力）
+    #   - Action Registry（行为系统）
+    #   - World Engine（世界推进）
+    # 可选模块（失败则降级，继续启动）:
+    #   - Embedding Worker（异步向量化，降级后记忆不生成向量）
+    #   - Partition Scheduler（分区预创建，降级后需手动创建）
+    #   - Character Tick Engine（角色推进，降级后世界仍运行）
+    #   - Phase 2 模块（场景/作息/移动，降级后角色行为受限）
+    #   - OneBot 适配器（QQ 接入，降级后仅 Web 可用）
     global redis, world_engine, character_engine, registry, llm, prompts
     global scene_loader, schedule_system, duration_calculator, movement_system
     global embedding_worker, partition_scheduler, rate_limiter
 
     logger.info("ai_town_backend_starting")
+
+    # 同步全局实例到 runtime 容器
+    runtime.set_ws_manager(ws_manager)
+    runtime.set_onebot_adapter(onebot_adapter)
 
     # 0.5 初始化可观测性（日志/Trace/Metrics/Langfuse）
     setup_logging(log_level=settings.log_level, log_format=settings.log_format)
@@ -122,9 +147,10 @@ async def lifespan(app: FastAPI):
     # 1. 初始化 Redis
     try:
         redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        runtime.set_redis(redis)
         # 测试连接
         await redis.ping()
-        logger.info("redis_connected", url=settings.redis_url)
+        logger.info("redis_connected", url=sanitize_url(settings.redis_url))
         # 设置 Prometheus Redis 连接状态指标
         from src.observability.metrics import REDIS_CONNECTED
         REDIS_CONNECTED.set(1)
@@ -158,6 +184,7 @@ async def lifespan(app: FastAPI):
         recovery_timeout=settings.llm_circuit_breaker_recovery_timeout,
     )
     rate_limiter = RateLimiter(redis)
+    runtime.set_rate_limiter(rate_limiter)
     logger.info(
         "cost_control_initialized",
         daily_budget=settings.llm_daily_budget_usd,
@@ -180,6 +207,8 @@ async def lifespan(app: FastAPI):
     try:
         llm = LLMClient()
         prompts = PromptTemplates()
+        runtime.set_llm(llm)
+        runtime.set_prompts(prompts)
         logger.info("llm_initialized", model=settings.model_chat)
     except Exception as e:
         logger.error("llm_initialization_failed", error=str(e), exc_info=True)
@@ -189,6 +218,7 @@ async def lifespan(app: FastAPI):
     try:
         registry = ActionRegistry()
         register_all(registry)
+        runtime.set_registry(registry)
         logger.info("action_registry_initialized", count=len(registry.list_all()))
     except Exception as e:
         logger.error("action_registry_initialization_failed", error=str(e), exc_info=True)
@@ -204,16 +234,19 @@ async def lifespan(app: FastAPI):
             poll_interval=5.0,
         )
         embedding_task = asyncio.create_task(embedding_worker.run())
+        runtime.set_embedding_worker(embedding_worker)
         logger.info("embedding_worker_started", batch_size=20, poll_interval=5.0)
     except Exception as e:
         logger.error("embedding_worker_start_failed", error=str(e), exc_info=True)
         embedding_worker = None
+        runtime.set_embedding_worker(embedding_worker)
 
     # 3.6 启动分区预创建调度器（每月 25 号 03:00 自动执行）
     # 解决 v8 P1 #68：原仅启动时执行，长期运行 >3 月漏建分区
     try:
         partition_scheduler = PartitionScheduler()
         await partition_scheduler.start()
+        runtime.set_partition_scheduler(partition_scheduler)
         logger.info("partition_scheduler_started")
     except Exception as e:
         logger.error(
@@ -227,6 +260,7 @@ async def lifespan(app: FastAPI):
     try:
         world_engine = WorldEngine(redis)
         await world_engine.start()
+        runtime.set_world_engine(world_engine)
         logger.info("world_engine_started")
     except Exception as e:
         logger.error("world_engine_start_failed", error=str(e), exc_info=True)
@@ -244,6 +278,7 @@ async def lifespan(app: FastAPI):
             )
             # 启动后台任务：定期对所有活跃角色执行 Tick
             character_tick_task = asyncio.create_task(_character_tick_loop())
+            runtime.set_character_engine(character_engine)
             logger.info("character_engine_started")
         except Exception as e:
             logger.error(
@@ -252,6 +287,7 @@ async def lifespan(app: FastAPI):
                 exc_info=True,
             )
             character_engine = None
+            runtime.set_character_engine(character_engine)
     else:
         logger.warning(
             "character_tick_engine_not_available",
@@ -275,6 +311,10 @@ async def lifespan(app: FastAPI):
         schedule_system = ScheduleSystem()
         duration_calculator = DurationCalculator()
         movement_system = MovementSystem(scene_loader)
+        runtime.set_scene_loader(scene_loader)
+        runtime.set_schedule_system(schedule_system)
+        runtime.set_duration_calculator(duration_calculator)
+        runtime.set_movement_system(movement_system)
         logger.info("phase2_modules_initialized")
     except Exception as e:
         logger.error("phase2_init_failed", error=str(e), exc_info=True)
@@ -554,11 +594,25 @@ app.include_router(ws_router)
 # 注册 OneBot v12 反向 WebSocket 路由（/ws/onebot/v12）
 app.include_router(onebot_adapter.router)
 
+# 注册通知中心 API 路由（/api/v1/notifications）
+app.include_router(notifications_router)
+
+# 注册 MCP Server 管理 API 路由（/api/v1/mcp）
+app.include_router(mcp_router)
+
+# 注册记忆扩展 API 路由（日记 + 角色对用户的记忆）
+app.include_router(memory_ext_router)
+
 # Phase 4: 可观测性初始化（OTel Trace + Prometheus Metrics + Langfuse）
 setup_tracing(app)
 setup_metrics(app)
 setup_langfuse()
 logger.info("observability_initialized")
+
+# 注册全局异常处理器
+from src.api.exceptions import register_exception_handlers
+register_exception_handlers(app)
+logger.info("exception_handlers_registered")
 
 
 # === API 路由 ===
@@ -568,17 +622,39 @@ logger.info("observability_initialized")
 async def health():
     """健康检查
 
-    返回服务状态、World Tick ID、Redis 连接状态
+    返回服务状态、各模块运行状态、World Tick ID。
+    必须模块失败时 status 为 "degraded"。
     """
+    must_modules = {
+        "redis": redis is not None,
+        "world_engine": world_engine is not None,
+        "llm": llm is not None,
+        "action_registry": registry is not None,
+    }
+    optional_modules = {
+        "character_engine": character_engine is not None,
+        "embedding_worker": embedding_worker is not None,
+        "partition_scheduler": partition_scheduler is not None,
+        "onebot_adapter": onebot_adapter._running if onebot_adapter else False,
+    }
+    all_must_ok = all(must_modules.values())
+
     return {
-        "status": "ok",
+        "status": "ok" if all_must_ok else "degraded",
         "world_tick": world_engine.tick_id if world_engine else 0,
-        "redis": "connected" if redis else "disconnected",
-        "character_engine": "available" if character_engine else "unavailable",
+        "must_modules": must_modules,
+        "optional_modules": optional_modules,
+        "current_world_time": _get_current_world_time(),
     }
 
 
-@app.post("/api/v1/auth/login")
+def _get_current_world_time():
+    """读取当前世界时间（同步版本，用于 health 端点）"""
+    # 这里返回 None，实际时间通过 /admin/status 异步获取
+    return None
+
+
+@app.post("/api/v1/auth/login", dependencies=[Depends(rate_limit("login", 5, 60))])
 async def login(body: dict):
     """登录接口 - 账号密码换取 JWT Token
 
@@ -967,7 +1043,10 @@ async def get_action_history(character_id: str, limit: int = 50):
 
 
 @app.post("/api/v1/admin/tick")
-async def force_tick(character_id: str | None = None):
+async def force_tick(
+    character_id: str | None = None,
+    user=Depends(require_role("admin", "operator")),
+):
     """强制触发 Tick（管理接口）
 
     Args:
@@ -1022,7 +1101,7 @@ async def force_tick(character_id: str | None = None):
 
 
 @app.post("/api/v1/admin/world/tick")
-async def force_world_tick():
+async def force_world_tick(user=Depends(require_role("admin", "operator"))):
     """强制触发 World Tick（管理接口）
 
     Returns:
@@ -1042,6 +1121,68 @@ async def force_world_tick():
         raise HTTPException(status_code=500, detail=f"World tick failed: {str(e)}")
 
 
+@app.post("/api/v1/admin/world/reset-time")
+async def reset_world_time(
+    new_time: str | None = None,
+    user=Depends(require_role("admin")),
+):
+    """重置世界虚拟时间（管理接口）
+
+    清除 Redis 中的旧时间状态，让时间演化器在下次 Tick 时重新初始化。
+    用于修复初始时间设置错误或需要重置世界时间的场景。
+
+    Args:
+        new_time: 可选，ISO 格式的新初始时间（如 "2026-07-13T08:00:00"）。
+                  留空则使用当前现实日期的 08:00 或环境变量配置。
+
+    Returns:
+        重置结果
+    """
+    if redis is None:
+        raise HTTPException(status_code=503, detail="Redis not connected")
+
+    # 读取旧时间用于日志
+    old_state = await redis.hgetall("world:state:time")
+    old_time = old_state.get("world_time", "unknown") if old_state else "none"
+
+    # 清除时间状态
+    await redis.delete("world:state:time")
+    # 同时清除主哈希中的 world_time 字段
+    await redis.hdel("world:state", "world_time")
+
+    # 如果指定了新时间，直接写入
+    if new_time:
+        try:
+            from datetime import datetime
+            parsed = datetime.fromisoformat(new_time)
+            from src.core.evolutions.time_evolution import TIME_KEY, compute_day_phase, compute_season
+            await redis.hset(TIME_KEY, mapping={  # type: ignore[arg-type]
+                "world_time": parsed.isoformat(),
+                "tick_id": "0",
+                "day_phase": compute_day_phase(parsed.hour),
+                "season": compute_season(parsed.month),
+            })
+            # 同步到主哈希
+            await redis.hset("world:state", mapping={  # type: ignore[arg-type]
+                "world_time": parsed.isoformat(),
+                "tick_id": "0",
+            })
+            logger.info("world_time_reset", old_time=old_time, new_time=parsed.isoformat(), source="api_specified")
+            return {
+                "message": "World time reset successfully",
+                "old_time": old_time,
+                "new_time": parsed.isoformat(),
+            }
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid time format: {new_time}")
+
+    logger.info("world_time_reset", old_time=old_time, new_time="(will reinitialize on next tick)", source="api_default")
+    return {
+        "message": "World time cleared. Will reinitialize on next tick using WORLD_INITIAL_TIME env or current date.",
+        "old_time": old_time,
+    }
+
+
 @app.get("/api/v1/admin/status")
 async def get_admin_status():
     """获取系统状态（管理接口）
@@ -1049,12 +1190,28 @@ async def get_admin_status():
     Returns:
         各组件运行状态
     """
+    # 读取当前世界时间
+    current_world_time = None
+    if redis:
+        try:
+            time_state = await redis.hgetall("world:state:time")
+            if time_state:
+                import json
+                wt_raw = time_state.get("world_time", "")
+                try:
+                    parsed = json.loads(wt_raw)
+                    current_world_time = parsed if isinstance(parsed, str) else wt_raw
+                except (json.JSONDecodeError, TypeError):
+                    current_world_time = wt_raw
+        except Exception:
+            pass
     return {
         "redis": "connected" if redis else "disconnected",
         "world_engine": {
             "running": world_engine is not None,
             "tick_id": world_engine.tick_id if world_engine else 0,
             "is_leader": world_engine.is_leader if world_engine else False,
+            "current_world_time": current_world_time,
         },
         "character_engine": {
             "available": character_engine is not None,
@@ -1087,7 +1244,7 @@ async def get_admin_status():
 # === Phase 2 API：角色卡导入 ===
 
 
-@app.post("/api/v1/admin/characters/import")
+@app.post("/api/v1/admin/characters/import", dependencies=[Depends(rate_limit("char_import", 10, 60))])
 async def import_character_card(
     payload: dict = Body(...),
 ):
@@ -1468,7 +1625,7 @@ async def calculate_duration(
 # === Phase 3 API：消息服务 ===
 
 
-@app.post("/api/v1/messages/send")
+@app.post("/api/v1/messages/send", dependencies=[Depends(rate_limit("msg_send", 60, 60))])
 async def send_message(
     character_id: str = Body(...),
     user_id: str = Body(...),
@@ -1767,322 +1924,8 @@ async def get_message_stats(
     }
 
 
-# === Phase 3 API：模块与 MCP Server 管理 ===
-
-# MCP Server 配置映射（环境变量 → 服务器元数据）
-_MCP_SERVERS_CONFIG = [
-    {
-        "name": "code-executor",
-        "env_key": "MCP_CODE_SERVER",
-        "default_port": 8001,
-        "type": "self-developed",
-        "tools": ["execute_python", "list_allowed_modules"],
-        "description": "Python 代码沙箱执行（subprocess 隔离 + 模块白名单）",
-    },
-    {
-        "name": "web-search",
-        "env_key": "MCP_SEARCH_SERVER",
-        "default_port": 8002,
-        "type": "community",
-        "tools": ["search", "search_news"],
-        "description": "网络搜索（Tavily API 集成）",
-    },
-    {
-        "name": "weather",
-        "env_key": "MCP_WEATHER_SERVER",
-        "default_port": 8003,
-        "type": "community",
-        "tools": ["get_current_weather", "get_forecast", "get_weather_by_coords"],
-        "description": "天气查询（OpenWeatherMap 集成）",
-    },
-    {
-        "name": "shop-simulator",
-        "env_key": "MCP_SHOP_SERVER",
-        "default_port": 8004,
-        "type": "self-developed",
-        "tools": ["list_items", "get_item_details", "buy_item", "sell_item", "get_shop_categories"],
-        "description": "商店模拟（小镇经济系统，24 件默认商品）",
-    },
-    {
-        "name": "knowledge-base",
-        "env_key": "MCP_KB_SERVER",
-        "default_port": 8005,
-        "type": "self-developed",
-        "tools": ["query_kb", "list_categories"],
-        "description": "小镇设定库查询（世界规则/角色/场景/行动/记忆系统）",
-    },
-    {
-        "name": "character-social",
-        "env_key": "MCP_SOCIAL_SERVER",
-        "default_port": 8006,
-        "type": "self-developed",
-        "tools": ["give_gift", "invite_date", "resolve_conflict"],
-        "description": "角色社交系统（送礼/约会/冲突解决）",
-    },
-]
-
-
-@app.get("/api/v1/mcp/servers")
-async def list_mcp_servers():
-    """列出所有已配置的 MCP Server
-
-    Returns:
-        MCP Server 列表（含连接地址、工具清单、类型、启用状态）
-    """
-    from src.mcp import get_enabled_servers
-
-    enabled_set = await get_enabled_servers()
-    servers = []
-    for cfg in _MCP_SERVERS_CONFIG:
-        endpoint = getattr(settings, cfg["env_key"].lower(), None)
-        if not endpoint:
-            # 尝试从环境变量读取（settings 中可能未定义该字段）
-            import os
-            endpoint = os.environ.get(cfg["env_key"], f"http://localhost:{cfg['default_port']}")
-
-        servers.append({
-            "name": cfg["name"],
-            "endpoint": endpoint,
-            "type": cfg["type"],
-            "description": cfg["description"],
-            "tools": cfg["tools"],
-            "tool_count": len(cfg["tools"]),
-            "enabled": cfg["name"] in enabled_set,
-        })
-
-    return {
-        "data": servers,
-        "total": len(servers),
-    }
-
-
-@app.get("/api/v1/mcp/servers/{server_name}")
-async def get_mcp_server_detail(server_name: str):
-    """获取单个 MCP Server 详情
-
-    Args:
-        server_name: Server 名称
-
-    Returns:
-        Server 详细信息（含工具清单）
-    """
-    # 健康检查特殊路由（避免被 {server_name} 捕获）
-    if server_name == "health":
-        return await check_mcp_servers_health_impl()
-    cfg = next((c for c in _MCP_SERVERS_CONFIG if c["name"] == server_name), None)
-    if cfg is None:
-        raise HTTPException(status_code=404, detail=f"MCP Server '{server_name}' not found")
-
-    import os
-    endpoint = os.environ.get(cfg["env_key"], f"http://localhost:{cfg['default_port']}")
-
-    return {
-        "name": cfg["name"],
-        "endpoint": endpoint,
-        "type": cfg["type"],
-        "description": cfg["description"],
-        "tools": [
-            {"name": tool_name, "server": cfg["name"]}
-            for tool_name in cfg["tools"]
-        ],
-        "tool_count": len(cfg["tools"]),
-    }
-
-
-@app.get("/api/v1/mcp/tools")
-async def list_all_mcp_tools():
-    """列出所有已启用 MCP Server 提供的工具
-
-    Returns:
-        所有可用工具的扁平列表（含所属 Server，仅含已启用 Server 的工具）
-    """
-    from src.mcp import get_enabled_servers
-
-    enabled_set = await get_enabled_servers()
-    tools = []
-    for cfg in _MCP_SERVERS_CONFIG:
-        if cfg["name"] not in enabled_set:
-            continue
-        for tool_name in cfg["tools"]:
-            tools.append({
-                "name": tool_name,
-                "server": cfg["name"],
-                "server_type": cfg["type"],
-            })
-
-    return {
-        "data": tools,
-        "total": len(tools),
-    }
-
-
-@app.get("/api/v1/mcp/servers/health")
-async def check_mcp_servers_health():
-    """检查所有 MCP Server 的健康状态（路由入口）"""
-    return await check_mcp_servers_health_impl()
-
-
-async def check_mcp_servers_health_impl():
-    """检查所有 MCP Server 的健康状态（实现）
-
-    对每个配置的 MCP Server 发起 HTTP 连接检测，
-    返回在线/离线状态及响应延迟。
-
-    Returns:
-        各 Server 的健康状态列表
-    """
-    import os
-    import asyncio
-    import httpx
-
-    async def check_one(cfg: dict) -> dict:
-        endpoint = os.environ.get(cfg["env_key"], f"http://localhost:{cfg['default_port']}")
-        start = asyncio.get_event_loop().time()
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                # 尝试连接 SSE 端点（FastMCP 默认 SSE 路径 /sse）
-                resp = await client.get(f"{endpoint}/sse", follow_redirects=False)
-                latency_ms = int((asyncio.get_event_loop().time() - start) * 1000)
-                return {
-                    "name": cfg["name"],
-                    "endpoint": endpoint,
-                    "status": "online",
-                    "latency_ms": latency_ms,
-                    "http_status": resp.status_code,
-                }
-        except Exception:
-            latency_ms = int((asyncio.get_event_loop().time() - start) * 1000)
-            return {
-                "name": cfg["name"],
-                "endpoint": endpoint,
-                "status": "offline",
-                "latency_ms": latency_ms,
-                "http_status": None,
-            }
-
-    results = await asyncio.gather(*[check_one(cfg) for cfg in _MCP_SERVERS_CONFIG])
-    return {
-        "data": results,
-        "total": len(results),
-        "online": sum(1 for r in results if r["status"] == "online"),
-        "offline": sum(1 for r in results if r["status"] == "offline"),
-    }
-
-
-@app.put("/api/v1/mcp/servers/{server_name}/enabled")
-async def toggle_mcp_server(
-    server_name: str,
-    payload: dict = Body(...),
-):
-    """启用/禁用单个 MCP Server（前端控制开关）
-
-    状态持久化到 Redis hash `mcp:enabled`，Character Tick 决策时
-    会读取该状态过滤可用工具列表。
-
-    Args:
-        server_name: MCP Server 名称
-        payload: {"enabled": true|false}
-
-    Returns:
-        更新后的启用状态
-    """
-    from src.mcp.client import MCP_ENABLED_KEY
-
-    cfg = next((c for c in _MCP_SERVERS_CONFIG if c["name"] == server_name), None)
-    if cfg is None:
-        raise HTTPException(status_code=404, detail=f"MCP Server '{server_name}' not found")
-
-    enabled = bool(payload.get("enabled", True))
-    if redis is None:
-        raise HTTPException(500, "Redis not available")
-
-    # 写入 Redis hash（值为字符串 "true" / "false"）
-    await redis.hset(MCP_ENABLED_KEY, server_name, "true" if enabled else "false")
-
-    logger.info(
-        "mcp_server_toggled",
-        server=server_name,
-        enabled=enabled,
-    )
-
-    return {
-        "success": True,
-        "server": server_name,
-        "enabled": enabled,
-    }
-
-
-@app.post("/api/v1/mcp/tools/{tool_name}/invoke")
-async def invoke_mcp_tool(
-    tool_name: str,
-    server_name: str,
-    args: dict = Body(...),
-):
-    """调用 MCP Server 的工具（测试用）
-
-    Args:
-        tool_name: 工具名称
-        server_name: 服务器名称
-        args: 工具参数（JSON body）
-
-    Returns:
-        工具执行结果
-    """
-    import os
-    import httpx
-
-    cfg = next((c for c in _MCP_SERVERS_CONFIG if c["name"] == server_name), None)
-    if cfg is None:
-        raise HTTPException(status_code=404, detail=f"MCP Server '{server_name}' not found")
-
-    if tool_name not in cfg["tools"]:
-        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found in server '{server_name}'")
-
-    endpoint = os.environ.get(cfg["env_key"], f"http://localhost:{cfg['default_port']}")
-
-    try:
-        # 通过 MCP SSE 协议调用工具
-        # FastMCP 2.0+ SSE 端点：POST /messages/ 调用工具
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # 先连接 SSE 获取 session
-            sse_resp = await client.get(f"{endpoint}/sse", follow_redirects=False)
-            if sse_resp.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"MCP Server offline or SSE endpoint not available (HTTP {sse_resp.status_code})",
-                    "endpoint": endpoint,
-                }
-
-            # 调用工具
-            invoke_resp = await client.post(
-                f"{endpoint}/messages/",
-                json={
-                    "method": "tools/call",
-                    "params": {
-                        "name": tool_name,
-                        "arguments": args,
-                    },
-                },
-                timeout=30.0,
-            )
-            return {
-                "success": True,
-                "status_code": invoke_resp.status_code,
-                "result": invoke_resp.json() if invoke_resp.headers.get("content-type", "").startswith("application/json") else invoke_resp.text,
-                "endpoint": endpoint,
-            }
-    except httpx.ConnectError:
-        return {
-            "success": False,
-            "error": f"Cannot connect to MCP Server at {endpoint}. Is it running?",
-            "endpoint": endpoint,
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "endpoint": endpoint,
-        }
+# === Phase 3 API：模块状态 ===
+# MCP 路由已迁移至 src/api/mcp.py，_MCP_SERVERS_CONFIG 在文件顶部已导入
 
 
 @app.get("/api/v1/modules")
@@ -2568,7 +2411,7 @@ async def get_world_snapshots(limit: int = 20):
 @app.get("/api/v1/admin/logs")
 async def get_recent_logs(
     lines: int = 100,
-    level: str | None = None,
+    level: Literal["debug", "info", "warning", "error"] | None = None,
 ):
     """获取最近的系统日志（从 data/logs/backend.log 读取）
 
@@ -2835,7 +2678,10 @@ async def get_runtime_config():
 
 
 @app.put("/api/v1/admin/config")
-async def update_runtime_config(updates: dict = Body(...)):
+async def update_runtime_config(
+    updates: dict = Body(...),
+    user=Depends(require_role("admin")),
+):
     """更新运行时配置（写入 Redis 覆盖值，无需重启）
 
     仅允许更新白名单中的配置项。
@@ -2928,184 +2774,4 @@ async def reset_config_item(key: str):
     return {"success": True, "key": key, "reset_to": default_val}
 
 
-# === 通知中心 API ===
-
-def _notif_key(user_id: str) -> str:
-    """Redis 通知列表键"""
-    return f"notifications:{user_id}"
-
-
-async def _create_notification(
-    user_id: str,
-    notif_type: str,
-    title: str,
-    content: str,
-) -> dict:
-    """创建通知并写入 Redis（内部函数，可被其他模块调用）"""
-    import json
-    from uuid6 import uuid7
-
-    if redis is None:
-        raise RuntimeError("Redis not initialized")
-
-    notif = {
-        "id": str(uuid7()),
-        "type": notif_type,
-        "title": title,
-        "content": content,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "read": False,
-    }
-    await redis.lpush(_notif_key(user_id), json.dumps(notif))
-    # 保留最近 200 条
-    await redis.ltrim(_notif_key(user_id), 0, 199)
-    return notif
-
-
-@app.get("/api/v1/notifications")
-async def list_notifications(
-    limit: int = 50,
-    unread_only: bool = False,
-    user: dict = Depends(get_current_user),
-):
-    """获取通知列表
-
-    Args:
-        limit: 返回数量（最大 200）
-        unread_only: 仅返回未读通知
-
-    Returns:
-        通知列表（按时间倒序，最新的在前）
-    """
-    import json
-
-    user_id = user["user_id"]
-    limit = min(max(limit, 1), 200)
-    if redis is None:
-        raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, limit - 1)
-
-    notifications = []
-    for raw in raw_list:
-        try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
-            if unread_only and notif.get("read"):
-                continue
-            notifications.append(notif)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    unread_count = sum(1 for n in notifications if not n.get("read"))
-    return {
-        "data": notifications,
-        "total": len(notifications),
-        "unread": unread_count,
-    }
-
-
-@app.post("/api/v1/notifications")
-async def create_notification(
-    payload: dict = Body(...),
-    user: dict = Depends(get_current_user),
-):
-    """手动创建通知（前端"模拟通知"按钮调用）
-
-    Body:
-        type: 通知类型 (share/system/character/qq)
-        title: 标题
-        content: 内容
-    """
-    user_id = user["user_id"]
-    notif_type = payload.get("type", "system")
-    title = payload.get("title", "通知")
-    content = payload.get("content", "")
-
-    notif = await _create_notification(user_id, notif_type, title, content)
-    return {"data": notif}
-
-
-@app.put("/api/v1/notifications/{notif_id}/read")
-async def mark_notification_read(
-    notif_id: str,
-    user: dict = Depends(get_current_user),
-):
-    """标记单条通知为已读"""
-    import json
-
-    user_id = user["user_id"]
-    if redis is None:
-        raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
-    for i, raw in enumerate(raw_list):
-        try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
-            if notif.get("id") == notif_id:
-                notif["read"] = True
-                await redis.lset(_notif_key(user_id), i, json.dumps(notif))
-                return {"success": True, "id": notif_id}
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    raise HTTPException(404, f"Notification {notif_id} not found")
-
-
-@app.put("/api/v1/notifications/read-all")
-async def mark_all_notifications_read(
-    user: dict = Depends(get_current_user),
-):
-    """标记所有通知为已读"""
-    import json
-
-    user_id = user["user_id"]
-    if redis is None:
-        raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
-    updated = 0
-    for i, raw in enumerate(raw_list):
-        try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
-            if not notif.get("read"):
-                notif["read"] = True
-                await redis.lset(_notif_key(user_id), i, json.dumps(notif))
-                updated += 1
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    return {"success": True, "updated": updated}
-
-
-@app.delete("/api/v1/notifications/{notif_id}")
-async def delete_notification(
-    notif_id: str,
-    user: dict = Depends(get_current_user),
-):
-    """删除单条通知"""
-    import json
-
-    user_id = user["user_id"]
-    if redis is None:
-        raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
-    for raw in raw_list:
-        try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
-            if notif.get("id") == notif_id:
-                # LREM 按 value 删除（需要精确匹配原始 JSON 字符串）
-                await redis.lrem(_notif_key(user_id), 1, raw)  # type: ignore[arg-type]
-                return {"success": True, "id": notif_id}
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    raise HTTPException(404, f"Notification {notif_id} not found")
-
-
-@app.delete("/api/v1/notifications")
-async def clear_all_notifications(
-    user: dict = Depends(get_current_user),
-):
-    """清除所有通知"""
-    user_id = user["user_id"]
-    if redis is None:
-        raise HTTPException(500, "Redis not available")
-    await redis.delete(_notif_key(user_id))
-    return {"success": True}
+# 通知中心 API 已迁移至 src/api/notifications.py

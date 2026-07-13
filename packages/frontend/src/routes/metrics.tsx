@@ -142,229 +142,235 @@ function MetricsPage() {
     : [];
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="Prometheus 指标面板"
-          subtitle="实时监控小镇运行指标（每 5 秒刷新）"
-          icon="📈"
-          backTo="/admin"
-          backLabel="返回管理"
-        />
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="Prometheus 指标面板"
+        subtitle="实时监控小镇运行指标（每 5 秒刷新）"
+        icon="📈"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
 
-        {/* 最后更新时间 */}
-        <GlassCard hover={false}>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2 text-twilight-500">
-              <Activity className="w-5 h-5 text-sakura-500" />
-              <span className="font-semibold">系统指标总览</span>
-            </div>
-            <div className="flex items-center gap-3">
-              {lastUpdated && (
-                <span className="text-xs text-twilight-400 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  最后更新：{lastUpdated.toLocaleTimeString("zh-CN")}
-                </span>
-              )}
-              <StatusBadge
-                status={isLoading ? "warning" : "ok"}
-                label={isLoading ? "加载中" : "实时"}
+      {/* 最后更新时间 */}
+      <GlassCard hover={false}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-twilight-500">
+            <Activity className="w-5 h-5 text-sakura-500" />
+            <span className="font-semibold">系统指标总览</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {lastUpdated && (
+              <span className="text-xs text-twilight-400 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                最后更新：{lastUpdated.toLocaleTimeString("zh-CN")}
+              </span>
+            )}
+            <StatusBadge
+              status={isLoading ? "warning" : "ok"}
+              label={isLoading ? "加载中" : "实时"}
+            />
+          </div>
+        </div>
+      </GlassCard>
+
+      {isLoading && !data && (
+        <LoadingSpinner text="正在拉取 Prometheus 指标..." />
+      )}
+      {error && !data && <ErrorDisplay error={error} />}
+
+      {data && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* 大数字指标卡片 */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div title="ai_town_world_tick_total — 世界引擎累计运行的 Tick 总数">
+              <StatCard
+                title="World Tick 总数"
+                value={formatNum(data.world_tick_total)}
+                icon="🌍"
+                color="sakura"
               />
             </div>
-          </div>
-        </GlassCard>
-
-        {isLoading && !data && <LoadingSpinner text="正在拉取 Prometheus 指标..." />}
-        {error && !data && <ErrorDisplay error={error} />}
-
-        {data && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-          >
-            {/* 大数字指标卡片 */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <div title="ai_town_world_tick_total — 世界引擎累计运行的 Tick 总数">
-                <StatCard
-                  title="World Tick 总数"
-                  value={formatNum(data.world_tick_total)}
-                  icon="🌍"
-                  color="sakura"
-                />
-              </div>
-              <div title="ai_town_world_tick_id — 当前世界 Tick ID（自增序列号）">
-                <StatCard
-                  title="当前 Tick ID"
-                  value={`#${data.world_tick_id}`}
-                  icon="⏱️"
-                  color="sky"
-                />
-              </div>
-              <div title="ai_town_character_tick_total — 角色引擎累计处理的 Tick 总数">
-                <StatCard
-                  title="Character Tick 总数"
-                  value={formatNum(data.character_tick_total)}
-                  icon="👥"
-                  color="twilight"
-                />
-              </div>
-              <div title="ai_town_llm_cost_total_usd_total — LLM 调用累计成本（美元）">
-                <StatCard
-                  title="LLM 累计成本"
-                  value={`$${data.llm_cost_total_usd.toFixed(4)}`}
-                  icon="💰"
-                  color="sakura"
-                />
-              </div>
-              <div title="ai_town_redis_connected — Redis 连接状态（1=已连接, 0=断开）">
-                <div className="p-5 rounded-2xl bg-gradient-to-br from-white/40 to-sky-soft-100/40 border border-white/50 backdrop-blur-sm shadow-soft h-full">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-twilight-400 font-medium flex items-center gap-1">
-                      <Database className="w-4 h-4" />
-                      Redis 连接
-                    </div>
+            <div title="ai_town_world_tick_id — 当前世界 Tick ID（自增序列号）">
+              <StatCard
+                title="当前 Tick ID"
+                value={`#${data.world_tick_id}`}
+                icon="⏱️"
+                color="sky"
+              />
+            </div>
+            <div title="ai_town_character_tick_total — 角色引擎累计处理的 Tick 总数">
+              <StatCard
+                title="Character Tick 总数"
+                value={formatNum(data.character_tick_total)}
+                icon="👥"
+                color="twilight"
+              />
+            </div>
+            <div title="ai_town_llm_cost_total_usd_total — LLM 调用累计成本（美元）">
+              <StatCard
+                title="LLM 累计成本"
+                value={`$${data.llm_cost_total_usd.toFixed(4)}`}
+                icon="💰"
+                color="sakura"
+              />
+            </div>
+            <div title="ai_town_redis_connected — Redis 连接状态（1=已连接, 0=断开）">
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-white/40 to-sky-soft-100/40 border border-white/50 backdrop-blur-sm shadow-soft h-full">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm text-twilight-400 font-medium flex items-center gap-1">
+                    <Database className="w-4 h-4" />
+                    Redis 连接
                   </div>
-                  <StatusBadge
-                    status={data.redis_connected === 1 ? "ok" : "error"}
-                    label={
-                      data.redis_connected === 1 ? "已连接" : "已断开"
-                    }
+                </div>
+                <StatusBadge
+                  status={data.redis_connected === 1 ? "ok" : "error"}
+                  label={data.redis_connected === 1 ? "已连接" : "已断开"}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* LLM Token 使用量柱状图 */}
+          <GlassCard hover={false}>
+            <h3 className="font-semibold text-sakura-600 mb-1 flex items-center gap-2 text-lg">
+              <Cpu className="w-5 h-5" />
+              LLM Token 使用量
+            </h3>
+            <p className="text-xs text-twilight-400 mb-4 ml-7">
+              按 Prompt / Completion 分组统计的累计 Token
+              消耗（llm_tokens_total）
+            </p>
+            <div className="w-full h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={tokenChartData}
+                  margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(122,95,195,0.15)"
                   />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#7a5fc3", fontSize: 13 }}
+                    axisLine={{ stroke: "rgba(122,95,195,0.3)" }}
+                  />
+                  <YAxis
+                    tick={{ fill: "#7a5fc3", fontSize: 12 }}
+                    axisLine={{ stroke: "rgba(122,95,195,0.3)" }}
+                    tickFormatter={(v) => formatNum(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "rgba(255,255,255,0.9)",
+                      backdropFilter: "blur(10px)",
+                      border: "1px solid rgba(255,143,171,0.3)",
+                      borderRadius: "12px",
+                      fontSize: "13px",
+                    }}
+                    formatter={(v) => [formatNum(Number(v)), "Tokens"]}
+                  />
+                  <Legend />
+                  <Bar
+                    dataKey="tokens"
+                    name="Token 数量"
+                    radius={[8, 8, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </GlassCard>
+
+          {/* 指标说明 */}
+          <GlassCard hover={false}>
+            <h3 className="font-semibold text-twilight-500 mb-3 flex items-center gap-2">
+              <span>💡</span>
+              指标说明
+            </h3>
+            <div className="grid md:grid-cols-2 gap-3 text-sm">
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-sakura-50/50">
+                <span className="text-sakura-500 font-mono text-xs mt-0.5 shrink-0">
+                  ai_town_world_tick_total
+                </span>
+                <span className="text-twilight-400">
+                  世界引擎累计运行的 Tick 总数
+                </span>
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-soft-50/50">
+                <span className="text-sky-soft-500 font-mono text-xs mt-0.5 shrink-0">
+                  ai_town_world_tick_id
+                </span>
+                <span className="text-twilight-400">
+                  当前世界 Tick ID（自增序列号）
+                </span>
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-twilight-50/50">
+                <span className="text-twilight-500 font-mono text-xs mt-0.5 shrink-0">
+                  ai_town_character_tick_total
+                </span>
+                <span className="text-twilight-400">
+                  角色引擎累计处理的 Tick 总数
+                </span>
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-sakura-50/50">
+                <span className="text-sakura-500 font-mono text-xs mt-0.5 shrink-0">
+                  ai_town_llm_tokens_total
+                </span>
+                <span className="text-twilight-400">
+                  LLM Token 使用量（按 prompt/completion 分组）
+                </span>
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-soft-50/50">
+                <span className="text-sky-soft-500 font-mono text-xs mt-0.5 shrink-0">
+                  ai_town_llm_cost_total_usd_total
+                </span>
+                <span className="text-twilight-400">
+                  LLM 调用累计成本（美元）
+                </span>
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-twilight-50/50">
+                <span className="text-twilight-500 font-mono text-xs mt-0.5 shrink-0">
+                  ai_town_redis_connected
+                </span>
+                <span className="text-twilight-400">
+                  Redis 连接状态（1=已连接, 0=断开）
+                </span>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* 成本展示卡片 */}
+          <GlassCard hover={false}>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sakura-100 to-twilight-100 flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-sakura-500" />
+                </div>
+                <div>
+                  <div className="text-sm text-twilight-400">
+                    LLM 累计成本（USD）
+                  </div>
+                  <div className="text-2xl font-bold gradient-text-sakura">
+                    ${data.llm_cost_total_usd.toFixed(6)}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-twilight-400">Token 总量</div>
+                <div className="text-xl font-bold text-twilight-500">
+                  {formatNum(
+                    data.llm_tokens_prompt + data.llm_tokens_completion,
+                  )}
                 </div>
               </div>
             </div>
-
-            {/* LLM Token 使用量柱状图 */}
-            <GlassCard hover={false}>
-              <h3 className="font-semibold text-sakura-600 mb-1 flex items-center gap-2 text-lg">
-                <Cpu className="w-5 h-5" />
-                LLM Token 使用量
-              </h3>
-              <p className="text-xs text-twilight-400 mb-4 ml-7">
-                按 Prompt / Completion 分组统计的累计 Token 消耗（llm_tokens_total）
-              </p>
-              <div className="w-full h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={tokenChartData}
-                    margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(122,95,195,0.15)" />
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fill: "#7a5fc3", fontSize: 13 }}
-                      axisLine={{ stroke: "rgba(122,95,195,0.3)" }}
-                    />
-                    <YAxis
-                      tick={{ fill: "#7a5fc3", fontSize: 12 }}
-                      axisLine={{ stroke: "rgba(122,95,195,0.3)" }}
-                      tickFormatter={(v) => formatNum(v)}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "rgba(255,255,255,0.9)",
-                        backdropFilter: "blur(10px)",
-                        border: "1px solid rgba(255,143,171,0.3)",
-                        borderRadius: "12px",
-                        fontSize: "13px",
-                      }}
-                      formatter={(v) => [formatNum(Number(v)), "Tokens"]}
-                    />
-                    <Legend />
-                    <Bar
-                      dataKey="tokens"
-                      name="Token 数量"
-                      radius={[8, 8, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </GlassCard>
-
-            {/* 指标说明 */}
-            <GlassCard hover={false}>
-              <h3 className="font-semibold text-twilight-500 mb-3 flex items-center gap-2">
-                <span>💡</span>
-                指标说明
-              </h3>
-              <div className="grid md:grid-cols-2 gap-3 text-sm">
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-sakura-50/50">
-                  <span className="text-sakura-500 font-mono text-xs mt-0.5 shrink-0">
-                    ai_town_world_tick_total
-                  </span>
-                  <span className="text-twilight-400">
-                    世界引擎累计运行的 Tick 总数
-                  </span>
-                </div>
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-soft-50/50">
-                  <span className="text-sky-soft-500 font-mono text-xs mt-0.5 shrink-0">
-                    ai_town_world_tick_id
-                  </span>
-                  <span className="text-twilight-400">
-                    当前世界 Tick ID（自增序列号）
-                  </span>
-                </div>
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-twilight-50/50">
-                  <span className="text-twilight-500 font-mono text-xs mt-0.5 shrink-0">
-                    ai_town_character_tick_total
-                  </span>
-                  <span className="text-twilight-400">
-                    角色引擎累计处理的 Tick 总数
-                  </span>
-                </div>
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-sakura-50/50">
-                  <span className="text-sakura-500 font-mono text-xs mt-0.5 shrink-0">
-                    ai_town_llm_tokens_total
-                  </span>
-                  <span className="text-twilight-400">
-                    LLM Token 使用量（按 prompt/completion 分组）
-                  </span>
-                </div>
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-soft-50/50">
-                  <span className="text-sky-soft-500 font-mono text-xs mt-0.5 shrink-0">
-                    ai_town_llm_cost_total_usd_total
-                  </span>
-                  <span className="text-twilight-400">
-                    LLM 调用累计成本（美元）
-                  </span>
-                </div>
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-twilight-50/50">
-                  <span className="text-twilight-500 font-mono text-xs mt-0.5 shrink-0">
-                    ai_town_redis_connected
-                  </span>
-                  <span className="text-twilight-400">
-                    Redis 连接状态（1=已连接, 0=断开）
-                  </span>
-                </div>
-              </div>
-            </GlassCard>
-
-            {/* 成本展示卡片 */}
-            <GlassCard hover={false}>
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sakura-100 to-twilight-100 flex items-center justify-center">
-                    <DollarSign className="w-6 h-6 text-sakura-500" />
-                  </div>
-                  <div>
-                    <div className="text-sm text-twilight-400">
-                      LLM 累计成本（USD）
-                    </div>
-                    <div className="text-2xl font-bold gradient-text-sakura">
-                      ${data.llm_cost_total_usd.toFixed(6)}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-twilight-400">Token 总量</div>
-                  <div className="text-xl font-bold text-twilight-500">
-                    {formatNum(data.llm_tokens_prompt + data.llm_tokens_completion)}
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
-          </motion.div>
-        )}
-      </div>
+          </GlassCard>
+        </motion.div>
+      )}
+    </div>
   );
 }

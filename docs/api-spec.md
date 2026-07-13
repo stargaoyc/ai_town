@@ -358,6 +358,167 @@ GET /api/v1/admin/metrics-detail
 
 **说明**：该端点解析 `/metrics` Prometheus 文本格式，转换为结构化 JSON 便于前端监控页面直接消费，无需对接 Grafana。
 
+### 2.9 记忆扩展（日记 + Person Memory）
+
+| 端点 | 方法 | 说明 | 鉴权 |
+|------|------|------|------|
+| `/api/v1/characters/{id}/diaries` | GET | 角色日记列表（支持 `period` 与 `limit` 过滤） | 可选 |
+| `/api/v1/characters/{id}/diaries/generate` | POST | 为角色生成指定周期日记（需 admin/operator） | 必须 |
+| `/api/v1/characters/{id}/person-memory` | GET | 角色对某用户的记忆（`user_id` 查询参数） | 可选 |
+| `/api/v1/characters/{id}/person-memory/list` | GET | 角色对所有用户的记忆列表（按热度倒序） | 可选 |
+
+#### 生成角色日记
+
+```http
+POST /api/v1/characters/{character_id}/diaries/generate?period=day
+Authorization: Bearer <jwt>
+```
+
+**参数**：
+- `period`（默认 `day`）：`day` / `week` / `month` / `year`
+- `character_name`（可选）：角色名，未提供时从数据库查询
+
+**流程**：
+1. 从 `memory_episodes` 提取指定时间段内的记忆（按真实 UTC 时间过滤）
+2. 调用 LLM 生成叙事性日记（第一人称，200-500 字）
+3. 保存到 `character_diaries` 表
+
+**响应**：
+
+```json
+{
+  "data": {
+    "character_id": "019f4c52-...",
+    "period": "day",
+    "diary_date": "2026-07-13T03:44:36.095466+00:00",
+    "diary_end_date": null,
+    "title": "神社里的漫长一日",
+    "content": "今天真是漫长又煎熬的一天...",
+    "mood": "疲惫中带着期待"
+  }
+}
+```
+
+**失败响应**（422）：
+
+```json
+{
+  "detail": "Diary generation failed: insufficient memories or LLM unavailable"
+}
+```
+
+**说明**：
+- 当指定时间段内记忆少于 3 条时返回 422
+- `diary_date` 使用真实 UTC 时间戳（非虚拟世界时间）
+- `diary_end_date` 仅在 `period != "day"` 时填充
+- 日记不替代 `memory_episodes` 真相源，是角色视角的叙事归档
+
+详见 [记忆系统 - 日记服务](memory-system.md)。
+
+#### Person Memory 列表
+
+```http
+GET /api/v1/characters/{character_id}/person-memory/list?limit=50
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "019f...",
+      "character_id": "019f...",
+      "user_id": "user_123",
+      "platform": "web",
+      "content": "用户喜欢咖啡拉花",
+      "heat": 85,
+      "last_interaction_at": "2026-07-12T...",
+      "created_at": "2026-07-10T...",
+      "updated_at": "2026-07-12T..."
+    }
+  ],
+  "total": 12
+}
+```
+
+### 2.10 通知
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/notifications` | GET | 当前用户通知列表（支持 `limit`） |
+| `/api/v1/notifications/{id}/read` | PUT | 标记单条通知为已读 |
+| `/api/v1/notifications/read-all` | PUT | 标记当前用户所有通知为已读 |
+
+#### 通知列表
+
+```http
+GET /api/v1/notifications?limit=20
+Authorization: Bearer <jwt>
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "019f564d-...",
+      "type": "share",
+      "title": "test notif",
+      "content": "hello from test",
+      "created_at": "2026-07-12T12:28:48.997559+00:00",
+      "read": false
+    }
+  ],
+  "total": 5,
+  "unread": 3
+}
+```
+
+#### 标记已读
+
+```http
+PUT /api/v1/notifications/{notif_id}/read
+Authorization: Bearer <jwt>
+```
+
+```json
+{ "success": true, "id": "019f564d-..." }
+```
+
+### 2.11 调试与检索
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/admin/vector-search` | POST | 向量检索测试（pgvector + HNSW） |
+| `/api/v1/admin/proactive-shares` | GET | 主动分享历史（`extra_data->>'share_type' = 'proactive'`） |
+| `/api/v1/admin/world/snapshots` | GET | 世界状态快照列表 |
+| `/api/v1/characters/{id}/state-history` | GET | 角色状态变更历史 |
+
+#### 向量检索
+
+```http
+POST /api/v1/admin/vector-search?character_id=...&query=piano&top_k=10
+Authorization: Bearer <jwt>
+```
+
+```json
+{
+  "query": "piano",
+  "character_id": "019f4c52-...",
+  "data": [
+    {
+      "id": "019f57f6-...",
+      "content": "奏在shrine执行了move...",
+      "importance": 5,
+      "timestamp": "2026-07-12T20:13:40.932110+00:00",
+      "similarity": 0.2692674080479498,
+      "is_reflected": true,
+      "source_type": "action"
+    }
+  ]
+}
+```
+
+**说明**：仅检索 `materialized=true` 的记忆（embedding 已生成）。
+
 ---
 
 ## 三、WebSocket / SSE

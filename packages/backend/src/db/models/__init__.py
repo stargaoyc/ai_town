@@ -13,6 +13,8 @@ from src.db.models.reflection_source import ReflectionSource
 from src.db.models.world_event import WorldEvent
 from src.db.models.world_snapshot import WorldSnapshot
 from src.db.models.conversation import Conversation, Message
+from src.db.models.diary import CharacterDiary
+from src.db.models.person_memory import PersonMemory
 
 __all__ = [
     "Character",
@@ -27,4 +29,6 @@ __all__ = [
     "WorldSnapshot",
     "Conversation",
     "Message",
+    "CharacterDiary",
+    "PersonMemory",
 ]

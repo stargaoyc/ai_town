@@ -175,197 +175,199 @@ function CharacterCardPage() {
   };
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="角色卡预览"
-          subtitle="查看角色卡 YAML 格式与可视化卡片"
-          icon="🎴"
-          backTo="/admin"
-          backLabel="返回管理"
-        />
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="角色卡预览"
+        subtitle="查看角色卡 YAML 格式与可视化卡片"
+        icon="🎴"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
 
-        {/* 角色选择器 */}
-        <GlassCard hover={false}>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-twilight-500 flex items-center gap-1.5">
-              <User className="w-4 h-4 text-sakura-400" />
-              选择角色
-            </label>
-            <select
-              value={characterId}
-              onChange={(e) => setCharacterId(e.target.value)}
-              disabled={charsLoading}
-              className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all disabled:opacity-50"
-            >
-              <option value="">
-                {charsLoading ? "加载角色中..." : "请选择角色"}
-              </option>
-              {characters.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}（{c.id}）
-                </option>
-              ))}
-            </select>
-          </div>
-        </GlassCard>
-
-        {/* 未选择角色提示 */}
-        {!characterId && !charsLoading && (
-          <EmptyState
-            icon="🎴"
-            title="请先选择一个角色"
-            subtitle="选择角色后将显示其角色卡 YAML 与可视化预览"
-          />
-        )}
-
-        {/* 加载与错误状态 */}
-        {characterId && isLoading && <LoadingSpinner text="正在加载角色详情..." />}
-        {characterId && error && <ErrorDisplay error={error} />}
-
-        {character && !isLoading && !error && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="grid lg:grid-cols-2 gap-6"
+      {/* 角色选择器 */}
+      <GlassCard hover={false}>
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-twilight-500 flex items-center gap-1.5">
+            <User className="w-4 h-4 text-sakura-400" />
+            选择角色
+          </label>
+          <select
+            value={characterId}
+            onChange={(e) => setCharacterId(e.target.value)}
+            disabled={charsLoading}
+            className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all disabled:opacity-50"
           >
-            {/* 左侧：YAML 代码块 */}
-            <GlassCard hover={false} className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sakura-600 flex items-center gap-2 text-lg">
-                  <Sparkles className="w-5 h-5" />
-                  YAML 角色卡
-                </h3>
-                <div className="flex items-center gap-2">
-                  <AnimeButton
-                    onClick={handleCopyYaml}
-                    variant="secondary"
-                    className="!px-3 !py-1.5 !text-sm"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {copied ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                      {copied ? "已复制" : "复制 YAML"}
-                    </span>
-                  </AnimeButton>
-                  <AnimeButton
-                    onClick={handleDownloadYaml}
-                    variant="secondary"
-                    className="!px-3 !py-1.5 !text-sm"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Download className="w-3.5 h-3.5" />
-                      下载 YAML
-                    </span>
-                  </AnimeButton>
-                </div>
-              </div>
+            <option value="">
+              {charsLoading ? "加载角色中..." : "请选择角色"}
+            </option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}（{c.id}）
+              </option>
+            ))}
+          </select>
+        </div>
+      </GlassCard>
 
-              {/* YAML 代码展示 */}
-              <pre className="p-4 rounded-2xl bg-twilight-900/90 text-sakura-100 text-xs font-mono overflow-x-auto max-h-[480px] overflow-y-auto leading-relaxed">
-                {yamlContent}
-              </pre>
-            </GlassCard>
+      {/* 未选择角色提示 */}
+      {!characterId && !charsLoading && (
+        <EmptyState
+          icon="🎴"
+          title="请先选择一个角色"
+          subtitle="选择角色后将显示其角色卡 YAML 与可视化预览"
+        />
+      )}
 
-            {/* 右侧：角色卡可视化预览 */}
-            <GlassCard hover={false} className="space-y-5">
+      {/* 加载与错误状态 */}
+      {characterId && isLoading && (
+        <LoadingSpinner text="正在加载角色详情..." />
+      )}
+      {characterId && error && <ErrorDisplay error={error} />}
+
+      {character && !isLoading && !error && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid lg:grid-cols-2 gap-6"
+        >
+          {/* 左侧：YAML 代码块 */}
+          <GlassCard hover={false} className="space-y-4">
+            <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sakura-600 flex items-center gap-2 text-lg">
-                <User className="w-5 h-5" />
-                角色卡预览
+                <Sparkles className="w-5 h-5" />
+                YAML 角色卡
               </h3>
-
-              {/* 角色卡主体 */}
-              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sakura-100/60 via-white/50 to-twilight-100/60 border border-white/50 p-6 shadow-soft">
-                {/* 装饰光晕 */}
-                <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-sakura-200/30 blur-2xl" />
-                <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-twilight-200/30 blur-2xl" />
-
-                {/* 头部：头像 + 名称 */}
-                <div className="relative flex items-center gap-4">
-                  {/* 头像占位 */}
-                  <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-sakura-300 via-sakura-400 to-twilight-300 flex items-center justify-center text-white font-bold text-3xl shadow-lg shrink-0">
-                    {character.name[0]}
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="text-2xl font-bold gradient-text-sakura truncate">
-                      {character.name}
-                    </h4>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <StatusBadge
-                        status={character.is_active ? "ok" : "idle"}
-                        label={character.is_active ? "活跃" : "休眠"}
-                      />
-                      {character.occupation && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sky-soft-100/80 text-sky-soft-600 border border-sky-soft-200/50">
-                          <Briefcase className="w-3 h-3" />
-                          {character.occupation}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 基本信息 */}
-                <div className="relative mt-5 grid grid-cols-2 gap-3">
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/50 border border-white/40">
-                    <Calendar className="w-4 h-4 text-twilight-400 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-xs text-twilight-400">年龄</div>
-                      <div className="text-sm font-medium text-twilight-600">
-                        {character.age ? `${character.age} 岁` : "—"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/50 border border-white/40">
-                    <User className="w-4 h-4 text-twilight-400 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-xs text-twilight-400">ID</div>
-                      <div className="text-sm font-medium text-twilight-600 font-mono truncate">
-                        {character.id}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 性格标签 */}
-                {personalityTags.length > 0 && (
-                  <div className="relative mt-4">
-                    <div className="text-xs font-semibold text-twilight-500 uppercase tracking-wide mb-2">
-                      性格标签
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {personalityTags.map((tag, idx) => (
-                        <motion.span
-                          key={`${tag}-${idx}`}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: idx * 0.05 }}
-                          className="px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-sakura-100 to-twilight-100 text-sakura-600 border border-sakura-200/50"
-                        >
-                          {tag}
-                        </motion.span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 背景故事 */}
-                {character.backstory && (
-                  <div className="relative mt-4">
-                    <div className="text-xs font-semibold text-twilight-500 uppercase tracking-wide mb-2">
-                      背景故事
-                    </div>
-                    <p className="text-sm text-twilight-600 leading-relaxed bg-white/40 rounded-xl p-3 border border-white/40 whitespace-pre-wrap">
-                      {character.backstory}
-                    </p>
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
+                <AnimeButton
+                  onClick={handleCopyYaml}
+                  variant="secondary"
+                  className="!px-3 !py-1.5 !text-sm"
+                >
+                  <span className="flex items-center gap-1.5">
+                    {copied ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    {copied ? "已复制" : "复制 YAML"}
+                  </span>
+                </AnimeButton>
+                <AnimeButton
+                  onClick={handleDownloadYaml}
+                  variant="secondary"
+                  className="!px-3 !py-1.5 !text-sm"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Download className="w-3.5 h-3.5" />
+                    下载 YAML
+                  </span>
+                </AnimeButton>
               </div>
-            </GlassCard>
-          </motion.div>
-        )}
-      </div>
+            </div>
+
+            {/* YAML 代码展示 */}
+            <pre className="p-4 rounded-2xl bg-twilight-900/90 text-sakura-100 text-xs font-mono overflow-x-auto max-h-[480px] overflow-y-auto leading-relaxed">
+              {yamlContent}
+            </pre>
+          </GlassCard>
+
+          {/* 右侧：角色卡可视化预览 */}
+          <GlassCard hover={false} className="space-y-5">
+            <h3 className="font-semibold text-sakura-600 flex items-center gap-2 text-lg">
+              <User className="w-5 h-5" />
+              角色卡预览
+            </h3>
+
+            {/* 角色卡主体 */}
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sakura-100/60 via-white/50 to-twilight-100/60 border border-white/50 p-6 shadow-soft">
+              {/* 装饰光晕 */}
+              <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-sakura-200/30 blur-2xl" />
+              <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-twilight-200/30 blur-2xl" />
+
+              {/* 头部：头像 + 名称 */}
+              <div className="relative flex items-center gap-4">
+                {/* 头像占位 */}
+                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-sakura-300 via-sakura-400 to-twilight-300 flex items-center justify-center text-white font-bold text-3xl shadow-lg shrink-0">
+                  {character.name[0]}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-2xl font-bold gradient-text-sakura truncate">
+                    {character.name}
+                  </h4>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <StatusBadge
+                      status={character.is_active ? "ok" : "idle"}
+                      label={character.is_active ? "活跃" : "休眠"}
+                    />
+                    {character.occupation && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sky-soft-100/80 text-sky-soft-600 border border-sky-soft-200/50">
+                        <Briefcase className="w-3 h-3" />
+                        {character.occupation}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 基本信息 */}
+              <div className="relative mt-5 grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/50 border border-white/40">
+                  <Calendar className="w-4 h-4 text-twilight-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs text-twilight-400">年龄</div>
+                    <div className="text-sm font-medium text-twilight-600">
+                      {character.age ? `${character.age} 岁` : "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/50 border border-white/40">
+                  <User className="w-4 h-4 text-twilight-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs text-twilight-400">ID</div>
+                    <div className="text-sm font-medium text-twilight-600 font-mono truncate">
+                      {character.id}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 性格标签 */}
+              {personalityTags.length > 0 && (
+                <div className="relative mt-4">
+                  <div className="text-xs font-semibold text-twilight-500 uppercase tracking-wide mb-2">
+                    性格标签
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {personalityTags.map((tag, idx) => (
+                      <motion.span
+                        key={`${tag}-${idx}`}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className="px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-sakura-100 to-twilight-100 text-sakura-600 border border-sakura-200/50"
+                      >
+                        {tag}
+                      </motion.span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 背景故事 */}
+              {character.backstory && (
+                <div className="relative mt-4">
+                  <div className="text-xs font-semibold text-twilight-500 uppercase tracking-wide mb-2">
+                    背景故事
+                  </div>
+                  <p className="text-sm text-twilight-600 leading-relaxed bg-white/40 rounded-xl p-3 border border-white/40 whitespace-pre-wrap">
+                    {character.backstory}
+                  </p>
+                </div>
+              )}
+            </div>
+          </GlassCard>
+        </motion.div>
+      )}
+    </div>
   );
 }

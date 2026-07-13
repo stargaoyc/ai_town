@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7EC8E3"/>
+      <stop offset="100%" stop-color="#B19CD9"/>
+    </linearGradient>
+    <linearGradient id="petal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB7C5"/>
+      <stop offset="100%" stop-color="#FF8FAB"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角背景 -->
+  <rect width="64" height="64" rx="14" fill="url(#sky)"/>
+  <!-- 樱花花瓣（5瓣） -->
+  <g transform="translate(32,30)">
+    <ellipse cx="0" cy="-12" rx="7" ry="11" fill="url(#petal)" opacity="0.95"/>
+    <ellipse cx="0" cy="-12" rx="7" ry="11" fill="url(#petal)" opacity="0.95" transform="rotate(72)"/>
+    <ellipse cx="0" cy="-12" rx="7" ry="11" fill="url(#petal)" opacity="0.95" transform="rotate(144)"/>
+    <ellipse cx="0" cy="-12" rx="7" ry="11" fill="url(#petal)" opacity="0.95" transform="rotate(216)"/>
+    <ellipse cx="0" cy="-12" rx="7" ry="11" fill="url(#petal)" opacity="0.95" transform="rotate(288)"/>
+    <!-- 花蕊 -->
+    <circle cx="0" cy="0" r="4" fill="#FFF5E1"/>
+    <circle cx="0" cy="0" r="2" fill="#FFD700"/>
+  </g>
+  <!-- 小镇房屋剪影 -->
+  <g fill="#4A5568" opacity="0.7">
+    <rect x="8" y="44" width="10" height="12" rx="1"/>
+    <polygon points="8,44 13,38 18,44"/>
+    <rect x="46" y="44" width="10" height="12" rx="1"/>
+    <polygon points="46,44 51,38 56,44"/>
+    <rect x="24" y="48" width="16" height="8" rx="1"/>
+    <polygon points="24,48 32,40 40,48"/>
+  </g>
+</svg>

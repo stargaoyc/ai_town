@@ -9,7 +9,7 @@
 设计要点：
 - 线程安全使用 asyncio 原语（asyncio.Lock），不使用 threading
 - WebSocketManager 为单例，main.py 实例化一次后全局复用
-- LLM 客户端通过 `from src.main import llm, prompts` 获取（启动期为 None）
+- LLM 客户端通过 `from src.runtime import get_llm, get_prompts` 获取（启动期为 None）
 - 错误处理：捕获异常并回送 error JSON，不中断连接
 """
 from __future__ import annotations
@@ -252,16 +252,15 @@ def _safe_error(message: str) -> dict:
 
 
 async def _get_llm_globals() -> tuple[LLMClient | None, PromptTemplates | None]:
-    """从 main 模块获取全局 llm / prompts（避免循环导入）
+    """从 runtime 模块获取全局 llm / prompts（避免循环导入）
 
     Returns:
         (llm, prompts) 元组，启动期可能为 (None, None)
     """
-    # 延迟导入：main.py 在模块顶层会 import 本模块，若本模块在顶层
-    # 反向 import main 会触发循环导入。函数内导入可规避此问题。
-    from src.main import llm, prompts  # type: ignore
+    # 通过 runtime 依赖容器获取，避免反向依赖 main.py
+    from src.runtime import get_llm, get_prompts
 
-    return llm, prompts
+    return get_llm(), get_prompts()
 
 
 @router.websocket("/ws/chat/{character_id}")

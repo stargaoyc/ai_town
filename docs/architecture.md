@@ -108,13 +108,13 @@
                                    │
 ┌──────────────────────────────────▼──────────────────────────────────────────┐
 │                    基础设施层 (Infrastructure Layer)                        │
-│  ┌───────────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐ │
-│  │  PostgreSQL 17    │  │  Redis 8.0  │  │  MinIO    │  │  LLM 网关    │ │
-│  │  + pgvector       │  │  缓存/锁/   │  │  S3 兼容  │  │  OpenAI 兼容 │ │
-│  │  + pg_uuidv7      │  │  实时状态    │  │  对象存储 │  │  chat/image/ │ │
-│  │  + JSONB          │  │  Leader 选举│  │           │  │  video/embed │ │
-│  │  + 分区表          │  │             │  │           │  │              │ │
-│  └───────────────────┘  └─────────────┘  └───────────┘  └──────────────┘ │
+│  ┌───────────────────┐  ┌─────────────┐  ┌──────────────┐ │
+│  │  PostgreSQL 17    │  │  Redis 8.0  │  │  LLM 网关    │ │
+│  │  + pgvector       │  │  缓存/锁/   │  │  OpenAI 兼容 │ │
+│  │  + pg_uuidv7      │  │  实时状态    │  │  chat/image/ │ │
+│  │  + JSONB          │  │  Leader 选举│  │  video/embed │ │
+│  │  + 分区表          │  │             │  │              │ │
+│  └───────────────────┘  └─────────────┘  └──────────────┘ │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │              可观测性 (OpenTelemetry + Langfuse + Prometheus)          │ │
 │  │   链路追踪(Jaeger)  │  指标(Prometheus+Grafana)  │  日志(Loki+structlog)│ │
@@ -131,7 +131,7 @@
 | 世界引擎层 | 全局状态推进、角色行为闭环、多智能体调度、演化器链 | `WorldEngine`、`CharacterTickEngine`、`default_evolutions()` | `src/core/` |
 | Agent 能力层 | 记忆/反思/规划/决策/社交/MCP 工具 | `EpisodeService`、`ReflectionService`、`RetrievalService`、`ActionRegistry` | `src/memory/`、`src/actions/`、`src/modules/` |
 | 数据访问层 | Repositories 抽象、ORM 与原生 SQL 混合、pgvector/HNSW/分区 | `MemoryRepository`、`CharacterRepository`、`db.session` | `src/db/` |
-| 基础设施层 | 持久化、缓存、对象存储、LLM 网关、可观测性 | PostgreSQL、Redis、MinIO、`LLMClient`、OTel | `src/llm/`、`src/observability/` |
+| 基础设施层 | 持久化、缓存、LLM 网关、可观测性 | PostgreSQL、Redis、`LLMClient`、OTel | `src/llm/`、`src/observability/` |
 
 ---
 
@@ -1709,11 +1709,11 @@ FOREIGN KEY (memory_id, memory_character_id)
 │  │  - EmbeddingWorker                                           │   │
 │  │  - WebSocketManager                                          │   │
 │  └─────────────────────────────────────────────────────────────┘   │
-│       │              │              │              │                │
-│       ▼              ▼              ▼              ▼                │
-│  ┌────────┐    ┌────────┐    ┌────────┐    ┌────────┐             │
-│  │  PG 17 │    │ Redis  │    │ MinIO  │    │  LLM   │             │
-│  └────────┘    └────────┘    └────────┘    └────────┘             │
+│       │              │              │                               │
+│       ▼              ▼              ▼                               │
+│  ┌────────┐    ┌────────┐    ┌────────┐                           │
+│  │  PG 17 │    │ Redis  │    │  LLM   │                           │
+│  └────────┘    └────────┘    └────────┘                           │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1733,11 +1733,11 @@ FOREIGN KEY (memory_id, memory_character_id)
 │                         ▼                                           │
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │  共享基础设施                                                │  │
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐            │  │
-│  │  │  PG 17     │  │  Redis 8.0 │  │  MinIO     │            │  │
-│  │  │  + PgBouncer│  │  (Leader   │  │            │            │  │
-│  │  │            │  │   选举锁)  │  │            │            │  │
-│  │  └────────────┘  └────────────┘  └────────────┘            │  │
+│  │  ┌────────────┐  ┌────────────┐                            │  │
+│  │  │  PG 17     │  │  Redis 8.0 │                            │  │
+│  │  │  + PgBouncer│  │  (Leader   │                            │  │
+│  │  │            │  │   选举锁)  │                            │  │
+│  │  └────────────┘  └────────────┘                            │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -1781,7 +1781,6 @@ FOREIGN KEY (memory_id, memory_character_id)
 | `backend` | 自构建 | 8000 | AI Town Backend（FastAPI） |
 | `postgres` | postgres:17 + pgvector + pg_uuidv7 | 5432 | 主数据库 |
 | `redis` | redis:8.0-alpine | 6379 | 缓存/锁/实时状态 |
-| `minio` | minio/minio | 9000 | 对象存储 |
 | `prometheus` | prom/prometheus | 9090 | 指标采集 |
 | `grafana` | grafana/grafana | 3000 | 可视化面板 |
 | `loki` | grafana/loki | 3100 | 日志聚合 |

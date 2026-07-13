@@ -1,5 +1,5 @@
 # docker-compose.yml - AI Town 完整生产部署编排
-# 包含：基础设施（PG/Redis/MinIO）+ 应用（后端/前端/MCP）+ 可观测性（Prometheus/Grafana/Loki/Jaeger）
+# 包含：基础设施（PG/Redis）+ 应用（后端/前端/MCP）+ 可观测性（Prometheus/Grafana/Loki/Jaeger）
 #
 # 使用方法：
 #   1. 复制 .env.example 为 .env 并填写配置
@@ -7,7 +7,7 @@
 #   3. 访问 http://localhost （前端）/ http://localhost:8000/docs （后端 API）
 #
 # 分层启动：
-#   docker compose up -d postgres redis minio           # 仅基础设施
+#   docker compose up -d postgres redis                # 仅基础设施
 #   docker compose up -d backend frontend               # 加应用
 #   docker compose --profile observability up -d        # 加可观测性
 
@@ -48,21 +48,6 @@ services:
       - redis_data:/data
     networks: [aitown-net]
 
-  minio:
-    image: minio/minio
-    container_name: aitown-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-    networks: [aitown-net]
-
   # ============================================================
   # 应用层
   # ============================================================
@@ -77,13 +62,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${DB_USER:-ai_town}:${DB_PASSWORD:-password}@postgres:5432/ai_town
       REDIS_URL: redis://redis:6379/0
-      MINIO_ENDPOINT: minio:9000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
-      minio:
         condition: service_started
     ports:
       - "8000:8000"
@@ -258,7 +240,6 @@ services:
 volumes:
   pg_data:
   redis_data:
-  minio_data:
   prometheus_data:
   loki_data:
   grafana_data:

@@ -62,121 +62,121 @@ function SharesPage() {
   }, [shares]);
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="主动分享历史"
-          subtitle="角色在 Tick 中自主决定分享的内容记录"
-          icon="📤"
-          backTo="/admin"
-          backLabel="返回管理"
-        />
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="主动分享历史"
+        subtitle="角色在 Tick 中自主决定分享的内容记录"
+        icon="📤"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
 
-        {/* 顶部统计 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard
-            title="总分享数"
-            value={data?.total ?? shares.length}
-            icon="📤"
-            color="sakura"
-          />
-          <StatCard
-            title="总 Token 消耗"
-            value={stats.totalTokens.toLocaleString()}
-            icon="🔢"
-            color="sky"
-          />
-          <StatCard
-            title="总成本"
-            value={`$${stats.totalCost.toFixed(4)}`}
-            icon="💰"
-            color="twilight"
+      {/* 顶部统计 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="总分享数"
+          value={data?.total ?? shares.length}
+          icon="📤"
+          color="sakura"
+        />
+        <StatCard
+          title="总 Token 消耗"
+          value={stats.totalTokens.toLocaleString()}
+          icon="🔢"
+          color="sky"
+        />
+        <StatCard
+          title="总成本"
+          value={`$${stats.totalCost.toFixed(4)}`}
+          icon="💰"
+          color="twilight"
+        />
+      </div>
+
+      {/* 状态栏 */}
+      <GlassCard hover={false}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-twilight-500">
+            <span className="font-semibold">分享流</span>
+            <span className="text-xs text-twilight-400">
+              （最近 {shares.length} 条）
+            </span>
+          </div>
+          <StatusBadge
+            status={shares.length > 0 ? "ok" : "idle"}
+            label={shares.length > 0 ? "有分享记录" : "暂无分享"}
           />
         </div>
+      </GlassCard>
 
-        {/* 状态栏 */}
-        <GlassCard hover={false}>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2 text-twilight-500">
-              <span className="font-semibold">分享流</span>
-              <span className="text-xs text-twilight-400">
-                （最近 {shares.length} 条）
-              </span>
-            </div>
-            <StatusBadge
-              status={shares.length > 0 ? "ok" : "idle"}
-              label={shares.length > 0 ? "有分享记录" : "暂无分享"}
-            />
-          </div>
-        </GlassCard>
+      {isLoading && <LoadingSpinner text="正在加载分享历史..." />}
+      {error && <ErrorDisplay error={error} />}
+      {!isLoading && !error && shares.length === 0 && (
+        <EmptyState
+          icon="📤"
+          title="暂无主动分享"
+          subtitle="角色还没有主动分享过内容，角色会在 Tick 中自主决定是否分享"
+        />
+      )}
 
-        {isLoading && <LoadingSpinner text="正在加载分享历史..." />}
-        {error && <ErrorDisplay error={error} />}
-        {!isLoading && !error && shares.length === 0 && (
-          <EmptyState
-            icon="📤"
-            title="暂无主动分享"
-            subtitle="角色还没有主动分享过内容，角色会在 Tick 中自主决定是否分享"
-          />
-        )}
-
-        {/* 分享列表 - 聊天气泡样式（角色头像 + 粉色气泡） */}
-        {shares.length > 0 && (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="space-y-4"
-          >
-            {shares.map((share) => (
-              <motion.div key={share.message_id} variants={item}>
-                <div className="flex justify-end">
-                  <div className="flex items-start gap-3 max-w-[85%] flex-row-reverse">
-                    {/* 角色头像 */}
-                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md bg-gradient-to-br from-sakura-300 to-sakura-500 text-white">
-                      <Bot className="w-5 h-5" />
+      {/* 分享列表 - 聊天气泡样式（角色头像 + 粉色气泡） */}
+      {shares.length > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="space-y-4"
+        >
+          {shares.map((share) => (
+            <motion.div key={share.message_id} variants={item}>
+              <div className="flex justify-end">
+                <div className="flex items-start gap-3 max-w-[85%] flex-row-reverse">
+                  {/* 角色头像 */}
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md bg-gradient-to-br from-sakura-300 to-sakura-500 text-white">
+                    <Bot className="w-5 h-5" />
+                  </div>
+                  {/* 粉色气泡 */}
+                  <div className="px-4 py-3 rounded-2xl backdrop-blur-sm border shadow-sm bg-sakura-100/80 border-sakura-200/50 rounded-tr-sm text-twilight-700">
+                    {/* 头部信息 */}
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-sakura-600">
+                        {share.character_name || "角色分享"}
+                      </span>
+                      {share.character_id && (
+                        <span className="text-xs text-twilight-400 px-1.5 py-0.5 rounded-lg bg-white/50">
+                          {share.character_id.slice(0, 8)}
+                        </span>
+                      )}
                     </div>
-                    {/* 粉色气泡 */}
-                    <div className="px-4 py-3 rounded-2xl backdrop-blur-sm border shadow-sm bg-sakura-100/80 border-sakura-200/50 rounded-tr-sm text-twilight-700">
-                      {/* 头部信息 */}
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-semibold text-sakura-600">
-                          {share.character_name || "角色分享"}
-                        </span>
-                        {share.character_id && (
-                          <span className="text-xs text-twilight-400 px-1.5 py-0.5 rounded-lg bg-white/50">
-                            {share.character_id.slice(0, 8)}
-                          </span>
-                        )}
-                      </div>
-                      {/* 分享内容 */}
-                      <div className="text-sm break-words whitespace-pre-wrap">
-                        {share.content}
-                      </div>
-                      {/* 底部元信息：时间 / token / 成本 */}
-                      <div className="flex items-center gap-3 mt-2 flex-wrap">
+                    {/* 分享内容 */}
+                    <div className="text-sm break-words whitespace-pre-wrap">
+                      {share.content}
+                    </div>
+                    {/* 底部元信息：时间 / token / 成本 */}
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
+                      <span className="text-xs text-twilight-300 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatRelativeTime(share.created_at)}
+                      </span>
+                      {share.tokens != null && (
                         <span className="text-xs text-twilight-300 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatRelativeTime(share.created_at)}
+                          <Hash className="w-3 h-3" />
+                          {share.tokens} tokens
                         </span>
-                        {share.tokens != null && (
-                          <span className="text-xs text-twilight-300 flex items-center gap-1">
-                            <Hash className="w-3 h-3" />
-                            {share.tokens} tokens
-                          </span>
-                        )}
-                        {share.cost != null && share.cost > 0 && (
-                          <span className="text-xs text-twilight-300 flex items-center gap-1">
-                            <Coins className="w-3 h-3" />${share.cost.toFixed(4)}
-                          </span>
-                        )}
-                      </div>
+                      )}
+                      {share.cost != null && share.cost > 0 && (
+                        <span className="text-xs text-twilight-300 flex items-center gap-1">
+                          <Coins className="w-3 h-3" />${share.cost.toFixed(4)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
-              </motion.div>
-            ))}
-          </motion.div>
-        )}
-      </div>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
+    </div>
   );
 }

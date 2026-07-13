@@ -101,8 +101,13 @@ function PlansPage() {
   const { data: charactersData, isLoading: charsLoading } = useCharacters();
   const characters = charactersData?.data ?? [];
 
-  const { data: plansData, isLoading, error, refetch, isFetching } =
-    usePlans(selectedCharacter);
+  const {
+    data: plansData,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+  } = usePlans(selectedCharacter);
   const plans = plansData?.data ?? [];
 
   // 按状态过滤
@@ -129,212 +134,229 @@ function PlansPage() {
   ];
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="规划系统"
-          subtitle="角色的目标规划与执行进度"
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="规划系统"
+        subtitle="角色的目标规划与执行进度"
+        icon="📋"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
+
+      {/* 顶部统计 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          title="计划总数"
+          value={stats.total}
           icon="📋"
-          backTo="/admin"
-          backLabel="返回管理"
+          color="sakura"
         />
+        <StatCard
+          title="进行中"
+          value={stats.active}
+          icon="⚡"
+          color="sakura"
+        />
+        <StatCard
+          title="已完成"
+          value={stats.completed}
+          icon="✅"
+          color="sky"
+        />
+        <StatCard
+          title="待开始"
+          value={stats.pending}
+          icon="⏳"
+          color="twilight"
+        />
+      </div>
 
-        {/* 顶部统计 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard title="计划总数" value={stats.total} icon="📋" color="sakura" />
-          <StatCard title="进行中" value={stats.active} icon="⚡" color="sakura" />
-          <StatCard title="已完成" value={stats.completed} icon="✅" color="sky" />
-          <StatCard title="待开始" value={stats.pending} icon="⏳" color="twilight" />
-        </div>
-
-        {/* 控制栏：角色选择 + 刷新 */}
-        <GlassCard hover={false}>
-          <div className="flex flex-col md:flex-row gap-4 md:items-end">
-            <div className="flex-1">
-              <label className="block text-sm text-twilight-500 font-medium mb-2">
-                选择角色
-              </label>
-              {charsLoading ? (
-                <div className="text-sm text-twilight-400">加载角色中...</div>
-              ) : (
-                <select
-                  value={selectedCharacter}
-                  onChange={(e) => setSelectedCharacter(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all"
-                >
-                  <option value="">— 请选择角色 —</option>
-                  {characters.map((char) => (
-                    <option key={char.id} value={char.id}>
-                      {char.name}（{char.id}）
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <AnimeButton
-              variant="secondary"
-              onClick={() => refetch()}
-              disabled={!selectedCharacter || isFetching}
-            >
-              <span className="flex items-center gap-1.5">
-                <RefreshCw
-                  className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
-                />
-                刷新
-              </span>
-            </AnimeButton>
+      {/* 控制栏：角色选择 + 刷新 */}
+      <GlassCard hover={false}>
+        <div className="flex flex-col md:flex-row gap-4 md:items-end">
+          <div className="flex-1">
+            <label className="block text-sm text-twilight-500 font-medium mb-2">
+              选择角色
+            </label>
+            {charsLoading ? (
+              <div className="text-sm text-twilight-400">加载角色中...</div>
+            ) : (
+              <select
+                value={selectedCharacter}
+                onChange={(e) => setSelectedCharacter(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all"
+              >
+                <option value="">— 请选择角色 —</option>
+                {characters.map((char) => (
+                  <option key={char.id} value={char.id}>
+                    {char.name}（{char.id}）
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-        </GlassCard>
+          <AnimeButton
+            variant="secondary"
+            onClick={() => refetch()}
+            disabled={!selectedCharacter || isFetching}
+          >
+            <span className="flex items-center gap-1.5">
+              <RefreshCw
+                className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
+              />
+              刷新
+            </span>
+          </AnimeButton>
+        </div>
+      </GlassCard>
 
-        {!selectedCharacter && (
-          <EmptyState
-            icon="👆"
-            title="请先选择一个角色"
-            subtitle="选择角色后将展示其计划列表"
-          />
-        )}
+      {!selectedCharacter && (
+        <EmptyState
+          icon="👆"
+          title="请先选择一个角色"
+          subtitle="选择角色后将展示其计划列表"
+        />
+      )}
 
-        {selectedCharacter && isLoading && (
-          <LoadingSpinner text="正在加载计划列表..." />
-        )}
-        {selectedCharacter && !isLoading && error && (
-          <ErrorDisplay error={error} />
-        )}
+      {selectedCharacter && isLoading && (
+        <LoadingSpinner text="正在加载计划列表..." />
+      )}
+      {selectedCharacter && !isLoading && error && (
+        <ErrorDisplay error={error} />
+      )}
 
-        {selectedCharacter &&
-          !isLoading &&
-          !error &&
-          plans.length === 0 && (
-            <EmptyState
-              icon="📋"
-              title="暂无计划记录"
-              subtitle="该角色还没有制定任何计划"
-            />
-          )}
+      {selectedCharacter && !isLoading && !error && plans.length === 0 && (
+        <EmptyState
+          icon="📋"
+          title="暂无计划记录"
+          subtitle="该角色还没有制定任何计划"
+        />
+      )}
 
-        {/* 状态筛选标签 */}
-        {selectedCharacter && !isLoading && !error && plans.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {filterTabs.map((tab) => {
-              const count =
-                tab.key === "all"
-                  ? stats.total
-                  : stats[tab.key as keyof typeof stats];
-              const active = statusFilter === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setStatusFilter(tab.key)}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
-                    active
-                      ? "bg-gradient-to-r from-sakura-400 to-sakura-500 text-white border-transparent shadow-md shadow-sakura-400/30"
-                      : "bg-white/60 text-twilight-500 border-sakura-200/50 hover:bg-white/80"
+      {/* 状态筛选标签 */}
+      {selectedCharacter && !isLoading && !error && plans.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {filterTabs.map((tab) => {
+            const count =
+              tab.key === "all"
+                ? stats.total
+                : stats[tab.key as keyof typeof stats];
+            const active = statusFilter === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
+                  active
+                    ? "bg-gradient-to-r from-sakura-400 to-sakura-500 text-white border-transparent shadow-md shadow-sakura-400/30"
+                    : "bg-white/60 text-twilight-500 border-sakura-200/50 hover:bg-white/80"
+                }`}
+              >
+                {tab.label}
+                <span
+                  className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
+                    active ? "bg-white/30" : "bg-sakura-100/60"
                   }`}
                 >
-                  {tab.label}
-                  <span
-                    className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-                      active ? "bg-white/30" : "bg-sakura-100/60"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-        {/* 计划列表 */}
-        {filteredPlans.length > 0 && (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="grid md:grid-cols-2 gap-4"
-          >
-            {filteredPlans.map((plan) => {
-              const conf = planStatusMap[plan.status] ?? {
-                label: plan.status || "未知",
-                progress: 0,
-                barColor: "twilight" as const,
-              };
-              const priority = plan.priority ?? 0;
-              const progress = plan.progress ?? conf.progress;
-              return (
-                <motion.div key={plan.id} variants={item}>
-                  <GlassCard className="space-y-3" hover>
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <PlanStatusBadge status={plan.status} />
-                      <span className="text-xs text-twilight-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatTime(plan.created_at)}
+      {/* 计划列表 */}
+      {filteredPlans.length > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="grid md:grid-cols-2 gap-4"
+        >
+          {filteredPlans.map((plan) => {
+            const conf = planStatusMap[plan.status] ?? {
+              label: plan.status || "未知",
+              progress: 0,
+              barColor: "twilight" as const,
+            };
+            const priority = plan.priority ?? 0;
+            const progress = plan.progress ?? conf.progress;
+            return (
+              <motion.div key={plan.id} variants={item}>
+                <GlassCard className="space-y-3" hover>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <PlanStatusBadge status={plan.status} />
+                    <span className="text-xs text-twilight-400 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatTime(plan.created_at)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-base font-semibold text-twilight-700 leading-relaxed">
+                      {plan.title || plan.description || "（未命名计划）"}
+                    </p>
+                    {plan.description && plan.description !== plan.title && (
+                      <p className="text-sm text-twilight-400 leading-relaxed">
+                        {plan.description}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 优先级进度条 */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-twilight-400 flex items-center gap-1">
+                        <Flag className="w-3 h-3" />
+                        优先级
+                      </span>
+                      <span className="font-semibold text-sakura-600">
+                        {priority}
                       </span>
                     </div>
+                    <ProgressBar value={priority} max={10} color="sakura" />
+                  </div>
 
-                    <div className="space-y-1">
-                      <p className="text-base font-semibold text-twilight-700 leading-relaxed">
-                        {plan.title || plan.description || "（未命名计划）"}
-                      </p>
-                      {plan.description && plan.description !== plan.title && (
-                        <p className="text-sm text-twilight-400 leading-relaxed">
-                          {plan.description}
-                        </p>
-                      )}
+                  {/* 计划进度条 */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-twilight-400">执行进度</span>
+                      <span className="font-semibold text-twilight-500">
+                        {progress}%
+                      </span>
                     </div>
+                    <ProgressBar
+                      value={progress}
+                      max={100}
+                      color={conf.barColor}
+                    />
+                  </div>
+                </GlassCard>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+      )}
 
-                    {/* 优先级进度条 */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-twilight-400 flex items-center gap-1">
-                          <Flag className="w-3 h-3" />
-                          优先级
-                        </span>
-                        <span className="font-semibold text-sakura-600">
-                          {priority}
-                        </span>
-                      </div>
-                      <ProgressBar value={priority} max={10} color="sakura" />
-                    </div>
-
-                    {/* 计划进度条 */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-twilight-400">执行进度</span>
-                        <span className="font-semibold text-twilight-500">
-                          {progress}%
-                        </span>
-                      </div>
-                      <ProgressBar
-                        value={progress}
-                        max={100}
-                        color={conf.barColor}
-                      />
-                    </div>
-                  </GlassCard>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        )}
-
-        {/* 说明 */}
-        {selectedCharacter && !isLoading && plans.length > 0 && (
-          <GlassCard hover={false}>
-            <div className="flex items-start gap-3 text-sm text-twilight-400">
-              <ClipboardList className="w-5 h-5 text-sakura-400 mt-0.5 shrink-0" />
-              <div>
-                <div className="font-medium text-twilight-500 mb-1">
-                  计划说明
-                </div>
-                <ul className="space-y-1">
-                  <li>• 状态：⚡进行中（绿色）、✅已完成（蓝色）、⏳待开始（黄色）</li>
-                  <li>• 优先级范围 1-10，数值越高表示越紧急</li>
-                  <li>• 使用上方标签可按状态筛选计划</li>
-                </ul>
-              </div>
+      {/* 说明 */}
+      {selectedCharacter && !isLoading && plans.length > 0 && (
+        <GlassCard hover={false}>
+          <div className="flex items-start gap-3 text-sm text-twilight-400">
+            <ClipboardList className="w-5 h-5 text-sakura-400 mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium text-twilight-500 mb-1">计划说明</div>
+              <ul className="space-y-1">
+                <li>
+                  • 状态：⚡进行中（绿色）、✅已完成（蓝色）、⏳待开始（黄色）
+                </li>
+                <li>• 优先级范围 1-10，数值越高表示越紧急</li>
+                <li>• 使用上方标签可按状态筛选计划</li>
+              </ul>
             </div>
-          </GlassCard>
-        )}
-      </div>
+          </div>
+        </GlassCard>
+      )}
+    </div>
   );
 }

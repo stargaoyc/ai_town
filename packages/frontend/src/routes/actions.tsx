@@ -56,7 +56,11 @@ function colorForActionId(actionId: string): string {
   for (let i = 0; i < actionId.length; i++) {
     hash = (hash * 31 + actionId.charCodeAt(i)) | 0;
   }
-  return actionColorPalette[Math.abs(hash) % actionColorPalette.length] ?? actionColorPalette[0] ?? "";
+  return (
+    actionColorPalette[Math.abs(hash) % actionColorPalette.length] ??
+    actionColorPalette[0] ??
+    ""
+  );
 }
 
 // 单条行为日志（结果可折叠）
@@ -170,139 +174,139 @@ function ActionsPage() {
   const { data: charactersData, isLoading: charsLoading } = useCharacters();
   const characters = charactersData?.data ?? [];
 
-  const { data: actionsData, isLoading, error } = useCharacterActions(
-    selectedCharacter,
-    100,
-  );
+  const {
+    data: actionsData,
+    isLoading,
+    error,
+  } = useCharacterActions(selectedCharacter, 100);
   const actions = actionsData?.data ?? [];
 
   // 唯一 action_id 数量
   const uniqueActionCount = new Set(actions.map((a) => a.action_id)).size;
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="角色行为日志"
-          subtitle="角色执行的行为记录与结果详情"
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="角色行为日志"
+        subtitle="角色执行的行为记录与结果详情"
+        icon="📝"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
+
+      {/* 顶部统计 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="行为总数"
+          value={actions.length}
           icon="📝"
-          backTo="/admin"
-          backLabel="返回管理"
+          color="sakura"
         />
+        <StatCard
+          title="行为类型"
+          value={uniqueActionCount}
+          icon="🎯"
+          color="sky"
+        />
+        <StatCard
+          title="角色数"
+          value={characters.length}
+          icon="👥"
+          color="twilight"
+        />
+      </div>
 
-        {/* 顶部统计 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard
-            title="行为总数"
-            value={actions.length}
-            icon="📝"
-            color="sakura"
-          />
-          <StatCard
-            title="行为类型"
-            value={uniqueActionCount}
-            icon="🎯"
-            color="sky"
-          />
-          <StatCard
-            title="角色数"
-            value={characters.length}
-            icon="👥"
-            color="twilight"
-          />
+      {/* 角色选择器 */}
+      <GlassCard hover={false}>
+        <div>
+          <label className="block text-sm text-twilight-500 font-medium mb-2">
+            选择角色
+          </label>
+          {charsLoading ? (
+            <div className="text-sm text-twilight-400">加载角色中...</div>
+          ) : (
+            <select
+              value={selectedCharacter}
+              onChange={(e) => setSelectedCharacter(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all"
+            >
+              <option value="">— 请选择角色 —</option>
+              {characters.map((char) => (
+                <option key={char.id} value={char.id}>
+                  {char.name}（{char.id}）
+                </option>
+              ))}
+            </select>
+          )}
         </div>
+      </GlassCard>
 
-        {/* 角色选择器 */}
+      {!selectedCharacter && (
+        <EmptyState
+          icon="👆"
+          title="请先选择一个角色"
+          subtitle="选择角色后将展示其行为日志"
+        />
+      )}
+
+      {selectedCharacter && isLoading && (
+        <LoadingSpinner text="正在加载行为日志..." />
+      )}
+      {selectedCharacter && !isLoading && error && (
+        <ErrorDisplay error={error} />
+      )}
+
+      {selectedCharacter && !isLoading && !error && actions.length === 0 && (
+        <EmptyState
+          icon="📝"
+          title="暂无行为日志"
+          subtitle="该角色还没有执行任何行为记录"
+        />
+      )}
+
+      {/* 行为日志列表 */}
+      {actions.length > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="space-y-3"
+        >
+          {actions.map((action, idx) => (
+            <ActionLogItem
+              key={action.id ?? idx}
+              actionId={action.action_id}
+              {...(action.action_name !== undefined && {
+                actionName: action.action_name,
+              })}
+              {...((action.duration_minutes ?? action.duration !== undefined)
+                ? { duration: action.duration_minutes ?? action.duration }
+                : {})}
+              {...(action.result !== undefined && action.result !== null
+                ? { result: action.result }
+                : {})}
+              createdAt={action.timestamp ?? action.created_at ?? ""}
+            />
+          ))}
+        </motion.div>
+      )}
+
+      {/* 说明 */}
+      {selectedCharacter && !isLoading && actions.length > 0 && (
         <GlassCard hover={false}>
-          <div>
-            <label className="block text-sm text-twilight-500 font-medium mb-2">
-              选择角色
-            </label>
-            {charsLoading ? (
-              <div className="text-sm text-twilight-400">加载角色中...</div>
-            ) : (
-              <select
-                value={selectedCharacter}
-                onChange={(e) => setSelectedCharacter(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all"
-              >
-                <option value="">— 请选择角色 —</option>
-                {characters.map((char) => (
-                  <option key={char.id} value={char.id}>
-                    {char.name}（{char.id}）
-                  </option>
-                ))}
-              </select>
-            )}
+          <div className="flex items-start gap-3 text-sm text-twilight-400">
+            <Activity className="w-5 h-5 text-sakura-400 mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium text-twilight-500 mb-1">日志说明</div>
+              <ul className="space-y-1">
+                <li>• action_id 以彩色标签展示，不同颜色区分行为类型</li>
+                <li>• 点击「结果详情」可展开/折叠 JSON 结果</li>
+                <li>• 含 success/error 字段的结果会显示状态徽章</li>
+              </ul>
+            </div>
           </div>
         </GlassCard>
-
-        {!selectedCharacter && (
-          <EmptyState
-            icon="👆"
-            title="请先选择一个角色"
-            subtitle="选择角色后将展示其行为日志"
-          />
-        )}
-
-        {selectedCharacter && isLoading && (
-          <LoadingSpinner text="正在加载行为日志..." />
-        )}
-        {selectedCharacter && !isLoading && error && (
-          <ErrorDisplay error={error} />
-        )}
-
-        {selectedCharacter &&
-          !isLoading &&
-          !error &&
-          actions.length === 0 && (
-            <EmptyState
-              icon="📝"
-              title="暂无行为日志"
-              subtitle="该角色还没有执行任何行为记录"
-            />
-          )}
-
-        {/* 行为日志列表 */}
-        {actions.length > 0 && (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="space-y-3"
-          >
-            {actions.map((action, idx) => (
-              <ActionLogItem
-                key={action.id ?? idx}
-                actionId={action.action_id}
-                {...(action.action_name !== undefined && { actionName: action.action_name })}
-                {...(action.duration_minutes ?? action.duration !== undefined
-                  ? { duration: action.duration_minutes ?? action.duration }
-                  : {})}
-                {...(action.result !== undefined && action.result !== null ? { result: action.result } : {})}
-                createdAt={action.timestamp ?? action.created_at ?? ""}
-              />
-            ))}
-          </motion.div>
-        )}
-
-        {/* 说明 */}
-        {selectedCharacter && !isLoading && actions.length > 0 && (
-          <GlassCard hover={false}>
-            <div className="flex items-start gap-3 text-sm text-twilight-400">
-              <Activity className="w-5 h-5 text-sakura-400 mt-0.5 shrink-0" />
-              <div>
-                <div className="font-medium text-twilight-500 mb-1">
-                  日志说明
-                </div>
-                <ul className="space-y-1">
-                  <li>• action_id 以彩色标签展示，不同颜色区分行为类型</li>
-                  <li>• 点击「结果详情」可展开/折叠 JSON 结果</li>
-                  <li>• 含 success/error 字段的结果会显示状态徽章</li>
-                </ul>
-              </div>
-            </div>
-          </GlassCard>
-        )}
-      </div>
+      )}
+    </div>
   );
 }

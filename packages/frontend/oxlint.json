@@ -17,5 +17,5 @@
       "rulesOfHooks": "error"
     }
   },
-  "ignorePatterns": ["dist", "node_modules", "src/api/types.ts"]
+  "ignorePatterns": ["dist", "node_modules", "src/api/types.ts", "src/routeTree.gen.ts"]
 }

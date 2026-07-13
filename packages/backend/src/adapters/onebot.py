@@ -15,7 +15,7 @@
   a. 群-角色映射（onebot_group_character_map）：不同群绑定不同角色
   b. 默认角色（ONEBOT_DEFAULT_CHARACTER_ID）
 - 群聊 @ 检测：支持 OneBot 11 的 message 段数组 at 段、raw_message 的 [CQ:at] 码、to_me 字段
-- LLM 客户端通过 `from src.main import llm, prompts` 延迟获取，避免循环导入
+- LLM 客户端通过 `from src.runtime import get_llm, get_prompts, get_redis` 延迟获取，避免循环导入
 - 错误处理：捕获异常并记录日志，不中断连接
 
 集成方式（在 main.py lifespan 中接入，本文件不修改 main.py）：
@@ -115,9 +115,9 @@ def _get_llm_globals() -> tuple[object | None, object | None, object | None]:
     Returns:
         (llm, prompts, redis) 元组，启动期可能为 (None, None, None)
     """
-    from src.main import llm, prompts, redis  # type: ignore
+    from src.runtime import get_llm, get_prompts, get_redis
 
-    return llm, prompts, redis
+    return get_llm(), get_prompts(), get_redis()
 
 
 def _extract_text(event: dict) -> str:

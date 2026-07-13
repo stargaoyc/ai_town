@@ -699,7 +699,7 @@ aitown/
 │   └── observability/           # Prometheus / Loki / Grafana 配置
 ├── docs/                        # 所有设计文档
 ├── .env.example                 # 环境变量模板
-├── docker-compose.infra.yml     # 基础设施（PG/Redis/MinIO/监控）
+├── docker-compose.infra.yml     # 基础设施（PG/Redis/监控）
 ├── docker-compose-win.infra.yml # Windows 版基础设施
 └── README.md
 ```
@@ -782,16 +782,6 @@ DB_MAX_OVERFLOW=10
 # 格式：redis://主机:端口/数据库号
 REDIS_URL=redis://localhost:6379/0
 ```
-
-**对象存储（MinIO）**：
-```env
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=ai-town
-MINIO_SECURE=false
-```
-如果没启动 MinIO，可以先填上，后端启动不会因此失败（只在用到对象存储时才报错）。
 
 #### 4.2.3 LLM API Key 配置
 

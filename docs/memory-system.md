@@ -331,7 +331,112 @@ LLM 基于以下四个维度综合评分（1-10）：
 
 ---
 
-## 十、相关文档
+## 十、日记服务（DiaryService）
+
+### 10.1 设计目标
+
+`memory_episodes` 是事件级真相源，但角色视角的「今天发生了什么」需要叙事性归档。DiaryService 基于一段时间内的记忆，调用 LLM 生成第一人称日记，作为角色情感与经历的浓缩存档。
+
+| 特性 | 说明 |
+|------|------|
+| **真相源不变** | 日记不替代 `memory_episodes`，仅作为叙事归档 |
+| **时间真相源** | 使用真实 UTC 时间过滤记忆（非虚拟世界时间） |
+| **四种周期** | day / week / month / year，按 `PERIOD_DAYS` 映射天数 |
+| **最低记忆阈值** | 时间段内记忆少于 3 条时返回失败（422），避免空日记 |
+| **LLM 输出结构化** | 强制返回 `{title, content, mood}` JSON |
+
+### 10.2 数据模型
+
+表 `character_diaries`：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUID v7 | 主键 |
+| `character_id` | UUID | 角色 ID（外键） |
+| `period` | text | `day` / `week` / `month` / `year` |
+| `diary_date` | TIMESTAMPTZ | 日记日期（真实 UTC） |
+| `diary_end_date` | TIMESTAMPTZ | 周期结束日期（仅 `period != "day"`） |
+| `title` | text | 日记标题 |
+| `content` | text | 日记正文（200-500 字） |
+| `mood` | text | 情绪标签 |
+
+### 10.3 实现位置
+
+| 文件 | 类/方法 | 说明 |
+|------|---------|------|
+| `src/memory/diary_service.py` | `DiaryService.generate_diary()` | 生成日记主流程 |
+| `src/memory/diary_service.py` | `DiaryService._get_target_time()` | 获取目标时间（真实 UTC） |
+| `src/memory/diary_service.py` | `DiaryService._save_diary()` | 保存到 `character_diaries` 表 |
+| `src/memory/diary_service.py` | `DiaryService.get_diaries()` | 查询日记列表 |
+| `src/db/models/diary.py` | `CharacterDiary` | SQLAlchemy 模型 |
+| `src/api/memory.py` | `generate_diary` / `list_diaries` | API 端点 |
+
+### 10.4 生成流程
+
+```
+1. 参数校验（period 合法性、LLM 可用性）
+2. 计算时间窗口：target = datetime.now(UTC)，start = target - timedelta(days=PERIOD_DAYS[period])
+3. 从 memory_episodes 查询 [start, target] 内的记忆（按时间正序）
+4. 记忆少于 3 条 → 返回 None（API 返回 422）
+5. 构造 Prompt（最多 20 条记忆，避免 prompt 过长）
+6. 调用 LLM structured_output，强制返回 {title, content, mood}
+7. 保存到 character_diaries 表
+8. 返回日记数据
+```
+
+### 10.5 Prompt 要点
+
+```
+你是角色「{character_name}」，请根据以下记忆记录，写一篇{period_cn}的日记。
+
+要求：
+1. 以第一人称写，体现角色的性格和情感
+2. 不要罗列事实，而是叙事性地总结
+3. 包含角色的感受和思考
+4. 字数 200-500 字
+5. 不要暴露你是 AI
+
+请输出 JSON: {"title": "...", "content": "...", "mood": "..."}
+```
+
+---
+
+## 十一、Person Memory（角色对用户的记忆）
+
+### 11.1 设计目标
+
+角色需要记住不同用户的偏好、互动历史与情感连接，以便在后续对话中体现「我记得你」。Person Memory 是角色视角对单个用户的记忆归档。
+
+### 11.2 数据模型
+
+表 `person_memories`：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUID v7 | 主键 |
+| `character_id` | UUID | 角色 ID |
+| `user_id` | text | 用户标识 |
+| `platform` | text | 平台（web / qq / discord） |
+| `content` | text | 记忆内容（自然语言） |
+| `heat` | int | 热度（互动越多越高） |
+| `last_interaction_at` | TIMESTAMPTZ | 最后互动时间 |
+| `created_at` / `updated_at` | TIMESTAMPTZ | 时间戳 |
+
+### 11.3 实现位置
+
+| 文件 | 类/方法 | 说明 |
+|------|---------|------|
+| `src/memory/person_memory_service.py` | `PersonMemoryService` | 服务实现 |
+| `src/db/models/person_memory.py` | `PersonMemory` | SQLAlchemy 模型 |
+| `src/api/memory.py` | `get_person_memory` / `list_person_memories` | API 端点 |
+
+### 11.4 热度排序
+
+`list_person_memories` 按 `heat DESC, last_interaction_at DESC` 排序，让角色最熟悉的用户排在前列。
+
+---
+
+## 十二、相关文档
 
 | 主题 | 文档 |
 |------|------|

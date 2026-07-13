@@ -77,8 +77,8 @@ MCP_SERVERS: list[dict[str, Any]] = [
 
 def _get_redis():
     """延迟获取全局 Redis 客户端（避免循环导入）"""
-    from src.main import redis  # type: ignore
-    return redis
+    from src.runtime import get_redis
+    return get_redis()
 
 
 async def get_enabled_servers() -> set[str]:

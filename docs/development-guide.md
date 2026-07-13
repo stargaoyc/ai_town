@@ -20,10 +20,10 @@
 
 ## 二、本地开发快速开始
 
-### 2.1 启动依赖（PG / Redis / MinIO）
+### 2.1 启动依赖（PG / Redis）
 
 ```bash
-docker compose up -d postgres redis minio
+docker compose up -d postgres redis
 ```
 
 ### 2.2 后端

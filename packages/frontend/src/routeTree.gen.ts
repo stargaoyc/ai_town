@@ -19,6 +19,7 @@ import { Route as RelationshipsRouteImport } from './routes/relationships'
 import { Route as ReflectionsRouteImport } from './routes/reflections'
 import { Route as QqMonitorRouteImport } from './routes/qq-monitor'
 import { Route as PlansRouteImport } from './routes/plans'
+import { Route as PersonMemoryRouteImport } from './routes/person-memory'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MonitoringRouteImport } from './routes/monitoring'
 import { Route as MetricsRouteImport } from './routes/metrics'
@@ -28,6 +29,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as EventsRouteImport } from './routes/events'
+import { Route as DiariesRouteImport } from './routes/diaries'
 import { Route as CostRouteImport } from './routes/cost'
 import { Route as ConversationsRouteImport } from './routes/conversations'
 import { Route as CompareRouteImport } from './routes/compare'
@@ -89,6 +91,11 @@ const PlansRoute = PlansRouteImport.update({
   path: '/plans',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PersonMemoryRoute = PersonMemoryRouteImport.update({
+  id: '/person-memory',
+  path: '/person-memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotificationsRoute = NotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
@@ -132,6 +139,11 @@ const ExportRoute = ExportRouteImport.update({
 const EventsRoute = EventsRouteImport.update({
   id: '/events',
   path: '/events',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiariesRoute = DiariesRouteImport.update({
+  id: '/diaries',
+  path: '/diaries',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CostRoute = CostRouteImport.update({
@@ -194,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/compare': typeof CompareRoute
   '/conversations': typeof ConversationsRoute
   '/cost': typeof CostRoute
+  '/diaries': typeof DiariesRoute
   '/events': typeof EventsRoute
   '/export': typeof ExportRoute
   '/import': typeof ImportRoute
@@ -203,6 +216,7 @@ export interface FileRoutesByFullPath {
   '/metrics': typeof MetricsRoute
   '/monitoring': typeof MonitoringRoute
   '/notifications': typeof NotificationsRoute
+  '/person-memory': typeof PersonMemoryRoute
   '/plans': typeof PlansRoute
   '/qq-monitor': typeof QqMonitorRoute
   '/reflections': typeof ReflectionsRoute
@@ -224,6 +238,7 @@ export interface FileRoutesByTo {
   '/compare': typeof CompareRoute
   '/conversations': typeof ConversationsRoute
   '/cost': typeof CostRoute
+  '/diaries': typeof DiariesRoute
   '/events': typeof EventsRoute
   '/export': typeof ExportRoute
   '/import': typeof ImportRoute
@@ -233,6 +248,7 @@ export interface FileRoutesByTo {
   '/metrics': typeof MetricsRoute
   '/monitoring': typeof MonitoringRoute
   '/notifications': typeof NotificationsRoute
+  '/person-memory': typeof PersonMemoryRoute
   '/plans': typeof PlansRoute
   '/qq-monitor': typeof QqMonitorRoute
   '/reflections': typeof ReflectionsRoute
@@ -256,6 +272,7 @@ export interface FileRoutesById {
   '/compare': typeof CompareRoute
   '/conversations': typeof ConversationsRoute
   '/cost': typeof CostRoute
+  '/diaries': typeof DiariesRoute
   '/events': typeof EventsRoute
   '/export': typeof ExportRoute
   '/import': typeof ImportRoute
@@ -265,6 +282,7 @@ export interface FileRoutesById {
   '/metrics': typeof MetricsRoute
   '/monitoring': typeof MonitoringRoute
   '/notifications': typeof NotificationsRoute
+  '/person-memory': typeof PersonMemoryRoute
   '/plans': typeof PlansRoute
   '/qq-monitor': typeof QqMonitorRoute
   '/reflections': typeof ReflectionsRoute
@@ -289,6 +307,7 @@ export interface FileRouteTypes {
     | '/compare'
     | '/conversations'
     | '/cost'
+    | '/diaries'
     | '/events'
     | '/export'
     | '/import'
@@ -298,6 +317,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/monitoring'
     | '/notifications'
+    | '/person-memory'
     | '/plans'
     | '/qq-monitor'
     | '/reflections'
@@ -319,6 +339,7 @@ export interface FileRouteTypes {
     | '/compare'
     | '/conversations'
     | '/cost'
+    | '/diaries'
     | '/events'
     | '/export'
     | '/import'
@@ -328,6 +349,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/monitoring'
     | '/notifications'
+    | '/person-memory'
     | '/plans'
     | '/qq-monitor'
     | '/reflections'
@@ -350,6 +372,7 @@ export interface FileRouteTypes {
     | '/compare'
     | '/conversations'
     | '/cost'
+    | '/diaries'
     | '/events'
     | '/export'
     | '/import'
@@ -359,6 +382,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/monitoring'
     | '/notifications'
+    | '/person-memory'
     | '/plans'
     | '/qq-monitor'
     | '/reflections'
@@ -382,6 +406,7 @@ export interface RootRouteChildren {
   CompareRoute: typeof CompareRoute
   ConversationsRoute: typeof ConversationsRoute
   CostRoute: typeof CostRoute
+  DiariesRoute: typeof DiariesRoute
   EventsRoute: typeof EventsRoute
   ExportRoute: typeof ExportRoute
   ImportRoute: typeof ImportRoute
@@ -391,6 +416,7 @@ export interface RootRouteChildren {
   MetricsRoute: typeof MetricsRoute
   MonitoringRoute: typeof MonitoringRoute
   NotificationsRoute: typeof NotificationsRoute
+  PersonMemoryRoute: typeof PersonMemoryRoute
   PlansRoute: typeof PlansRoute
   QqMonitorRoute: typeof QqMonitorRoute
   ReflectionsRoute: typeof ReflectionsRoute
@@ -475,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlansRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/person-memory': {
+      id: '/person-memory'
+      path: '/person-memory'
+      fullPath: '/person-memory'
+      preLoaderRoute: typeof PersonMemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notifications': {
       id: '/notifications'
       path: '/notifications'
@@ -536,6 +569,13 @@ declare module '@tanstack/react-router' {
       path: '/events'
       fullPath: '/events'
       preLoaderRoute: typeof EventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/diaries': {
+      id: '/diaries'
+      path: '/diaries'
+      fullPath: '/diaries'
+      preLoaderRoute: typeof DiariesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cost': {
@@ -634,6 +674,7 @@ const rootRouteChildren: RootRouteChildren = {
   CompareRoute: CompareRoute,
   ConversationsRoute: ConversationsRoute,
   CostRoute: CostRoute,
+  DiariesRoute: DiariesRoute,
   EventsRoute: EventsRoute,
   ExportRoute: ExportRoute,
   ImportRoute: ImportRoute,
@@ -643,6 +684,7 @@ const rootRouteChildren: RootRouteChildren = {
   MetricsRoute: MetricsRoute,
   MonitoringRoute: MonitoringRoute,
   NotificationsRoute: NotificationsRoute,
+  PersonMemoryRoute: PersonMemoryRoute,
   PlansRoute: PlansRoute,
   QqMonitorRoute: QqMonitorRoute,
   ReflectionsRoute: ReflectionsRoute,

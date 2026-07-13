@@ -436,6 +436,48 @@ CREATE TABLE world_snapshots (
 CREATE INDEX idx_world_tick ON world_snapshots (tick_id);
 ```
 
+### 3.12 character_diaries（角色日记）
+
+> 基于一段时间内 `memory_episodes` 生成的叙事性归档，由 `DiaryService` 调用 LLM 生成。不替代 Episode 真相源。
+
+```sql
+CREATE TABLE character_diaries (
+    id             UUID PRIMARY KEY DEFAULT uuidv7(),
+    character_id   UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    period         TEXT NOT NULL,                          -- day / week / month / year
+    diary_date     TIMESTAMPTZ NOT NULL,                   -- 日记日期（真实 UTC）
+    diary_end_date TIMESTAMPTZ,                            -- 周期结束日期（仅 period != "day"）
+    title          TEXT NOT NULL,
+    content        TEXT NOT NULL,                          -- 200-500 字
+    mood           TEXT DEFAULT '',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_diaries_character_date ON character_diaries (character_id, diary_date DESC);
+CREATE INDEX idx_diaries_period         ON character_diaries (period);
+```
+
+### 3.13 person_memories（角色对用户的记忆）
+
+> 角色视角对单个用户的记忆归档，用于在后续对话中体现「我记得你」。按热度排序展示。
+
+```sql
+CREATE TABLE person_memories (
+    id                   UUID PRIMARY KEY DEFAULT uuidv7(),
+    character_id         UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    user_id              TEXT NOT NULL,                    -- 用户标识
+    platform             TEXT DEFAULT 'web',               -- web / qq / discord
+    content              TEXT NOT NULL,                    -- 自然语言记忆内容
+    heat                 INT NOT NULL DEFAULT 0,           -- 热度（互动越多越高）
+    last_interaction_at  TIMESTAMPTZ,                      -- 最后互动时间
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (character_id, user_id, platform)
+);
+
+CREATE INDEX idx_person_mem_character_heat ON person_memories (character_id, heat DESC, last_interaction_at DESC);
+```
+
 | event_type | payload 示例 |
 |------------|-------------|
 | `time` | `{"virtual_time": "2026-07-06T10:30:00", "tick_id": 42}` |
@@ -565,7 +607,7 @@ CREATE TABLE action_records_2026_08 PARTITION OF action_records
 
 ### 6.3 历史分区归档
 
-- 超过 1 年的分区可 detach 后导出到对象存储（Parquet 格式）；
+- 超过 1 年的分区可 detach 后导出（Parquet 格式）；
 - PG 内仅保留近 1 年数据用于在线查询。
 
 ```sql

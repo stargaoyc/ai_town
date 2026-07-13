@@ -2,12 +2,9 @@
 import os
 
 # Settings() 在 src/config.py 导入时即实例化，需要这些环境变量；
-# 测试不会真正连接数据库/Redis/MinIO，此处仅提供占位值避免导入失败。
+# 测试不会真正连接数据库/Redis，此处仅提供占位值避免导入失败。
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-os.environ.setdefault("MINIO_ENDPOINT", "localhost:9000")
-os.environ.setdefault("MINIO_ACCESS_KEY", "test")
-os.environ.setdefault("MINIO_SECRET_KEY", "test")
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("JWT_SECRET", "test-secret")
 

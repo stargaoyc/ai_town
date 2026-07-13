@@ -22,13 +22,13 @@
 │   静态文件服务       │           │   World Engine + APIs     │
 └─────────────────────┘           └────────────┬──────────────┘
                                                │
-                    ┌──────────────────────────┼──────────────────────┐
-                    │                          │                      │
-           ┌────────▼────────┐      ┌──────────▼─────────┐  ┌────────▼────────┐
-           │   PostgreSQL    │      │     Redis          │  │    MinIO        │
-           │  +pgvector      │      │  缓存/队列/锁      │  │  对象存储       │
-           │  +pg_uuidv7     │      │                    │  │                 │
-           └─────────────────┘      └────────────────────┘  └─────────────────┘
+                    ┌──────────────────────────┐
+                    │                          │
+           ┌────────▼────────┐      ┌──────────▼─────────┐
+           │   PostgreSQL    │      │     Redis          │
+           │  +pgvector      │      │  缓存/队列/锁      │
+           │  +pg_uuidv7     │      │                    │
+           └─────────────────┘      └────────────────────┘
                     │
            ┌────────▼────────┐
            │   MCP Servers   │
@@ -44,7 +44,6 @@
 |------|------|------|------|
 | `postgres` | 自构 (pgvector + pg_uuidv7) | 5432 | 主数据库 |
 | `redis` | `redis:8.0-alpine` | 6379 | 缓存/队列/锁 |
-| `minio` | `minio/minio` | 9000, 9001 | 对象存储 |
 | `backend` | 自构 (Python 3.13 + uv) | 8000 | FastAPI 后端 |
 | `frontend` | 自构 (Node 22 + Nginx) | 80 | 前端静态服务 |
 | `mcp-*` | 自构 (Python 3.13) | 8002-8006 | MCP 工具服务 |
@@ -110,10 +109,6 @@ JWT_SECRET=$(openssl rand -hex 32)
 
 # 管理员密码（生产环境必须修改）
 ADMIN_PASSWORD=your-secure-admin-password
-
-# MinIO 密钥
-MINIO_ACCESS_KEY=your-access-key
-MINIO_SECRET_KEY=your-secret-key
 ```
 
 ---
@@ -256,8 +251,8 @@ docker build -t aitown/postgres docker/postgres/
 `docker-compose.yml` 使用 Docker Compose Profiles 实现按需启动：
 
 ```bash
-# 1. 仅启动基础设施（数据库 + 缓存 + 存储）
-docker compose up -d postgres redis minio
+# 1. 仅启动基础设施（数据库 + 缓存）
+docker compose up -d postgres redis
 
 # 2. 启动应用层（后端 + 前端）
 docker compose up -d backend frontend
@@ -350,10 +345,9 @@ backend:
   environment:
     DATABASE_URL: postgresql+asyncpg://${DB_USER:-ai_town}:${DB_PASSWORD:-password}@postgres:5432/ai_town
     REDIS_URL: redis://redis:6379/0
-    MINIO_ENDPOINT: minio:9000
 ```
 
-> **注意**：`.env` 文件中的 `DATABASE_URL`、`REDIS_URL`、`MINIO_ENDPOINT` 在容器中会被覆盖为容器网络地址。其他变量（如 `OPENAI_API_KEY`）从 `.env` 继承。
+> **注意**：`.env` 文件中的 `DATABASE_URL`、`REDIS_URL` 在容器中会被覆盖为容器网络地址。其他变量（如 `OPENAI_API_KEY`）从 `.env` 继承。
 
 ### 5.3 MCP Server 环境变量
 
@@ -428,7 +422,6 @@ docker compose --profile mcp --profile observability up -d
 |------|--------|------|
 | `pg_data` | `/var/lib/postgresql/data` | PostgreSQL 数据 |
 | `redis_data` | `/data` | Redis 持久化 |
-| `minio_data` | `/data` | MinIO 对象存储 |
 | `prometheus_data` | `/prometheus` | Prometheus 指标 |
 | `loki_data` | `/loki` | Loki 日志 |
 | `grafana_data` | `/var/lib/grafana` | Grafana 配置 |
@@ -653,7 +646,6 @@ docker compose exec postgres psql -U ai_town -c "
 - [ ] 修改默认数据库密码（`.env` 中 `DB_PASSWORD`）
 - [ ] 修改 JWT 密钥（`.env` 中 `JWT_SECRET` 设为随机 32 字节）
 - [ ] 修改管理员密码（`.env` 中 `ADMIN_PASSWORD`）
-- [ ] 修改 MinIO 密钥（`.env` 中 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`）
 - [ ] 修改 Grafana 密码（`.env` 中 `GRAFANA_PASSWORD`）
 - [ ] 配置 TLS/SSL 证书
 - [ ] 限制端口暴露（生产环境仅暴露 80/443）
@@ -666,7 +658,7 @@ docker compose exec postgres psql -U ai_town -c "
 networks:
   frontend-net:    # 前端 + 后端
     driver: bridge
-  backend-net:     # 后端 + 数据库/Redis/MinIO
+  backend-net:     # 后端 + 数据库/Redis
     driver: bridge
   observability-net:  # 可观测性组件
     driver: bridge

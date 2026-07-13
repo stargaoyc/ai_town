@@ -503,8 +503,8 @@ class ProactiveSharingService:
 
                 # 创建通知中心记录
                 try:
-                    from src.main import _create_notification
-                    await _create_notification(
+                    from src.runtime import create_notification
+                    await create_notification(
                         user_id=conv.user_id,
                         notif_type="share",
                         title=f"{character.name} 向你分享了动态",

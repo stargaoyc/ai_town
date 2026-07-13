@@ -233,8 +233,13 @@ export function useInvokeMcpTool() {
 export function useToggleMcpServer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ serverName, enabled }: { serverName: string; enabled: boolean }) =>
-      api.toggleMcpServer(serverName, enabled),
+    mutationFn: ({
+      serverName,
+      enabled,
+    }: {
+      serverName: string;
+      enabled: boolean;
+    }) => api.toggleMcpServer(serverName, enabled),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mcpServers"] });
       qc.invalidateQueries({ queryKey: ["mcpTools"] });
@@ -384,5 +389,54 @@ export function useClearAllNotifications() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
+  });
+}
+
+// ===== 日记系统 =====
+
+export function useDiaries(
+  characterId: string,
+  params?: { period?: string; limit?: number },
+) {
+  return useQuery({
+    queryKey: ["diaries", characterId, params],
+    queryFn: () => api.getDiaries(characterId, params),
+    enabled: !!characterId,
+  });
+}
+
+export function useGenerateDiary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      characterId,
+      period,
+      characterName,
+    }: {
+      characterId: string;
+      period: string;
+      characterName?: string;
+    }) => api.generateDiary(characterId, period, characterName),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["diaries", vars.characterId] });
+    },
+  });
+}
+
+// ===== 角色对用户的记忆 =====
+
+export function usePersonMemory(characterId: string, userId: string) {
+  return useQuery({
+    queryKey: ["personMemory", characterId, userId],
+    queryFn: () => api.getPersonMemory(characterId, userId),
+    enabled: !!characterId && !!userId,
+  });
+}
+
+export function usePersonMemoriesList(characterId: string, limit = 50) {
+  return useQuery({
+    queryKey: ["personMemoriesList", characterId, limit],
+    queryFn: () => api.listPersonMemories(characterId, limit),
+    enabled: !!characterId,
   });
 }

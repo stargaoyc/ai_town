@@ -24,17 +24,7 @@
 | `REDIS_URL` | 是 | — | `redis://host:6379/0` |
 | `REDIS_PASSWORD` | 否 | — | Redis 密码 |
 
-### 1.3 对象存储
-
-| 变量 | 必填 | 默认 | 说明 |
-|------|------|------|------|
-| `MINIO_ENDPOINT` | 是 | — | MinIO/S3 端点 |
-| `MINIO_ACCESS_KEY` | 是 | — | 访问密钥 |
-| `MINIO_SECRET_KEY` | 是 | — | 密钥 |
-| `MINIO_BUCKET` | 否 | ai-town | 存储桶名 |
-| `MINIO_SECURE` | 否 | false | 是否启用 HTTPS |
-
-### 1.4 LLM 配置
+### 1.3 LLM 配置
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
@@ -48,7 +38,7 @@
 | `LLM_MAX_RETRIES` | 否 | 2 | 最大重试次数 |
 | `LLM_DAILY_BUDGET_USD` | 否 | 10.0 | 每日 LLM 成本预算上限（超预算自动降级到 flash 模型） |
 
-### 1.5 记忆系统
+### 1.4 记忆系统
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
@@ -56,7 +46,7 @@
 
 > **说明**：LLM 评分会额外消耗 Token，建议在低角色数（<10）或调试期启用。生产环境 50 角色时建议保持 `false` 以控制成本。
 
-### 1.6 MCP Servers
+### 1.5 MCP Servers
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
@@ -69,7 +59,7 @@
 
 > **MCP 插件开关**：每个 MCP Server 的启用/禁用状态存储在 Redis hash `mcp:enabled` 中，通过前端 Dashboard 或 `PUT /api/v1/mcp/servers/{name}/enabled` API 控制。未配置时默认全部启用。详见 [模块与 MCP 系统设计](module-system.md#51-mcp-插件单独开关redis-持久化)。
 
-### 1.7 可观测性
+### 1.6 可观测性
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
@@ -85,7 +75,7 @@
 
 ---
 
-### 1.8 消息平台
+### 1.7 消息平台
 
 #### OneBot（QQ 接入）
 
@@ -122,7 +112,7 @@ ONEBOT_GROUP_CHARACTER_MAP={"群号A":"角色UUID-A","群号B":"角色UUID-B"}
 | `LARK_APP_SECRET` | 否 | — | 飞书应用密钥 |
 | `WEB_WS_PATH` | 否 | /ws | Web WebSocket 路径 |
 
-### 1.9 鉴权
+### 1.8 鉴权
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
@@ -131,7 +121,7 @@ ONEBOT_GROUP_CHARACTER_MAP={"群号A":"角色UUID-A","群号B":"角色UUID-B"}
 | `JWT_EXPIRE_HOURS` | 否 | 24 | JWT 过期时间 |
 | `API_KEY` | 否 | — | 第三方集成 API Key |
 
-### 1.10 世界引擎
+### 1.9 世界引擎
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
@@ -163,11 +153,6 @@ database:
 
 redis:
   url: ${REDIS_URL}
-
-storage:
-  endpoint: ${MINIO_ENDPOINT}
-  bucket: ai-town
-  secure: false
 
 llm:
   api_key: ${OPENAI_API_KEY}

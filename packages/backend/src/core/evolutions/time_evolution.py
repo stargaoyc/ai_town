@@ -2,6 +2,9 @@
 
 每 Tick 推进 `world_tick_minutes` 分钟，维护时段（day_phase）与季节（season）。
 状态存储于 Redis Hash: `world:state:time`，字段：world_time / tick_id / day_phase / season。
+
+初始虚拟时间可通过环境变量 `WORLD_INITIAL_TIME` 配置（ISO 格式），
+未配置时默认使用当前现实日期的 08:00，让虚拟时间与现实时间保持同步。
 """
 from datetime import datetime, timedelta
 
@@ -13,8 +16,22 @@ from src.core.evolutions.base import WorldEvolution
 
 logger = get_logger(__name__)
 
-# 世界创建时的初始虚拟时间（从 08:00 开始）
-INITIAL_WORLD_TIME = datetime(2024, 1, 1, 8, 0)
+
+def _get_initial_world_time() -> datetime:
+    """获取初始虚拟时间
+
+    优先使用环境变量 `WORLD_INITIAL_TIME` 配置的 ISO 格式时间；
+    未配置时默认使用当前现实日期的 08:00（本地时区），让虚拟时间与现实时间保持同步。
+    """
+    configured = settings.world_initial_time.strip()
+    if configured:
+        try:
+            return datetime.fromisoformat(configured)
+        except (ValueError, TypeError):
+            logger.warning("world_initial_time_parse_failed", value=configured)
+    # 默认：当前现实日期 08:00
+    return datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+
 
 # 时间状态在 Redis 中的 Key
 TIME_KEY = "world:state:time"
@@ -55,16 +72,21 @@ class TimeEvolution(WorldEvolution):
     name = "time"
 
     async def setup(self, redis: Redis) -> None:
-        """首次运行时初始化时间状态（从 08:00 开始）"""
+        """首次运行时初始化时间状态
+
+        初始时间通过 `WORLD_INITIAL_TIME` 环境变量配置（ISO 格式），
+        未配置时默认使用当前现实日期的 08:00。
+        """
         existing = await redis.hgetall(TIME_KEY)
         if not existing:
+            initial = _get_initial_world_time()
             await self.hset_json(redis, TIME_KEY, {
-                "world_time": INITIAL_WORLD_TIME.isoformat(),
+                "world_time": initial.isoformat(),
                 "tick_id": 0,
-                "day_phase": compute_day_phase(INITIAL_WORLD_TIME.hour),
-                "season": compute_season(INITIAL_WORLD_TIME.month),
+                "day_phase": compute_day_phase(initial.hour),
+                "season": compute_season(initial.month),
             })
-            logger.info("time_evolution_initialized", world_time=INITIAL_WORLD_TIME.isoformat())
+            logger.info("time_evolution_initialized", world_time=initial.isoformat())
 
     async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
         """推进虚拟时钟一个 Tick"""
@@ -72,8 +94,8 @@ class TimeEvolution(WorldEvolution):
         if state and "world_time" in state:
             current = datetime.fromisoformat(state["world_time"])
         else:
-            # 未初始化时回退到初始时间
-            current = INITIAL_WORLD_TIME
+            # 未初始化时回退到初始时间（可配置）
+            current = _get_initial_world_time()
 
         # 推进 N 分钟（从配置读取，默认 10）
         step_minutes = settings.world_tick_minutes

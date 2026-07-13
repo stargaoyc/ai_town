@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend:
+    name: Backend Lint & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: aitown
+          POSTGRES_PASSWORD: aitown_dev
+          POSTGRES_DB: aitown
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://aitown:aitown_dev@localhost:5432/aitown
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-test-secret-at-least-32-chars-long
+      OPENAI_API_KEY: sk-test-placeholder
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: ci-test-password-not-default
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Set up Python
+        run: uv python install 3.13
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Lint with ruff
+        run: uv run ruff check src/ tests/
+      - name: Format check with ruff
+        run: uv run ruff format --check src/ tests/
+      - name: Run tests
+        run: uv run pytest --tb=short -q
+        env:
+          DATABASE_URL: postgresql+asyncpg://aitown:aitown_dev@localhost:5432/aitown
+          REDIS_URL: redis://localhost:6379/0
+
+  frontend:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint with oxlint
+        run: pnpm run lint
+      - name: Type check
+        run: pnpm run type-check
+      - name: Build
+        run: pnpm run build
+
+  mcp-servers:
+    name: MCP Servers Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        server: [code-executor, shop-simulator, character-social, knowledge-base]
+    defaults:
+      run:
+        working-directory: packages/mcp-servers/${{ matrix.server }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Set up Python
+        run: uv python install 3.13
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Import check
+        run: uv run python -c "import server; print('${{ matrix.server }} import OK')"

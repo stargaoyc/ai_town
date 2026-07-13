@@ -397,6 +397,29 @@ class MessageService:
             error=error,
         )
 
+        # 异步更新角色对用户的记忆（不阻塞回复）
+        try:
+            import asyncio
+
+            from src.db.session import db
+            from src.memory.person_memory_service import PersonMemoryService
+
+            pm_service = PersonMemoryService(
+                session_factory=db.session,  # 使用独立的 session factory
+                llm_client=self.llm,
+            )
+            # 异步执行，不等待（fire-and-forget）
+            asyncio.create_task(pm_service.update_memory(
+                character_id=character_id,
+                character_name=character.name,
+                user_id=user_id,
+                platform=platform,
+                user_message=content,
+                character_reply=reply_text,
+            ))
+        except Exception:
+            pass  # 记忆更新失败不影响主流程
+
         return {
             "conversation_id": conversation.id,
             "message_id": reply_msg.id,

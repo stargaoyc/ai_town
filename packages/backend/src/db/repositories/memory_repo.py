@@ -20,6 +20,7 @@
     final_score = sim_score * 0.6 + importance * 0.05 - time_decay
 详见 architecture.md §5.7
 """
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select, text, update
@@ -58,6 +59,36 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             select(MemoryEpisode)
             .where(MemoryEpisode.character_id == character_id)
             .order_by(MemoryEpisode.timestamp.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
+    async def get_by_character_and_time_range(
+        self,
+        character_id: UUID,
+        start_date: datetime,
+        end_date: datetime,
+        limit: int = 100,
+    ) -> list[MemoryEpisode]:
+        """获取角色在指定时间范围内的记忆（按时间正序）
+
+        用于日记生成等需要按时间段聚合记忆的场景。
+
+        Args:
+            character_id: 角色 ID
+            start_date: 起始时间（包含）
+            end_date: 结束时间（包含）
+            limit: 返回数量上限
+        """
+        stmt = (
+            select(MemoryEpisode)
+            .where(
+                MemoryEpisode.character_id == character_id,
+                MemoryEpisode.timestamp >= start_date,
+                MemoryEpisode.timestamp <= end_date,
+            )
+            .order_by(MemoryEpisode.timestamp.asc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)

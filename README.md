@@ -22,6 +22,9 @@
 | **主动分享** | 角色在 Tick 中产生分享意图时（`proactiveShareIntent`），会主动把小镇中刚发生的事推送给你，无需你先开口 |
 | **反思系统** | 角色定期从记忆流中归纳出高层认知（`ReflectionService.check_and_reflect`），影响后续决策，让陪伴更"懂你" |
 | **LLM 记忆评分** | 通过 `MEMORY_LLM_SCORING_ENABLED` 开关启用 LLM 对事件重要程度进行 1-10 分评分（基于情感强度、关系影响、稀缺性、后续影响），替代默认固定分值 5 |
+| **角色日记** | 基于一段时间内的记忆事件，由 LLM 生成第一人称叙事日记（日/周/月/年四种周期），作为角色情感与经历的浓缩归档，不替代事件级真相源 |
+| **Person Memory** | 角色对不同用户的专属记忆归档，记录偏好、互动历史与情感连接，按热度排序，让角色在后续对话中体现「我记得你」 |
+| **通知系统** | 角色主动分享、系统事件等通过通知中心推送给用户，支持单条/全部已读标记 |
 | **Docker 一键部署** | 提供完整的 Docker Compose 编排（多阶段构建 + Nginx 反代 + Profile 按需启动），支持开发/生产/可观测性多种部署模式 |
 
 ---
@@ -41,7 +44,6 @@
 | 前端组件 | shadcn/ui + Tailwind CSS v4 + Framer Motion |
 | 主数据库 | PostgreSQL 17 + pgvector + pg_uuidv7 + JSONB + 分区表 |
 | 缓存/实时 | Redis 8.0 |
-| 对象存储 | MinIO / AWS S3 |
 | 消息队列 | Redis Streams |
 | 连接池 | PgBouncer |
 | 工具调用 | MCP 协议（自研 + 社区现成） |
@@ -62,7 +64,6 @@
   - `vector`（pgvector 向量检索）
   - `pg_trgm`（模糊匹配）
 - **Redis 8.0+**（缓存、分布式锁、消息队列、实时状态）
-- **MinIO / AWS S3**（对象存储，用于角色头像、截图等资源）
 - （可选）一个 OneBot v11/v12 实现，如 [NapCat](https://github.com/NapNeko/NapCatQQ) 或 [Lagrange](https://github.com/LagrangeDev/Lagrange.Core)，用于接入 QQ
 
 ### 启动后端（详细步骤）
@@ -80,7 +81,6 @@ cp ../../.env.example .env        # 从模板复制配置文件
 #     - DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/ai_town
 #     - REDIS_URL=redis://localhost:6379/0
 #     - OPENAI_API_KEY=sk-...
-#     - MINIO_ENDPOINT=localhost:9000
 #     - JWT_SECRET=<随机字符串>
 #     - （可选）ONEBOT_DEFAULT_CHARACTER_ID=<角色 UUID>
 

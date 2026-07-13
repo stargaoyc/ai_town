@@ -211,10 +211,13 @@ export const api = {
     limit?: number;
   }) => {
     const qs = new URLSearchParams(
-      Object.entries(params).reduce((acc, [k, v]) => {
-        if (v !== undefined && v !== null) acc[k] = String(v);
-        return acc;
-      }, {} as Record<string, string>),
+      Object.entries(params).reduce(
+        (acc, [k, v]) => {
+          if (v !== undefined && v !== null) acc[k] = String(v);
+          return acc;
+        },
+        {} as Record<string, string>,
+      ),
     ).toString();
     return request<{ data: WorldEventEntry[]; total: number }>(
       `/world/events?${qs}`,
@@ -297,7 +300,11 @@ export const api = {
       online: number;
       offline: number;
     }>("/mcp/servers/health"),
-  invokeMcpTool: (toolName: string, serverName: string, args: Record<string, unknown>) =>
+  invokeMcpTool: (
+    toolName: string,
+    serverName: string,
+    args: Record<string, unknown>,
+  ) =>
     request<{
       success: boolean;
       status_code?: number;
@@ -379,16 +386,49 @@ export const api = {
       method: "PUT",
     }),
   markAllNotificationsRead: () =>
-    request<{ success: boolean; updated: number }>(
-      "/notifications/read-all",
-      { method: "PUT" },
-    ),
+    request<{ success: boolean; updated: number }>("/notifications/read-all", {
+      method: "PUT",
+    }),
   deleteNotification: (id: string) =>
     request<{ success: boolean; id: string }>(`/notifications/${id}`, {
       method: "DELETE",
     }),
   clearAllNotifications: () =>
     request<{ success: boolean }>("/notifications", { method: "DELETE" }),
+
+  // ===== 日记系统 =====
+  getDiaries: (
+    characterId: string,
+    params?: { period?: string; limit?: number },
+  ) => {
+    const qs = new URLSearchParams(
+      Object.entries(params || {}).reduce(
+        (acc, [k, v]) => {
+          if (v !== undefined && v !== null) acc[k] = String(v);
+          return acc;
+        },
+        {} as Record<string, string>,
+      ),
+    ).toString();
+    return request<{ data: DiaryEntry[]; total: number }>(
+      `/characters/${characterId}/diaries${qs ? "?" + qs : ""}`,
+    );
+  },
+  generateDiary: (characterId: string, period: string, characterName = "") =>
+    request<{ data: DiaryEntry }>(
+      `/characters/${characterId}/diaries/generate?period=${period}&character_name=${encodeURIComponent(characterName)}`,
+      { method: "POST" },
+    ),
+
+  // ===== 角色对用户的记忆 =====
+  getPersonMemory: (characterId: string, userId: string) =>
+    request<{ data: PersonMemoryEntry | null; exists: boolean }>(
+      `/characters/${characterId}/person-memory?user_id=${encodeURIComponent(userId)}`,
+    ),
+  listPersonMemories: (characterId: string, limit = 50) =>
+    request<{ data: PersonMemoryEntry[]; total: number }>(
+      `/characters/${characterId}/person-memory/list?limit=${limit}`,
+    ),
 };
 
 // ===== 扩展类型定义 =====
@@ -508,7 +548,10 @@ export interface MessageStats {
   total_messages: number;
   total_tokens: number;
   total_cost: number;
-  by_character?: Record<string, { messages: number; tokens: number; cost: number }>;
+  by_character?: Record<
+    string,
+    { messages: number; tokens: number; cost: number }
+  >;
   by_day?: Record<string, { messages: number; tokens: number; cost: number }>;
 }
 
@@ -582,6 +625,35 @@ export interface DetailedMetrics {
     redis_connected?: number;
   };
   http: {
-    requests?: Record<string, { total: number; by_status: Record<string, number> }>;
+    requests?: Record<
+      string,
+      { total: number; by_status: Record<string, number> }
+    >;
   };
+}
+
+// ===== 日记 & 角色对用户的记忆 =====
+
+export interface DiaryEntry {
+  id?: string;
+  character_id?: string;
+  period: "day" | "week" | "month" | "year";
+  diary_date: string;
+  diary_end_date?: string | null;
+  title: string;
+  content: string;
+  mood?: string;
+  generated_at?: string;
+}
+
+export interface PersonMemoryEntry {
+  id?: string;
+  character_id?: string;
+  user_id: string;
+  platform?: string;
+  content: string;
+  heat: number;
+  last_interaction_at?: string;
+  created_at?: string;
+  updated_at?: string;
 }

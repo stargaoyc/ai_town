@@ -68,149 +68,145 @@ function QqMonitorPage() {
   ).length;
 
   return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader
-          title="QQ 消息监控"
-          subtitle="实时查看 OneBot 通道消息流（每 10 秒自动刷新）"
-          icon="💬"
-          backTo="/admin"
-          backLabel="返回管理"
+    <div className="space-y-6 animate-fade-in-up">
+      <PageHeader
+        title="QQ 消息监控"
+        subtitle="实时查看 OneBot 通道消息流（每 10 秒自动刷新）"
+        icon="💬"
+        backTo="/admin"
+        backLabel="返回管理"
+      />
+
+      {/* 顶部统计栏 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="总消息数"
+          value={data?.total ?? messages.length}
+          icon="📊"
+          color="twilight"
         />
+        <StatCard title="用户消息" value={userCount} icon="👤" color="sky" />
+        <StatCard
+          title="角色消息"
+          value={characterCount}
+          icon="🤖"
+          color="sakura"
+        />
+      </div>
 
-        {/* 顶部统计栏 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard
-            title="总消息数"
-            value={data?.total ?? messages.length}
-            icon="📊"
-            color="twilight"
-          />
-          <StatCard
-            title="用户消息"
-            value={userCount}
-            icon="👤"
-            color="sky"
-          />
-          <StatCard
-            title="角色消息"
-            value={characterCount}
-            icon="🤖"
-            color="sakura"
-          />
-        </div>
-
-        {/* 状态栏 */}
-        <GlassCard hover={false}>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2 text-twilight-500">
-              <MessageCircle className="w-5 h-5 text-sakura-500" />
-              <span className="font-semibold">消息流</span>
-              <span className="text-xs text-twilight-400">
-                （最近 {messages.length} 条）
-              </span>
-            </div>
-            <StatusBadge status="ok" label="自动刷新中" />
+      {/* 状态栏 */}
+      <GlassCard hover={false}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-twilight-500">
+            <MessageCircle className="w-5 h-5 text-sakura-500" />
+            <span className="font-semibold">消息流</span>
+            <span className="text-xs text-twilight-400">
+              （最近 {messages.length} 条）
+            </span>
           </div>
-        </GlassCard>
+          <StatusBadge status="ok" label="自动刷新中" />
+        </div>
+      </GlassCard>
 
-        {isLoading && <LoadingSpinner text="正在加载 QQ 消息..." />}
-        {error && <ErrorDisplay error={error} />}
-        {data && messages.length === 0 && (
-          <EmptyState
-            icon="📭"
-            title="暂无 QQ 消息"
-            subtitle="当 OneBot 通道有消息流入时将显示在这里"
-          />
-        )}
+      {isLoading && <LoadingSpinner text="正在加载 QQ 消息..." />}
+      {error && <ErrorDisplay error={error} />}
+      {data && messages.length === 0 && (
+        <EmptyState
+          icon="📭"
+          title="暂无 QQ 消息"
+          subtitle="当 OneBot 通道有消息流入时将显示在这里"
+        />
+      )}
 
-        {/* 消息列表 */}
-        {messages.length > 0 && (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="space-y-3"
-          >
-            {messages.map((msg) => {
-              const isUser = msg.sender === "user";
-              return (
-                <motion.div key={msg.message_id} variants={item}>
+      {/* 消息列表 */}
+      {messages.length > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="space-y-3"
+        >
+          {messages.map((msg) => {
+            const isUser = msg.sender === "user";
+            return (
+              <motion.div key={msg.message_id} variants={item}>
+                <div
+                  className={`flex ${isUser ? "justify-start" : "justify-end"}`}
+                >
                   <div
-                    className={`flex ${isUser ? "justify-start" : "justify-end"}`}
+                    className={`flex items-start gap-3 max-w-[85%] ${
+                      isUser ? "flex-row" : "flex-row-reverse"
+                    }`}
                   >
+                    {/* 头像 */}
                     <div
-                      className={`flex items-start gap-3 max-w-[85%] ${
-                        isUser ? "flex-row" : "flex-row-reverse"
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
+                        isUser
+                          ? "bg-gradient-to-br from-sky-soft-300 to-sky-soft-500 text-white"
+                          : "bg-gradient-to-br from-sakura-300 to-sakura-500 text-white"
                       }`}
                     >
-                      {/* 头像 */}
-                      <div
-                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
-                          isUser
-                            ? "bg-gradient-to-br from-sky-soft-300 to-sky-soft-500 text-white"
-                            : "bg-gradient-to-br from-sakura-300 to-sakura-500 text-white"
-                        }`}
-                      >
-                        {isUser ? (
-                          <User className="w-5 h-5" />
-                        ) : (
-                          <Bot className="w-5 h-5" />
+                      {isUser ? (
+                        <User className="w-5 h-5" />
+                      ) : (
+                        <Bot className="w-5 h-5" />
+                      )}
+                    </div>
+                    {/* 气泡 */}
+                    <div
+                      className={`px-4 py-3 rounded-2xl backdrop-blur-sm border shadow-sm ${
+                        isUser
+                          ? "bg-sky-soft-100/80 border-sky-soft-200/50 rounded-tl-sm text-twilight-700"
+                          : "bg-sakura-100/80 border-sakura-200/50 rounded-tr-sm text-twilight-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className={`text-xs font-semibold ${
+                            isUser ? "text-sky-soft-600" : "text-sakura-600"
+                          }`}
+                        >
+                          {isUser ? "用户" : "角色"}
+                        </span>
+                        {msg.character_id && !isUser && (
+                          <span className="text-xs text-twilight-400 px-1.5 py-0.5 rounded-lg bg-white/50">
+                            {msg.character_id}
+                          </span>
+                        )}
+                        {msg.user_id && isUser && (
+                          <span className="text-xs text-twilight-400 px-1.5 py-0.5 rounded-lg bg-white/50">
+                            {msg.user_id}
+                          </span>
                         )}
                       </div>
-                      {/* 气泡 */}
-                      <div
-                        className={`px-4 py-3 rounded-2xl backdrop-blur-sm border shadow-sm ${
-                          isUser
-                            ? "bg-sky-soft-100/80 border-sky-soft-200/50 rounded-tl-sm text-twilight-700"
-                            : "bg-sakura-100/80 border-sakura-200/50 rounded-tr-sm text-twilight-700"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className={`text-xs font-semibold ${
-                              isUser ? "text-sky-soft-600" : "text-sakura-600"
-                            }`}
-                          >
-                            {isUser ? "用户" : "角色"}
-                          </span>
-                          {msg.character_id && !isUser && (
-                            <span className="text-xs text-twilight-400 px-1.5 py-0.5 rounded-lg bg-white/50">
-                              {msg.character_id}
-                            </span>
-                          )}
-                          {msg.user_id && isUser && (
-                            <span className="text-xs text-twilight-400 px-1.5 py-0.5 rounded-lg bg-white/50">
-                              {msg.user_id}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm break-words whitespace-pre-wrap">
-                          {cleanCQCodes(msg.content) || "（空消息或含特殊格式码）"}
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <Clock className="w-3 h-3 text-twilight-300" />
+                      <div className="text-sm break-words whitespace-pre-wrap">
+                        {cleanCQCodes(msg.content) ||
+                          "（空消息或含特殊格式码）"}
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Clock className="w-3 h-3 text-twilight-300" />
+                        <span className="text-xs text-twilight-300">
+                          {formatRelativeTime(msg.created_at)}
+                        </span>
+                        {msg.tokens != null && (
                           <span className="text-xs text-twilight-300">
-                            {formatRelativeTime(msg.created_at)}
+                            · {msg.tokens} tokens
                           </span>
-                          {msg.tokens != null && (
-                            <span className="text-xs text-twilight-300">
-                              · {msg.tokens} tokens
-                            </span>
-                          )}
-                          {msg.cost != null && msg.cost > 0 && (
-                            <span className="text-xs text-twilight-300">
-                              · ${msg.cost.toFixed(4)}
-                            </span>
-                          )}
-                        </div>
+                        )}
+                        {msg.cost != null && msg.cost > 0 && (
+                          <span className="text-xs text-twilight-300">
+                            · ${msg.cost.toFixed(4)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        )}
-      </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+      )}
+    </div>
   );
 }

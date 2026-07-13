@@ -6,8 +6,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "oxlint src/ && oxfmt --check src/",
-    "format": "oxfmt src/",
+    "lint": "oxlint src/ && oxfmt --check src/ --ignore-path=.oxfmtignore",
+    "format": "oxfmt src/ --ignore-path=.oxfmtignore",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:e2e": "playwright test"

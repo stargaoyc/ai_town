@@ -380,10 +380,7 @@ export function PageHeader({
           to={backTo}
           className="inline-flex items-center gap-1.5 text-sm text-twilight-400 hover:text-sakura-600 transition-colors mb-3 group"
         >
-          <motion.span
-            whileHover={{ x: -3 }}
-            className="inline-block"
-          >
+          <motion.span whileHover={{ x: -3 }} className="inline-block">
             ←
           </motion.span>
           {backLabel || "返回"}
