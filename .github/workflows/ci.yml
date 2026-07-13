@@ -52,7 +52,7 @@ jobs:
       - name: Set up Python
         run: uv python install 3.13
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
       - name: Lint with ruff
         run: uv run ruff check src/ tests/
       - name: Format check with ruff
