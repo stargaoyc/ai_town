@@ -75,6 +75,7 @@
 | `/api/v1/characters/{id}/reflections` | GET | 角色反思列表 |
 | `/api/v1/characters/{id}/plans` | GET | 角色计划列表 |
 | `/api/v1/characters/{id}/relations` | GET | 角色关系图谱 |
+| `/api/v1/characters/{id}/nearby` | GET | 同场景其他角色（多智能体交互可见性） |
 
 #### 创建角色
 
@@ -136,6 +137,38 @@ GET /api/v1/characters/{id}/state
   }
 }
 ```
+
+#### 查询同场景其他角色
+
+```http
+GET /api/v1/characters/{id}/nearby
+```
+
+返回与该角色处于同一场景的其他角色，用于前端展示「当前场景中还有谁」并支撑多智能体 `chat_with` 决策。位置优先从 Redis 实时状态读取，缺失时降级到 PG。
+
+```json
+{
+  "data": [
+    {
+      "id": "019f4c52-...",
+      "name": "绫音",
+      "personality": "温柔、内向、喜欢读书",
+      "mood": "calm",
+      "current_action_name": "读书",
+      "relationship_type": "friend",
+      "strength": 50,
+      "location": "cafe"
+    }
+  ],
+  "total": 1,
+  "location": "cafe"
+}
+```
+
+**说明**：
+- 仅返回同 `location` 的其他活跃角色，排除查询角色本人；
+- `relationship_type` / `strength` 来自 `RelationGraph`，未建立关系时返回 `stranger` / `0`；
+- 角色无位置时返回空列表与 `location: null`。
 
 ### 2.2 世界管理
 

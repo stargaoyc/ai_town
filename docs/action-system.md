@@ -54,7 +54,7 @@ class Action:
 | 生活 | `charge_phone` | home | phone_battery<20 && 在家 | phone_battery+60 |
 | 工作 | `study` | school/library | 在校/馆 && 9:00-17:00 | knowledge+5 |
 | 工作 | `work_parttime` | cafe/bookstore | 在店 && 有排班 | money+10 |
-| 社交 | `chat_with` | 任意 | 同位置有其他角色 | relationship+2 |
+| 社交 | `chat_with` | 任意 | social_energy≥10 | social_energy-10；双向关系更新（陌生人破冰+2 / 其他+5）；双方各写一条 `source_type=conversation` 记忆 |
 | 工具 | `search_info` | 任意 | 无限制 | 调用 MCP 搜索 |
 | 节日 | `watch_fireworks` | shrine/coast | 樱花祭/夏日祭期间 | mood+10 |
 
@@ -224,6 +224,18 @@ async def execute_action(db: DB, redis: Redis, character_id: UUID, decision: Dec
     # 8. 后置触发（异步）
     await schedule_post_action_hooks(character_id, episode)
 ```
+
+### 3.5 多智能体交互：chat_with
+
+`chat_with` 是参数化 SOCIAL Action，`params.target_character_id` 指定对话对象。执行层（`CharacterTickEngine._handle_character_chat`）在状态变更前完成多智能体交互闭环：
+
+1. **同场景校验**：目标必须在 `nearby_characters`（同 `location`）中，否则降级为 `wait`，不阻塞 Tick；
+2. **LLM 对话生成**：基于双方性格、关系亲密程度、当前情绪与场景，生成一段简短对话（双方各一两句，60–200 字），不暴露 Action/system 等工程概念；
+3. **双向关系更新**：通过 `RelationGraph.update_on_interaction` 同步更新双方关系，陌生人破冰 `+2`，其他关系 `+5`；
+4. **双记忆持久化**：为发起方与对方各写入一条 `MemoryEpisode`（`source_type=conversation`，第一人称视角），让两人都"记得"这次对话；
+5. **对话回放**：生成的对话文本写入 `ActionRecord.result`，`related_characters` 记录对方 ID，供前端展示与关系溯源。
+
+> 对话生成失败时降级为 `wait`，关系/记忆写入失败不中断 Tick 主流程。同场景角色列表由 `GET /api/v1/characters/{id}/nearby` 提供（详见 [API 设计文档](api-spec.md)）。
 
 ---
 

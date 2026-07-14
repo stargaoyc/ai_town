@@ -195,10 +195,11 @@ ai-town/
 │   │   │   ├── tools/          # MCP 集成（含插件开关）
 │   │   │   ├── messaging/      # 消息服务（含主动分享）
 │   │   │   ├── adapters/       # 平台适配器（OneBot 等）
-│   │   │   ├── api/            # FastAPI 路由
+│   │   │   ├── api/            # FastAPI 路由（按资源拆分 11 模块 + 全局异常处理）
 │   │   │   ├── db/             # 数据访问层 (models / repositories / migrations)
 │   │   │   ├── observability/  # OTel 配置 / Prometheus 指标 / 日志端点
-│   │   │   └── main.py
+│   │   │   ├── runtime.py      # 运行时依赖容器（消除业务模块对 main.py 的反向依赖）
+│   │   │   └── main.py         # FastAPI 入口（lifespan + 路由聚合）
 │   │   ├── alembic/            # 数据库迁移脚本
 │   │   ├── prompts/            # 系统提示词（独立目录便于维护）
 │   │   ├── pyproject.toml

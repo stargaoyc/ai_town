@@ -27,6 +27,33 @@ class CharacterRepository(BaseRepository[Character]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_characters_by_location(
+        self,
+        location: str,
+        exclude_id: UUID | None = None,
+    ) -> list[tuple[Character, CharacterState]]:
+        """查询同一场景中的所有活跃角色（用于多智能体交互感知）
+
+        Args:
+            location: 场景 ID
+            exclude_id: 需排除的角色 ID（通常是感知方自己）
+
+        Returns:
+            [(Character, CharacterState), ...] 同场景其他角色列表
+        """
+        stmt = (
+            select(Character, CharacterState)
+            .join(CharacterState, CharacterState.character_id == Character.id)
+            .where(
+                Character.is_active.is_(True),
+                CharacterState.location == location,
+            )
+        )
+        if exclude_id is not None:
+            stmt = stmt.where(Character.id != exclude_id)
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
+
     async def get_character_with_state(self, character_id: UUID) -> tuple[Character, CharacterState] | None:
         """一次性获取角色档案与其实时状态（JOIN 查询）
 

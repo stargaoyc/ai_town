@@ -171,17 +171,23 @@ async def reset_world_time(
     if new_time:
         try:
             parsed = datetime.fromisoformat(new_time)
-            await redis.hset(TIME_KEY, mapping={  # type: ignore[arg-type]
-                "world_time": parsed.isoformat(),
-                "tick_id": "0",
-                "day_phase": compute_day_phase(parsed.hour),
-                "season": compute_season(parsed.month),
-            })
+            await redis.hset(
+                TIME_KEY,
+                mapping={  # type: ignore[arg-type]
+                    "world_time": parsed.isoformat(),
+                    "tick_id": "0",
+                    "day_phase": compute_day_phase(parsed.hour),
+                    "season": compute_season(parsed.month),
+                },
+            )
             # 同步到主哈希
-            await redis.hset("world:state", mapping={  # type: ignore[arg-type]
-                "world_time": parsed.isoformat(),
-                "tick_id": "0",
-            })
+            await redis.hset(
+                "world:state",
+                mapping={  # type: ignore[arg-type]
+                    "world_time": parsed.isoformat(),
+                    "tick_id": "0",
+                },
+            )
             logger.info("world_time_reset", old_time=old_time, new_time=parsed.isoformat(), source="api_specified")
             return {
                 "message": "World time reset successfully",
@@ -191,7 +197,9 @@ async def reset_world_time(
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail=f"Invalid time format: {new_time}") from None
 
-    logger.info("world_time_reset", old_time=old_time, new_time="(will reinitialize on next tick)", source="api_default")
+    logger.info(
+        "world_time_reset", old_time=old_time, new_time="(will reinitialize on next tick)", source="api_default"
+    )
     return {
         "message": "World time cleared. Will reinitialize on next tick using WORLD_INITIAL_TIME env or current date.",
         "old_time": old_time,
@@ -361,9 +369,7 @@ async def import_characters_batch(
 
     return {
         "message": f"批量导入完成: {len(characters)} 个角色",
-        "characters": [
-            {"id": str(c.id), "name": c.name} for c in characters
-        ],
+        "characters": [{"id": str(c.id), "name": c.name} for c in characters],
         "total": len(characters),
     }
 
@@ -525,11 +531,7 @@ async def get_world_snapshots(limit: int = 20):
         快照列表（按 tick_id 倒序）
     """
     async with db.session() as session:
-        stmt = (
-            select(WorldSnapshot)
-            .order_by(desc(WorldSnapshot.tick_id))
-            .limit(limit)
-        )
+        stmt = select(WorldSnapshot).order_by(desc(WorldSnapshot.tick_id)).limit(limit)
         result = await session.execute(stmt)
         snapshots = list(result.scalars())
 
@@ -717,9 +719,9 @@ async def get_detailed_metrics():
                     result["http"].setdefault("requests", {})
                     result["http"]["requests"].setdefault(path, {"total": 0, "by_status": {}})
                     result["http"]["requests"][path]["total"] += int(value)
-                    result["http"]["requests"][path]["by_status"][status] = (
-                        result["http"]["requests"][path]["by_status"].get(status, 0) + int(value)
-                    )
+                    result["http"]["requests"][path]["by_status"][status] = result["http"]["requests"][path][
+                        "by_status"
+                    ].get(status, 0) + int(value)
 
         # 转换 defaultdict 为普通 dict
         if "by_character" in result["characters"]:
@@ -728,15 +730,9 @@ async def get_detailed_metrics():
             result["characters"]["errors_by_character"] = dict(result["characters"]["errors_by_character"])
 
         # 计算汇总
-        result["characters"]["tick_total"] = sum(
-            result["characters"].get("by_character", {}).values()
-        )
-        result["llm"]["tokens_total"] = sum(
-            sum(t.values()) for t in result["llm"].get("tokens", {}).values()
-        )
-        result["llm"]["calls_total"] = sum(
-            sum(c.values()) for c in result["llm"].get("calls", {}).values()
-        )
+        result["characters"]["tick_total"] = sum(result["characters"].get("by_character", {}).values())
+        result["llm"]["tokens_total"] = sum(sum(t.values()) for t in result["llm"].get("tokens", {}).values())
+        result["llm"]["calls_total"] = sum(sum(c.values()) for c in result["llm"].get("calls", {}).values())
 
         return {"data": result}
     except Exception as e:
@@ -801,14 +797,16 @@ async def get_runtime_config():
     for key, typ in _RUNTIME_CONFIG_KEYS.items():
         default_val = getattr(settings, key, None)
         current_val = overrides.get(key, default_val)
-        result.append({
-            "key": key,
-            "label": _CONFIG_LABELS.get(key, key),
-            "type": typ.__name__,
-            "default": default_val,
-            "current": current_val,
-            "overridden": key in overrides,
-        })
+        result.append(
+            {
+                "key": key,
+                "label": _CONFIG_LABELS.get(key, key),
+                "type": typ.__name__,
+                "default": default_val,
+                "current": current_val,
+                "overridden": key in overrides,
+            }
+        )
 
     return {"data": result, "total": len(result)}
 

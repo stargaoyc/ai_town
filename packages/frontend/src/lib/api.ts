@@ -235,6 +235,12 @@ export const api = {
   getRelations: (characterId: string) =>
     request<{ data: RelationEntry[] }>(`/characters/${characterId}/relations`),
 
+  // 同场景其他角色（多智能体交互可见性）
+  getNearbyCharacters: (characterId: string) =>
+    request<{ data: NearbyCharacterEntry[]; total: number; location: string | null }>(
+      `/characters/${characterId}/nearby`,
+    ),
+
   // QQ 消息监控
   getOnebotMessages: (limit = 50) =>
     request<{ data: OnebotMessageEntry[]; total: number }>(`/admin/onebot/messages?limit=${limit}`),
@@ -449,7 +455,8 @@ export interface ActionEntry {
   action_name?: string;
   params?: Record<string, unknown>;
   reason?: string;
-  result?: Record<string, unknown> | null;
+  // result 可能是 JSON 对象（MCP 工具调用结果）或纯文本字符串（chat_with 对话内容）
+  result?: string | Record<string, unknown> | null;
   duration_minutes?: number;
   duration?: number;
   location?: string;
@@ -468,6 +475,17 @@ export interface RelationEntry {
   strength: number;
   last_interaction_at?: string;
   notes?: string;
+}
+
+export interface NearbyCharacterEntry {
+  id: string;
+  name: string;
+  personality: string;
+  mood?: string;
+  current_action_name?: string | null;
+  relationship_type: string;
+  strength: number;
+  location: string;
 }
 
 export interface OnebotMessageEntry {

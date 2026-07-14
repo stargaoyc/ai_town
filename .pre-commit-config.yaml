@@ -1,0 +1,60 @@
+# Pre-commit hooks 配置（纯本地，无需访问 GitHub）
+# 使用前先安装: pre-commit install
+# 手动运行: pre-commit run --all-files
+
+repos:
+  # ===== 后端: ruff lint + format =====
+  - repo: local
+    hooks:
+      - id: ruff-check-backend
+        name: ruff check (backend)
+        entry: uv run --project packages/backend ruff check --fix
+        language: system
+        files: ^packages/backend/(src|tests)/.*\.py$
+        pass_filenames: true
+
+      - id: ruff-format-backend
+        name: ruff format (backend)
+        entry: uv run --project packages/backend ruff format
+        language: system
+        files: ^packages/backend/(src|tests)/.*\.py$
+        pass_filenames: true
+
+  # ===== 前端: oxlint + oxfmt =====
+  - repo: local
+    hooks:
+      - id: oxlint-frontend
+        name: oxlint + oxfmt (frontend)
+        entry: pnpm --dir packages/frontend run lint
+        language: system
+        files: ^packages/frontend/src/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+  # ===== 前端: TypeScript 类型检查 =====
+  - repo: local
+    hooks:
+      - id: tsc-typecheck-frontend
+        name: tsc --noEmit (frontend)
+        entry: pnpm --dir packages/frontend run typecheck
+        language: system
+        files: ^packages/frontend/src/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  # ===== 通用: YAML 语法检查 =====
+  - repo: local
+    hooks:
+      - id: check-yaml
+        name: check-yaml
+        entry: python -c "import sys, yaml; [yaml.safe_load(open(f, encoding='utf-8')) for f in sys.argv[1:]]"
+        language: system
+        files: \.(yaml|yml)$
+        exclude: ^packages/frontend/.*$
+
+  # ===== 通用: 合并冲突标记检查 =====
+  - repo: local
+    hooks:
+      - id: check-merge-conflict
+        name: check-merge-conflict
+        entry: python -c "import sys; exit(1 if any(l.startswith('<<<<<<<') or l.startswith('>>>>>>>') for f in sys.argv[1:] for l in open(f,encoding='utf-8',errors='ignore')) else 0)"
+        language: system
+        pass_filenames: true

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, ChevronDown, Activity, Hash } from "lucide-react";
+import { Clock, ChevronDown, Activity, Hash, Users } from "lucide-react";
 import {
   GlassCard,
   PageHeader,
@@ -67,23 +67,35 @@ function ActionLogItem({
   actionName,
   duration,
   result,
+  reason,
+  relatedCharacters,
   createdAt,
 }: {
   actionId: string;
   actionName?: string;
   duration?: number;
-  result?: Record<string, unknown>;
+  // result 可能是 JSON 对象（MCP 工具结果）或纯文本字符串（chat_with 对话内容）
+  result?: string | Record<string, unknown>;
+  reason?: string;
+  relatedCharacters?: string[];
   createdAt: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasResult = result && Object.keys(result).length > 0;
+  // 判断 result 类型：string=对话文本；object=JSON 结果
+  const isStringResult = typeof result === "string";
+  const hasResult = isStringResult
+    ? (result as string).trim().length > 0
+    : result !== null &&
+      result !== undefined &&
+      Object.keys(result as Record<string, unknown>).length > 0;
   const colorClass = colorForActionId(actionId);
 
   // 判断结果状态：含 error/success 字段时显示徽章
   const resultStatus = (): "ok" | "error" | "idle" | null => {
-    if (!result) return null;
-    if (result.success === true) return "ok";
-    if (result.success === false || result.error) return "error";
+    if (!result || isStringResult) return null;
+    const r = result as Record<string, unknown>;
+    if (r.success === true) return "ok";
+    if (r.success === false || r.error) return "error";
     return null;
   };
   const status = resultStatus();
@@ -111,6 +123,30 @@ function ActionLogItem({
           </span>
         </div>
 
+        {/* 决策理由（LLM 自然语言说明） */}
+        {reason && (
+          <div className="text-sm text-twilight-600 leading-relaxed bg-white/30 rounded-lg px-3 py-2 border border-white/40">
+            <span className="text-xs text-twilight-400 mr-2">理由：</span>
+            {reason}
+          </div>
+        )}
+
+        {/* 相关角色（chat_with 等多智能体交互） */}
+        {relatedCharacters && relatedCharacters.length > 0 && (
+          <div className="flex items-center gap-2 text-xs text-twilight-500 flex-wrap">
+            <Users className="w-3.5 h-3.5 text-sakura-400" />
+            <span className="text-twilight-400">相关角色：</span>
+            {relatedCharacters.map((cid) => (
+              <span
+                key={cid}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sakura-50/60 border border-sakura-200/50 text-sakura-600 font-mono"
+              >
+                {cid.slice(0, 8)}…
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* 持续时间 */}
         {duration !== undefined && duration !== null && (
           <div className="flex items-center gap-2 text-xs text-twilight-400">
@@ -125,14 +161,16 @@ function ActionLogItem({
           </div>
         )}
 
-        {/* 结果 JSON（可折叠） */}
+        {/* 结果展示（可折叠）：对话文本 / JSON */}
         {hasResult && (
           <div className="rounded-xl bg-white/40 border border-white/40 overflow-hidden">
             <button
               onClick={() => setExpanded((v) => !v)}
               className="w-full flex items-center justify-between px-3 py-2 text-xs text-twilight-500 hover:bg-white/40 transition-colors"
             >
-              <span className="font-medium">结果详情（JSON）</span>
+              <span className="font-medium">
+                {isStringResult ? "对话内容" : "结果详情（JSON）"}
+              </span>
               <motion.span animate={{ rotate: expanded ? 180 : 0 }}>
                 <ChevronDown className="w-4 h-4" />
               </motion.span>
@@ -144,9 +182,9 @@ function ActionLogItem({
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="overflow-x-auto px-3 py-2 text-xs text-twilight-600 bg-sakura-50/40 font-mono leading-relaxed max-h-64"
+                  className="overflow-x-auto px-3 py-2 text-xs text-twilight-600 bg-sakura-50/40 font-mono leading-relaxed max-h-64 whitespace-pre-wrap"
                 >
-                  {JSON.stringify(result, null, 2)}
+                  {isStringResult ? (result as string) : JSON.stringify(result, null, 2)}
                 </motion.pre>
               )}
             </AnimatePresence>
@@ -235,6 +273,14 @@ function ActionsPage() {
                 : {})}
               {...(action.result !== undefined && action.result !== null
                 ? { result: action.result }
+                : {})}
+              {...(action.reason !== undefined && action.reason !== null
+                ? { reason: action.reason }
+                : {})}
+              {...(action.related_characters !== undefined &&
+              action.related_characters !== null &&
+              action.related_characters.length > 0
+                ? { relatedCharacters: action.related_characters }
                 : {})}
               createdAt={action.timestamp ?? action.created_at ?? ""}
             />

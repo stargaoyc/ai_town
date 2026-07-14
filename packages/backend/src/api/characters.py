@@ -357,6 +357,108 @@ async def get_character_relations(character_id: str):
     }
 
 
+@router.get("/characters/{character_id}/nearby")
+async def get_character_nearby(character_id: str):
+    """获取与该角色同场景的其他角色（多智能体交互可见性）
+
+    用于前端展示「当前场景中还有谁」，让用户感知到角色间的社交可能性。
+    返回数据含角色档案、当前动作、与查询角色的关系强度。
+
+    Args:
+        character_id: 角色 UUID
+
+    Returns:
+        {
+            "data": [
+                {
+                    "id": "...",
+                    "name": "...",
+                    "personality": "...",
+                    "mood": "...",
+                    "current_action_name": "...",
+                    "relationship_type": "...",
+                    "strength": 50,
+                    "location": "cafe"
+                }
+            ],
+            "total": N,
+            "location": "cafe"
+        }
+    """
+    redis = get_redis()
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis not connected")
+
+    try:
+        cid = UUID(character_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format") from None
+
+    # 读取当前位置（Redis 优先）
+    redis_state = await redis.hgetall(f"char:{cid}:state")
+    location = redis_state.get("location")
+    if isinstance(location, (bytes, bytearray)):
+        location = location.decode()
+    if not location:
+        # 降级到 PG
+        async with db.session() as session:
+            repo = CharacterRepository(session)
+            char_data = await repo.get_character_with_state(cid)
+        if char_data is None:
+            raise HTTPException(status_code=404, detail="Character not found")
+        _, state = char_data
+        location = state.location
+
+    if not location:
+        return {"data": [], "total": 0, "location": None}
+
+    # 查询同场景其他角色
+    async with db.session() as session:
+        repo = CharacterRepository(session)
+        others = await repo.get_characters_by_location(location=location, exclude_id=cid)
+
+        # 批量查关系（避免 N+1）
+        graph = RelationGraph(session, redis)
+        result_data = []
+        for other_char, other_state in others:
+            try:
+                rel = await graph.get_relation(cid, other_char.id)
+                rel_type = rel.relationship_type if rel else "stranger"
+                strength = rel.strength if rel else 0
+            except Exception:
+                rel_type = "stranger"
+                strength = 0
+
+            personality = (other_char.traits or {}).get("personality", [])
+            if isinstance(personality, list):
+                personality_text = "、".join(personality)
+            else:
+                personality_text = str(personality)
+
+            current_action_name = None
+            if other_state.current_action:
+                current_action_name = other_state.current_action.get("action_name")
+
+            result_data.append(
+                {
+                    "id": str(other_char.id),
+                    "name": other_char.name,
+                    "personality": personality_text,
+                    "mood": other_state.mood,
+                    "current_action_name": current_action_name,
+                    "relationship_type": rel_type,
+                    "strength": strength,
+                    "location": location,
+                }
+            )
+
+    return {
+        "data": result_data,
+        "total": len(result_data),
+        "location": location,
+    }
+
+
 @router.post("/characters/{character_id}/relations/{target_id}/interact")
 async def record_interaction(
     character_id: str,

@@ -126,7 +126,7 @@
 
 | 层 | 职责 | 关键组件 | 代码位置 |
 |----|------|----------|----------|
-| 用户接入层 | 多平台消息收发与协议适配 | `WebSocketManager`、`OneBotAdapter`、`LarkAdapter` | `src/messaging/websocket.py`、`src/adapters/` |
+| 用户接入层 | 多平台消息收发与协议适配 | `WebSocketManager`、`OneBotAdapter`、`LarkAdapter` | `src/api/`（REST 路由）、`src/messaging/websocket.py`、`src/adapters/` |
 | 消息服务层 | 消息标准化、会话上下文、回复生成、主动推送、群聊智能回复 | `MessageService`、`ProactiveSharingService`、`PromptGuard` | `src/messaging/` |
 | 世界引擎层 | 全局状态推进、角色行为闭环、多智能体调度、演化器链 | `WorldEngine`、`CharacterTickEngine`、`default_evolutions()` | `src/core/` |
 | Agent 能力层 | 记忆/反思/规划/决策/社交/MCP 工具 | `EpisodeService`、`ReflectionService`、`RetrievalService`、`ActionRegistry` | `src/memory/`、`src/actions/`、`src/modules/` |
@@ -1833,6 +1833,8 @@ shutdown 顺序（逆序）：
 6. world_engine.stop    释放 Leader 锁
 7. redis.close
 ```
+
+> **运行时依赖容器**：`lifespan` 初始化的实例通过 `src/runtime.py` 的 `set_*` 方法写入，业务模块通过 `get_redis()` / `get_llm()` / `get_registry()` 等 getter 读取，消除对 `main.py` 的反向依赖（避免 `from src.main import ...` 循环导入）。REST 路由按资源拆分到 `src/api/` 下 11 个模块，由 `main.py` 聚合 `include_router` 注册；全局异常处理器在 `src/api/exceptions.py` 统一错误响应格式并附带 `trace_id`。
 
 ---
 

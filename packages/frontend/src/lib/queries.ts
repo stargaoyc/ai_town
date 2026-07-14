@@ -133,6 +133,15 @@ export function useRelations(characterId: string) {
   });
 }
 
+export function useNearbyCharacters(characterId: string) {
+  return useQuery({
+    queryKey: ["nearbyCharacters", characterId],
+    queryFn: () => api.getNearbyCharacters(characterId),
+    enabled: !!characterId,
+    refetchInterval: 10000, // 10 秒刷新一次，实时感知场景变化
+  });
+}
+
 export function useStateHistory(characterId: string, limit = 50) {
   return useQuery({
     queryKey: ["stateHistory", characterId, limit],

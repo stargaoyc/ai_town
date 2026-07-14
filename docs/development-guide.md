@@ -82,12 +82,18 @@ packages/backend/src/
 ├── messaging/             # 消息服务
 │   ├── adapters/          # 平台适配器
 │   └── service.py
-├── api/                   # FastAPI 路由
-│   ├── characters.py
-│   ├── world.py
-│   ├── modules.py
-│   ├── conversations.py
-│   └── ...
+├── api/                   # FastAPI 路由（按资源拆分，由 main.py 聚合注册）
+│   ├── characters.py      # 角色管理（含 /nearby 同场景角色查询）
+│   ├── world.py           # 世界状态
+│   ├── town.py            # 小镇/场景
+│   ├── actions.py         # Action 查询
+│   ├── messages.py        # 会话与消息
+│   ├── memory.py          # 记忆扩展（日记 / Person Memory）
+│   ├── notifications.py   # 通知中心
+│   ├── mcp.py             # MCP Server 管理
+│   ├── system.py          # 系统设置
+│   ├── admin.py           # 运维端点（Tick / 快照 / 日志 / 指标）
+│   └── exceptions.py      # 全局异常处理器（统一错误响应 + trace_id）
 ├── db/                    # 数据访问层
 │   ├── session.py         # 异步会话工厂
 │   ├── base.py            # Declarative Base
@@ -96,7 +102,8 @@ packages/backend/src/
 │   └── migrations/        # alembic 迁移
 ├── observability/         # OTel/Langfuse 配置
 ├── config.py              # 配置加载
-└── main.py                # FastAPI 入口
+├── runtime.py             # 运行时依赖容器（消除业务模块对 main.py 的反向依赖）
+└── main.py                # FastAPI 入口（lifespan + 路由聚合）
 ```
 
 ---
@@ -347,9 +354,17 @@ async def list_items(db: DB = Depends(get_db)):
     async with db.session() as s:
         ...
     return {"items": [...]}
-
-# api/__init__.py 中注册 router
 ```
+
+在 `main.py` 中导入并注册 router（路由按资源拆分到 `src/api/` 下各模块，由 `main.py` 聚合）：
+
+```python
+# main.py
+from src.api.my_resource import router as my_resource_router
+app.include_router(my_resource_router)
+```
+
+> 全局异常处理器已在 `src/api/exceptions.py` 注册（`register_exception_handlers(app)`），统一错误响应格式并附带 `trace_id`，新端点无需重复处理。
 
 ---
 

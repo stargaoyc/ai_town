@@ -34,8 +34,8 @@ router = APIRouter(prefix="/api/v1", tags=["messages"])
 async def send_message(
     character_id: Annotated[str, Body(...)],
     user_id: Annotated[str, Body(...)],
-    platform: Annotated[str, Body("web")],
-    content: Annotated[str, Body("")],
+    platform: str = "web",
+    content: str = "",
 ):
     """发送消息给角色并获取回复
 

@@ -319,7 +319,7 @@ mcp:
                          │ PUT /api/v1/mcp/servers/{name}/enabled
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│  后端 (main.py)                                          │
+│  后端 (src/api/mcp.py)                                   │
 │  ┌──────────────────────────────────────────────────┐    │
 │  │  PUT /api/v1/mcp/servers/{server_name}/enabled   │    │
 │  │  → redis.hset("mcp:enabled", server_name, bool)  │    │
@@ -360,14 +360,14 @@ mcp:
 | 文件 | 函数/方法 | 说明 |
 |------|-----------|------|
 | `src/mcp/client.py` | `MCP_ENABLED_KEY = "mcp:enabled"` | Redis hash key 常量 |
-| `src/mcp/client.py` | `_get_redis()` | 延迟导入全局 Redis 客户端（`from src.main import redis`） |
+| `src/mcp/client.py` | `_get_redis()` | 延迟导入全局 Redis 客户端（`from src.runtime import get_redis`） |
 | `src/mcp/client.py` | `get_enabled_servers()` | 读取 Redis hash，返回启用的 Server 集合（未配置时默认全部启用） |
 | `src/mcp/client.py` | `is_server_enabled(name)` | 检查单个 Server 是否启用 |
 | `src/mcp/client.py` | `async list_tools()` | 异步方法，过滤禁用 Server 的工具 |
 | `src/mcp/client.py` | `async format_tools_for_prompt()` | 异步方法，仅注入已启用工具到 LLM Prompt |
 | `src/mcp/client.py` | `async call_tool(name, params)` | 调用前检查启用状态，禁用则抛 `RuntimeError` |
-| `src/main.py` | `PUT /api/v1/mcp/servers/{server_name}/enabled` | 切换开关的 API 端点 |
-| `src/main.py` | `list_mcp_servers()` | 响应中包含 `enabled` 字段 |
+| `src/api/mcp.py` | `PUT /api/v1/mcp/servers/{server_name}/enabled` | 切换开关的 API 端点 |
+| `src/api/mcp.py` | `list_mcp_servers()` | 响应中包含 `enabled` 字段 |
 | `packages/frontend/src/routes/settings.tsx` | MCP 服务器卡片 toggle | 前端 toggle 控件（sakura 色主题） |
 | `packages/frontend/src/lib/api.ts` | `toggleMcpServer(name, enabled)` | 前端 API 调用方法 |
 | `packages/frontend/src/lib/queries.ts` | `useToggleMcpServer` | TanStack Query mutation hook |

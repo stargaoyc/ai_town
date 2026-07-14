@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Send, RotateCw, MessageCircle, Brain } from "lucide-react";
+import { ArrowLeft, Send, RotateCw, MessageCircle, Brain, Users } from "lucide-react";
 import {
   GlassCard,
   LoadingSpinner,
@@ -12,7 +12,13 @@ import {
   AnimeButton,
   AnimeInput,
 } from "@/components/ui";
-import { useCharacter, useMemories, useMessages, useSendMessage } from "@/lib/queries";
+import {
+  useCharacter,
+  useMemories,
+  useMessages,
+  useSendMessage,
+  useNearbyCharacters,
+} from "@/lib/queries";
 import type { Message } from "@/lib/api";
 
 export const Route = createFileRoute("/characters/$characterId")({
@@ -42,6 +48,7 @@ function CharacterDetailPage() {
   const { data: character, isLoading, error } = useCharacter(characterId);
   const { data: memoriesData } = useMemories(characterId);
   const { data: messagesData } = useMessages(characterId);
+  const { data: nearbyData } = useNearbyCharacters(characterId);
   const sendMessage = useSendMessage();
   const [input, setInput] = useState("");
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
@@ -188,6 +195,60 @@ function CharacterDetailPage() {
                 </div>
                 <ProgressBar value={state.phone_battery} color="sakura" />
               </div>
+            </div>
+          </GlassCard>
+        </motion.div>
+      )}
+
+      {/* 同场景其他角色（多智能体交互可见性） */}
+      {nearbyData && nearbyData.data.length > 0 && (
+        <motion.div variants={item}>
+          <GlassCard>
+            <h3 className="font-semibold text-sakura-600 mb-3 flex items-center gap-2 text-lg">
+              <Users className="w-5 h-5" /> 场景中的其他角色
+              <span className="text-xs text-twilight-400 font-normal ml-2">
+                共 {nearbyData.total} 人 · 位置：{nearbyData.location ?? "未知"}
+              </span>
+            </h3>
+            <p className="text-xs text-twilight-400 mb-3">
+              他们可能在下一个 Tick 互相发起对话，关系强度会随交流增加
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {nearbyData.data.map((n) => (
+                <div
+                  key={n.id}
+                  className="rounded-xl bg-white/40 border border-white/40 p-3 hover:bg-white/60 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <Link
+                      to="/characters/$characterId"
+                      params={{ characterId: n.id }}
+                      className="text-sm font-semibold text-twilight-600 hover:text-sakura-600 transition-colors"
+                    >
+                      {n.name}
+                    </Link>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-sakura-50/60 border border-sakura-200/50 text-sakura-600">
+                      {n.relationship_type}
+                    </span>
+                  </div>
+                  <div className="text-xs text-twilight-400 mb-2 line-clamp-1">
+                    性格：{n.personality || "未知"}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-twilight-400">
+                    {n.current_action_name && (
+                      <span className="text-twilight-500">正在：{n.current_action_name}</span>
+                    )}
+                    {n.mood && <span>· 情绪：{n.mood}</span>}
+                  </div>
+                  <div className="mt-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-twilight-400">关系强度</span>
+                      <span className="text-sakura-600 font-medium">{n.strength}/100</span>
+                    </div>
+                    <ProgressBar value={n.strength} color="sakura" />
+                  </div>
+                </div>
+              ))}
             </div>
           </GlassCard>
         </motion.div>
