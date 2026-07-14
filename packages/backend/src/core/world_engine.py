@@ -89,6 +89,10 @@ class WorldEngine:
         except Exception as e:
             logger.warning("world_engine_tick_id_restore_failed", error=str(e))
 
+        # 立即同步 Gauge 指标（避免重启后指标面板显示 #0）
+        WORLD_TICK_ID.set(self.tick_id)
+        REDIS_CONNECTED.set(1)
+
         logger.info("world_engine_starting", tick_id=self.tick_id)
         self._leader_task = asyncio.create_task(self._leader_loop())
         self._tick_task = asyncio.create_task(self._tick_loop())

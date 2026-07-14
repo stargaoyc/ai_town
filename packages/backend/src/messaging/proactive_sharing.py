@@ -36,6 +36,7 @@ from src.db.repositories import (
     MessageRepository,
 )
 from src.llm import LLMClient, PromptTemplates
+from src.llm.prompts import SAFETY_SYSTEM_PROMPT
 
 logger = get_logger(__name__)
 
@@ -381,7 +382,7 @@ class ProactiveSharingService:
         )
 
         try:
-            content = await self.llm.chat(prompt, model="chat")
+            content = await self.llm.chat(prompt, model="chat", system_prompt=SAFETY_SYSTEM_PROMPT)
             # 清理可能的引号包裹
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
@@ -425,7 +426,7 @@ class ProactiveSharingService:
         )
 
         try:
-            content = await self.llm.chat(prompt, model="chat")
+            content = await self.llm.chat(prompt, model="chat", system_prompt=SAFETY_SYSTEM_PROMPT)
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
                 return None

@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # World Engine
     world_tick_seconds: int = 30
-    world_tick_minutes: int = 10
+    world_tick_minutes: float = 10.0
     world_initial_time: str = ""  # 虚拟世界初始时间（ISO 格式，如 "2026-07-01T08:00:00"）；留空则使用当前现实日期 08:00
     world_weather_interval: int = 60
     world_snapshot_interval: int = 10  # 每 N Tick 持久化差分事件到 world_events（降低以让前端事件时间线更快有数据）

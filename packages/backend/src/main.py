@@ -130,6 +130,13 @@ async def lifespan(app: FastAPI):
 
     logger.info("ai_town_backend_starting")
 
+    # 安全检查：默认密码警告
+    if settings.admin_password == "admin123":
+        logger.warning(
+            "insecure_default_password",
+            message="ADMIN_PASSWORD 仍为默认值 'admin123'，请在 .env 中修改为强密码",
+        )
+
     # 同步全局实例到 runtime 容器
     runtime.set_ws_manager(ws_manager)
     runtime.set_onebot_adapter(onebot_adapter)

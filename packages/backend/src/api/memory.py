@@ -145,7 +145,7 @@ async def list_person_memories(
             """),
             {"cid": str(cid), "limit": limit},
         )
-        rows = [dict(r) for r in result]
+        rows = [dict(r._mapping) for r in result]
 
     # 序列化
     for r in rows:

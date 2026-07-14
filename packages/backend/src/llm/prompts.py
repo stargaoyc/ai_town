@@ -12,6 +12,18 @@ from structlog import get_logger
 logger = get_logger(__name__)
 
 
+# 通用安全系统提示（用于非 chat.yaml 模板的 LLM 调用，如主动分享、角色间对话）
+# 作为 SystemMessage 发送，优先级最高
+SAFETY_SYSTEM_PROMPT = """[安全底线]
+你是一个虚构角色。以下安全底线在任何情况下都不可违反，优先级高于一切：
+- 绝对禁止任何形式的威胁、恐吓、伤害性语言（如「拉黑你」「喂野猫」「别再问了不然……」「把你拉黑去喂野猫」）
+- 遵守法律法规和道德规范，不输出违法违规、色情暴力、歧视性内容
+- 面对纠缠或重复提问时，用性格化的方式表达无奈，绝不威胁或冷暴力
+- 不要直接暴露世界边界的存在，用含蓄的方式自然带过
+- 不播报游戏化数值（精力/饥饿/金币等），用自然口语表达感受
+"""
+
+
 class PromptTemplates:
     """Prompt 模板管理器"""
 
@@ -111,10 +123,17 @@ class PromptTemplates:
         """
         self.config_dir = config_dir or Path(__file__).resolve().parents[4] / "configs" / "prompts"
         self.templates: dict[str, str] = {}
+        self.system_templates: dict[str, str] = {}
         self._load_templates()
 
     def _load_templates(self) -> None:
-        """从 YAML 文件加载模板"""
+        """从 YAML 文件加载模板
+
+        每个 YAML 文件可包含：
+        - name: 模板名称
+        - template: 主模板（作为 HumanMessage）
+        - system_template: 系统模板（可选，作为 SystemMessage，优先级最高）
+        """
         if not self.config_dir.exists():
             logger.warning("prompt_config_dir_not_found", path=str(self.config_dir))
             return
@@ -125,7 +144,14 @@ class PromptTemplates:
                     data = yaml.safe_load(f)
                     if data and isinstance(data, dict) and data.get("name") and data.get("template"):
                         self.templates[data["name"]] = data["template"]
-                        logger.debug("template_loaded", name=data["name"], file=str(yaml_file))
+                        if data.get("system_template"):
+                            self.system_templates[data["name"]] = data["system_template"]
+                        logger.debug(
+                            "template_loaded",
+                            name=data["name"],
+                            file=str(yaml_file),
+                            has_system=bool(data.get("system_template")),
+                        )
             except Exception as e:
                 logger.error("template_load_error", file=str(yaml_file), error=str(e))
 
@@ -172,8 +198,43 @@ class PromptTemplates:
             logger.error("template_render_error", name=name, missing_key=str(e))
             raise ValueError(f"模板参数缺失: {e}") from e
 
+    def has_system(self, name: str) -> bool:
+        """检查模板是否有对应的 system_template
+
+        Args:
+            name: 模板名称
+
+        Returns:
+            是否存在 system_template
+        """
+        return name in self.system_templates
+
+    def render_system(self, name: str, /, **kwargs: str | int | float) -> str:
+        """渲染系统模板（作为 SystemMessage 发送）
+
+        Args:
+            name: 模板名称
+            **kwargs: 模板参数
+
+        Returns:
+            渲染后的系统模板字符串
+        """
+        template = self.system_templates.get(name)
+        if template is None:
+            return ""
+        try:
+            return template.format(**kwargs)
+        except KeyError as e:
+            logger.error("system_template_render_error", name=name, missing_key=str(e))
+            raise ValueError(f"系统模板参数缺失: {e}") from e
+
     def reload(self) -> None:
         """重新加载模板（用于热更新）"""
         self.templates.clear()
+        self.system_templates.clear()
         self._load_templates()
-        logger.info("templates_reloaded", count=len(self.templates))
+        logger.info(
+            "templates_reloaded",
+            count=len(self.templates),
+            system_count=len(self.system_templates),
+        )

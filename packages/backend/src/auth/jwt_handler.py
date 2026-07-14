@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 from jose import JWTError, jwt
@@ -49,6 +50,7 @@ class JWTHandler:
             "iat": now,
             "exp": now + timedelta(hours=self.expire_hours),
             "role": _resolve_role(user_id),
+            "jti": uuid4().hex,
         }
         if claims:
             payload.update(claims)

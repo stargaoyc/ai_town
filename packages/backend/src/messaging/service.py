@@ -549,6 +549,10 @@ class MessageService:
         try:
             # 构建安全 prompt（用户消息用分隔符包裹，防止角色覆盖）
             safe_user_message = _prompt_guard.wrap_user_message(user_message)
+            # 渲染 SystemMessage（安全底线+硬约束，优先级最高）
+            system_prompt: str | None = None
+            if self.prompts.has_system("chat"):
+                system_prompt = self.prompts.render_system("chat", **context)
             prompt = self.prompts.render(
                 "chat",
                 **context,
@@ -568,7 +572,7 @@ class MessageService:
                     logger.warning("budget_exceeded", character_id=str(character.id))
                     return DEFAULT_ERROR_REPLY, 0, 0.0, "budget_exceeded"
 
-            response = await self.llm.chat(prompt, model="chat")
+            response = await self.llm.chat(prompt, model="chat", system_prompt=system_prompt)
 
             # chat.yaml 要求 LLM 输出 JSON：{"response", "emotion", "action"}
             # 这里容错解析：优先提取 JSON 中的 response 字段；解析失败则直接使用原文

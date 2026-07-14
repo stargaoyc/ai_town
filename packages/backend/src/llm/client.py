@@ -15,7 +15,7 @@ import time
 from typing import Any
 
 import httpx
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 from pydantic import BaseModel, create_model
@@ -151,12 +151,14 @@ class LLMClient:
 
     # === Chat（agnes-2.0-flash：对话+图像理解）===
 
-    async def chat(self, prompt: str, model: str = "chat") -> str:
+    async def chat(self, prompt: str, model: str = "chat", system_prompt: str | None = None) -> str:
         """简单对话（用于快速回复）
 
         Args:
-            prompt: 输入提示
+            prompt: 输入提示（作为 HumanMessage）
             model: 模型类型（仅 chat 有效，strong/flash 已废弃）
+            system_prompt: 系统提示（可选，作为 SystemMessage 发送，优先级最高，
+                用于安全约束等硬规则）
 
         Returns:
             模型回复内容
@@ -166,7 +168,16 @@ class LLMClient:
 
         start_perf = time.perf_counter()
         try:
-            response = await self.chat_llm.ainvoke(prompt)
+            # 当提供 system_prompt 时，使用 [SystemMessage, HumanMessage] 列表调用
+            # SystemMessage 中的安全约束优先级最高，LLM 必须遵守
+            if system_prompt:
+                messages: list[BaseMessage] = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prompt),
+                ]
+                response = await self.chat_llm.ainvoke(messages)
+            else:
+                response = await self.chat_llm.ainvoke(prompt)
             content = response.content
             logger.debug("chat_completed", model="chat", response_length=len(content))
             elapsed = time.perf_counter() - start_perf

@@ -34,6 +34,7 @@ from src.db.repositories import (
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
+from src.llm.prompts import SAFETY_SYSTEM_PROMPT
 from src.memory import EpisodeService, ReflectionService, RetrievalService
 
 logger = get_logger(__name__)
@@ -805,7 +806,7 @@ class CharacterTickEngine:
         )
 
         try:
-            dialogue = await self.llm.chat(prompt, model="chat")
+            dialogue = await self.llm.chat(prompt, model="chat", system_prompt=SAFETY_SYSTEM_PROMPT)
             dialogue = dialogue.strip()
             if len(dialogue) < 5:
                 return None
