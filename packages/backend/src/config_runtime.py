@@ -217,8 +217,8 @@ async def reset_runtime_config(
     config = get_runtime_config()
     merged = config.model_dump()
 
-    # 从 Settings 默认值中读取
-    default_val = getattr(Settings(), key, RuntimeConfig.model_fields[key].default)
+    # 从 Settings 默认值中读取（Settings 是 pydantic-settings，从 .env 读取必填字段）
+    default_val = getattr(Settings(), key, RuntimeConfig.model_fields[key].default)  # type: ignore[call-arg]
     merged[key] = default_val
 
     # 校验

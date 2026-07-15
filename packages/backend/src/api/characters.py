@@ -396,9 +396,14 @@ async def get_character_nearby(character_id: str):
 
     # 读取当前位置（Redis 优先）
     redis_state = await redis.hgetall(f"char:{cid}:state")
-    location = redis_state.get("location")
-    if isinstance(location, (bytes, bytearray)):
-        location = location.decode()
+    raw_location = redis_state.get("location")
+    location: str | None = None
+    if isinstance(raw_location, str):
+        location = raw_location
+    elif isinstance(raw_location, (bytes, bytearray)):
+        location = raw_location.decode("utf-8")
+    elif isinstance(raw_location, memoryview):
+        location = raw_location.tobytes().decode("utf-8")
     if not location:
         # 降级到 PG
         async with db.session() as session:

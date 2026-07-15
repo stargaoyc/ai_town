@@ -803,6 +803,23 @@ async def get_detailed_metrics():
         result["llm"]["tokens_total"] = sum(sum(t.values()) for t in result["llm"].get("tokens", {}).values())
         result["llm"]["calls_total"] = sum(sum(c.values()) for c in result["llm"].get("calls", {}).values())
 
+        # Redis 兜底：Prometheus Counter 重启后归零，从 Redis 读取真实 tick_id
+        # 避免 monitoring 页面重启后显示 #0
+        redis = get_redis()
+        if redis:
+            try:
+                redis_tick_id = await redis.hget("world:state", "tick_id")
+                if redis_tick_id:
+                    redis_tick_int = int(redis_tick_id)
+                    # 如果 Prometheus gauge 为 0 但 Redis 有值，用 Redis 值
+                    if not result["world"].get("current_tick_id") or result["world"]["current_tick_id"] == 0:
+                        result["world"]["current_tick_id"] = redis_tick_int
+                    # tick_total 也用 Redis tick_id 作为下限（至少跑了这么多 Tick）
+                    if not result["world"].get("tick_total") or result["world"]["tick_total"] == 0:
+                        result["world"]["tick_total"] = redis_tick_int
+            except Exception:
+                pass
+
         return {"data": result}
     except Exception as e:
         raise HTTPException(500, f"Failed to parse metrics: {e}") from e

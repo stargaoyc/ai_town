@@ -91,7 +91,13 @@ async def get_enabled_servers() -> set[str]:
         raw = await r.hgetall(MCP_ENABLED_KEY)
         if not raw:
             return {cfg["name"] for cfg in MCP_SERVERS}
-        return {name for name, enabled in raw.items() if str(enabled).lower() in ("true", "1", "yes")}
+        result: set[str] = set()
+        for name, enabled in raw.items():
+            name_str = name.decode("utf-8") if isinstance(name, (bytes, bytearray)) else str(name)
+            enabled_str = enabled.decode("utf-8") if isinstance(enabled, (bytes, bytearray)) else str(enabled)
+            if enabled_str.lower() in ("true", "1", "yes"):
+                result.add(name_str)
+        return result
     except Exception:
         logger.warning("mcp_enabled_read_failed", exc_info=True)
         return {cfg["name"] for cfg in MCP_SERVERS}

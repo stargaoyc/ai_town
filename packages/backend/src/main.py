@@ -306,7 +306,9 @@ async def lifespan(app: FastAPI):
 
     # 5.6 启动时同步活跃角色数指标（避免重启后指标面板显示 0）
     try:
-        async with db.session() as session:
+        from src.db.session import db as _db
+
+        async with _db.session() as session:
             repo = CharacterRepository(session)
             active_chars = await repo.get_active_characters()
         from src.observability.metrics import ACTIVE_CHARACTERS
