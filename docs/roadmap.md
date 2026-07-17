@@ -90,7 +90,7 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 | Character Tick 五阶段闭环          | ✅   | 感知→过滤→决策→执行→记忆 |
 | ActionRegistry + 10+ Action        | ✅   | move/life/work/social    |
 | 记忆系统 + pgvector                | ✅   | HNSW 检索可用            |
-| LangChain 1.3 + LangGraph 1.2 集成 | ✅   | LLM 决策可用             |
+| LangChain 1.3 + LLM 集成           | ✅   | LLM 决策可用             |
 
 ---
 

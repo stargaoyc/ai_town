@@ -598,7 +598,7 @@ async def _diary_scheduler_loop() -> None:
 # === FastAPI 应用实例 ===
 app = FastAPI(
     title="AI Town Backend",
-    description="二次元 AI 小镇陪伴智能体 - World Engine + LangGraph",
+    description="二次元 AI 小镇陪伴智能体 - World Engine + LLM",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -642,8 +642,6 @@ class AuthMiddleware:
         "/api/v1/admin/metrics-detail",
         "/api/v1/admin/logs",
         "/api/v1/admin/config",
-        "/api/v1/mcp/servers",
-        "/api/v1/mcp/tools",
         "/api/v1/modules",
     )
 

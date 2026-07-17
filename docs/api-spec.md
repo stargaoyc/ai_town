@@ -216,7 +216,7 @@ Content-Type: application/json
 }
 ```
 
-> `type` 可选 `tools`（进程内本地工具，对应 `src/tools/`）/ `local` / `skill`。原 `mcp` 类型已于 2026-07-15 转换为 `tools`，不再有 `mcp_server_url` 字段。
+> `type` 可选 `tools`（进程内本地工具，对应 `src/tools/`）/ `local` / `skill`。
 
 #### 启用模块
 

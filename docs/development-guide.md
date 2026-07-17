@@ -9,7 +9,7 @@
 | 工具       | 版本  | 说明                                         |
 | ---------- | ----- | -------------------------------------------- |
 | Python     | 3.13+ | 后端                                         |
-| uv         | 最新  | Python 包管理（替代 Poetry）                 |
+| uv         | 最新  | Python 包管理                 |
 | Node.js    | 22+   | 前端                                         |
 | pnpm       | 11+   | 前端包管理                                   |
 | PostgreSQL | 17+   | 需启用 `pg_uuidv7`、`vector`、`pg_trgm` 扩展 |
@@ -51,7 +51,7 @@ pnpm dev                          # 启动 Vite 开发服务器
 
 ### 2.4 本地工具（无需单独启动）
 
-工具已内联到后端进程（`src/tools/`），随后端启动自动加载，无需单独运行 MCP Server 容器。工具按命名空间组织（shop / knowledge / social / world / self_info），通过 Redis hash `tools:enabled` 控制启用状态。
+工具已内联到后端进程（`src/tools/`），随后端启动自动加载。工具按命名空间组织（shop / knowledge / social / world / self_info），通过 Redis hash `tools:enabled` 控制启用状态。
 
 ---
 
@@ -68,16 +68,16 @@ packages/backend/src/
 │       ├── life.py
 │       ├── work.py
 │       └── social.py
-├── agents/                # LangGraph 角色实现
+├── agents/                # LangChain 角色实现
 ├── memory/                # 记忆/反思/规划服务
 ├── modules/               # 模块管理器
-├── tools/                 # 本地工具（进程内 async 函数，替代原 MCP Server）
+├── tools/                 # 本地工具（进程内 async 函数）
 │   ├── shop.py            # 商店工具（list_items / buy_item / sell_item ...）
 │   ├── knowledge.py       # 小镇设定库查询
 │   ├── social.py          # 角色社交（送礼 / 约会 / 冲突）
 │   ├── world.py           # 只读世界查询（场景 / 角色 / 天气）
 │   ├── self_info.py       # 只读自省（关系 / 记忆搜索）
-│   └── registry.py        # ToolRegistry（替代 MCPClient）
+│   └── registry.py        # ToolRegistry
 ├── messaging/             # 消息服务
 │   ├── adapters/          # 平台适配器
 │   └── service.py

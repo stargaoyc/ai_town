@@ -101,9 +101,8 @@
 
 | 包 | 路径 | 包管理 | 说明 |
 |----|------|--------|------|
-| 后端 | `packages/backend/` | uv (Python 3.13+) | FastAPI + LangGraph + SQLAlchemy + Redis |
+| 后端 | `packages/backend/` | uv (Python 3.13+) | FastAPI + LangChain + SQLAlchemy + Redis |
 | 前端 | `packages/frontend/` | pnpm | React 19 + TanStack Router + Vite |
-| MCP 服务器 | `packages/mcp-servers/` | uv (每个独立) | character-social / code-executor / knowledge-base / shop-simulator / weather / web-search |
 
 ### 3.2 各包职责
 
@@ -111,7 +110,6 @@
 |----|------|------|
 | `backend` | 世界引擎、角色 Tick、消息服务、API、可观测性 | 在 API 层写业务逻辑 |
 | `frontend` | Web Dashboard、监控页面、角色管理界面 | 在前端写业务规则 |
-| `mcp-servers` | MCP 工具服务器（社交/代码执行/知识库/商店/天气/搜索） | 在 MCP 服务器里写核心业务 |
 
 ### 3.3 Prompt 维护位置
 
@@ -208,15 +206,7 @@ pnpm run lint              # oxlint 检查
 pnpm run typecheck         # TypeScript 类型检查
 ```
 
-### 5.3 MCP 服务器（若修改）
-
-```bash
-cd packages/mcp-servers/{name}
-uv run ruff check
-uv run pytest
-```
-
-### 5.4 完整验证（提交前）
+### 5.3 完整验证（提交前）
 
 ```bash
 # 后端

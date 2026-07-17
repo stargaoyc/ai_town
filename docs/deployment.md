@@ -21,7 +21,7 @@
            │                             │
 ┌──────────▼──────────┐     ┌────────────▼──────────────┐
 │   前端 (Vite build) │     │     后端 (FastAPI)         │
-│   静态文件/CDN      │     │   World Engine + LangGraph │
+│   静态文件/CDN      │     │   World Engine + LangChain │
 └─────────────────────┘     │   本地工具（ToolRegistry） │
                             └────────────┬──────────────┘
                                          │
@@ -33,7 +33,7 @@
            └─────────────────┘  └─────────────────┘
 ```
 
-> 工具已内联到后端进程（`src/tools/`），不再独立部署 MCP Server 容器。工具启用状态存储在 Redis hash `tools:enabled`。
+> 工具已内联到后端进程（`src/tools/`）。工具启用状态存储在 Redis hash `tools:enabled`。
 
 ### 组件清单
 

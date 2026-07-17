@@ -620,7 +620,7 @@ cd aitown
 ```
 aitown/
 ├── packages/                    # 所有可运行的代码包
-│   ├── backend/                 # Python 后端（FastAPI + LangGraph）
+│   ├── backend/                 # Python 后端（FastAPI + LangChain）
 │   │   ├── src/
 │   │   │   ├── core/            # 核心引擎
 │   │   │   │   ├── world_engine.py       # World Tick 主循环
@@ -733,7 +733,7 @@ uv sync
 1. 检测 `pyproject.toml` 中的 Python 版本要求（`>=3.13`）
 2. 如果系统没有 3.13，uv 会自动下载对应版本的 Python
 3. 创建一个虚拟环境（`.venv/` 目录）
-4. 解析 `pyproject.toml` 中的所有依赖（FastAPI、SQLAlchemy、LangGraph……）
+4. 解析 `pyproject.toml` 中的所有依赖（FastAPI、SQLAlchemy、LangChain……）
 5. 下载并安装所有依赖到虚拟环境
 6. 生成/更新 `uv.lock` 锁文件（确保依赖版本可复现）
 

@@ -120,7 +120,7 @@ AI Town 由三个相互独立但协同的循环驱动：
 | LLM 追踪 | Langfuse | 3.x | LLM 专用 Trace（prompt/completion/cost） |
 | 链路追踪 | OpenTelemetry | 1.28+ | 分布式 Trace（OTLP → Jaeger） |
 | 日志聚合 | Loki | 3.0.0 | 结构化日志存储（通过 Alloy 采集） |
-| 包管理 | uv | 最新 | 替代 Poetry/Pip（monorepo） |
+| 包管理 | uv | 最新 | Python 包管理 |
 | 测试 | pytest | 最新 | 单元 + 集成测试（251 项） |
 | Lint | ruff | 最新 | 代码规范（替代 flake8/isort） |
 | 类型 | mypy | strict | 静态类型检查（strict 模式） |
@@ -162,7 +162,7 @@ aitown/
 │   │   │   ├── api/      # FastAPI 路由层
 │   │   │   ├── core/     # 核心引擎（world / character）
 │   │   │   ├── actions/  # Action 系统
-│   │   │   ├── tools/    # 本地工具系统（替代原 MCP）
+│   │   │   ├── tools/    # 本地工具系统
 │   │   │   ├── memory/   # 记忆服务（embedding / reflection / diary）
 │   │   │   ├── messaging/# 消息服务（WebSocket / OneBot）
 │   │   │   ├── adapters/ # 适配器（OneBot）
@@ -175,7 +175,6 @@ aitown/
 │   │   ├── alembic/versions/ # 迁移脚本（0001 ~ 0008）
 │   │   └── tests/        # 测试
 │   ├── frontend/         # 前端（pnpm 管理）
-│   └── mcp-servers/      # 原 MCP 服务器（已废弃，工具已迁移到 src/tools/）
 ├── configs/
 │   ├── characters/       # 角色卡 YAML（24 个角色）
 │   ├── prompts/          # Prompt 模板 YAML

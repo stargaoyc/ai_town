@@ -30,7 +30,7 @@
 | JWT 安全增强         | P2     | ✅ 部分完成 | 新增 jti claim 支持黑名单；默认密码启动警告；refresh_token 待实现                                                                                             |
 | .env.example 同步    | P1     | ✅ 已完成   | OTEL_ENDPOINT 修正、时间对齐文档、world_tick_minutes 支持 float                                                                                               |
 | 角色导入冲突更新     | P1     | ✅ 已完成   | 同名角色导入改为 update_from_dict（保留历史数据），不再返回 409                                                                                               |
-| langgraph 清理       | P2     | ✅ 已完成   | 从 pyproject.toml 移除直接依赖（作为 langchain 传递依赖保留）                                                                                                 |
+| langchain 清理       | P2     | ✅ 已完成   | 从 pyproject.toml 移除直接依赖（作为 langchain 传递依赖保留）                                                                                                 |
 | MCP 改进分析         | P2     | ✅ 已完成   | `docs/mcp-improvement-analysis.md` 213 行分析文档，含工具归属判断和迁移路径                                                                                   |
 | WORLD_TICK_ID 修复   | P1     | ✅ 已完成   | 启动时同步 Gauge 指标，避免重启后指标面板显示 #0                                                                                                              |
 | CONTRIBUTING.md      | P0     | ❌ 未完成   |                                                                                                                                                               |
@@ -971,7 +971,7 @@ const MODEL_SOURCE_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
 | 路由组织         | ✅ 541 行 + 11 个路由模块                               | 分包路由                       | 已消除        | P1         | ✅   |
 | 记忆系统         | Episode + Reflection                                    | + Person Memory + Diary + Heat | 中            | P2         | ❌   |
 | Prompt 管理      | ✅ YAML 外置 + 人设分层                                 | 集中在 `utils/src/prompt/`     | 已消除        | P1         | ✅   |
-| LLM 工具系统     | ✅ ToolRegistry + 16 本地工具（5 命名空间）+ ReAct 循环  | 标准化工具封装                 | 已消除        | P2         | ✅   |
+| LLM 工具系统     | MCP Server 分散                                         | 标准化工具封装                 | 中            | P2         | ❌   |
 | 多模型备用源     | 单一 endpoint                                           | 多源 + 冷却切换                | 高            | P1         | ❌   |
 | 日记系统         | 无                                                      | 有（day/week/month/year）      | 低            | P2         | ❌   |
 | 文档站           | 无                                                      | VitePress                      | 低            | P2         | ❌   |
@@ -1315,7 +1315,7 @@ const MODEL_SOURCE_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
 - **目标**：架构决策记录
 - **步骤**：
   1. 创建 `docs/adr/` 目录
-  2. 补齐关键决策（LangGraph、PG+pgvector、Redis 真相源、MCP、可观测性栈）
+  2. 补齐关键决策（LangChain、PG+pgvector、Redis 真相源、MCP、可观测性栈）
   3. 后续重要决策按 ADR 流程记录
 - **验收**：关键决策有 ADR
 

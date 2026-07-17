@@ -32,7 +32,7 @@
            └─────────────────┘      └────────────────────┘
 ```
 
-> 工具已内联到后端进程（`src/tools/`），不再需要独立的 MCP Server 容器。工具启用状态存储在 Redis hash `tools:enabled`。
+> 工具已内联到后端进程（`src/tools/`）。工具启用状态存储在 Redis hash `tools:enabled`。
 
 ### 容器清单
 
@@ -121,7 +121,6 @@ ADMIN_PASSWORD=your-secure-admin-password
 | 后端       | `packages/backend/Dockerfile`  | 多阶段构建，Python 3.13 + uv                    |
 | 前端       | `packages/frontend/Dockerfile` | 多阶段构建，Node 22 + Nginx                     |
 
-> 原本独立的 MCP Server Dockerfile 已移除，工具调用改为后端进程内的 async 函数（`src/tools/`），不再需要单独构建。
 
 ### 3.2 后端 Dockerfile（多阶段构建）
 
@@ -221,7 +220,6 @@ docker compose up -d backend frontend
 docker compose --profile observability up -d
 ```
 
-> 工具已内联到后端进程，不再需要 `--profile mcp` 启动独立容器。
 
 ### 4.3 一键启动（最简部署）
 

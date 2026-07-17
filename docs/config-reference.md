@@ -48,8 +48,6 @@
 
 ### 1.5 本地工具
 
-> **2026-07-15 更新**：原 MCP Server 架构已转换为进程内本地工具（`src/tools/`），不再需要独立 Server 容器与对应的环境变量。
-
 工具随后端启动自动加载，无独立进程或网络配置项。工具按命名空间（shop / knowledge / social / world / self_info）组织，共 16 个工具，通过 Redis hash `tools:enabled` 控制启用状态。
 
 | 项           | 说明                                                                                                            |
@@ -247,7 +245,7 @@ modules:
         model: local-emotion-v1
 ```
 
-> **说明**：`type: tools` 的模块对应 `src/tools/` 下进程内 async 函数工具，不再有 `mcp_server_url` 字段。开关状态实际持久化在 Redis hash `tools:enabled`（详见 [模块与本地工具系统设计 §二](module-system.md#二本地工具调用层toolregistry)），`module_configs` 表的 `enabled` 字段仅作为元数据镜像。
+> **说明**：`type: tools` 的模块对应 `src/tools/` 下进程内 async 函数工具。开关状态实际持久化在 Redis hash `tools:enabled`（详见 [模块与本地工具系统设计 §二](module-system.md#二本地工具调用层toolregistry)），`module_configs` 表的 `enabled` 字段仅作为元数据镜像。
 
 ### 3.2 动态管理（PG `module_configs` 表）
 
