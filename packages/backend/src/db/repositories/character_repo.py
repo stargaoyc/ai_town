@@ -31,6 +31,12 @@ class CharacterRepository(BaseRepository[Character]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_all_states(self) -> list[CharacterState]:
+        """获取所有角色的实时状态（启动回灌用，P0-3）"""
+        stmt = select(CharacterState)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     async def get_characters_by_location(
         self,
         location: str,

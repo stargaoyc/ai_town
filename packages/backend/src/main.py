@@ -205,6 +205,17 @@ async def lifespan(app: FastAPI):
         logger.warning("partition_pre_create_failed", error=str(e), exc_info=True)
         # 不中断启动，分区可能已存在或由运维手动创建
 
+    # 1.6 启动时从 PG 回灌 Redis 缺失的实时状态（P0-3）
+    # Redis 重启/清空后恢复角色与世界状态，避免从零开始
+    try:
+        from src.core.rehydration import rehydrate_states
+
+        await rehydrate_states(redis)
+        logger.info("state_rehydration_completed")
+    except Exception as e:
+        logger.warning("state_rehydration_failed", error=str(e), exc_info=True)
+        # 不中断启动，引擎可从空状态重建
+
     # 2. 初始化 LLM 客户端
     try:
         llm = LLMClient()
@@ -627,21 +638,14 @@ class AuthMiddleware:
     """
 
     # 公开只读 GET 路径前缀（无需登录即可查看）
+    # P0-8：移除 messages/conversations/admin 前缀——聊天记录、管理日志、运行时配置
+    # 含用户隐私与运维敏感信息，必须登录后按归属校验访问
     PUBLIC_GET_PREFIXES = (
         "/api/v1/world",
         "/api/v1/characters",
         "/api/v1/actions",
         "/api/v1/town/scenes",
         "/api/v1/memories",
-        "/api/v1/messages/history",
-        "/api/v1/conversations",
-        "/api/v1/admin/onebot/messages",
-        "/api/v1/admin/proactive-shares",
-        "/api/v1/admin/world/snapshots",
-        "/api/v1/admin/status",
-        "/api/v1/admin/metrics-detail",
-        "/api/v1/admin/logs",
-        "/api/v1/admin/config",
         "/api/v1/modules",
     )
 

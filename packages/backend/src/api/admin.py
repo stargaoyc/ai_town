@@ -51,9 +51,9 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 logger = get_logger(__name__)
 
 # 依赖类型别名（避免 B008：不在函数默认参数中调用 Depends/Body）
-AdminOrOperator = Annotated[dict, Depends(require_role("admin", "operator"))]
-Admin = Annotated[dict, Depends(require_role("admin"))]
-BodyDict = Annotated[dict, Body(...)]
+AdminOrOperator = Annotated[dict[str, Any], Depends(require_role("admin", "operator"))]
+Admin = Annotated[dict[str, Any], Depends(require_role("admin"))]
+BodyDict = Annotated[dict[str, Any], Body(...)]
 
 
 @router.post("/tick")
@@ -207,7 +207,7 @@ async def reset_world_time(
 
 
 @router.get("/status")
-async def get_admin_status():
+async def get_admin_status(user: Admin):
     """获取系统状态（管理接口）
 
     Returns:
@@ -281,6 +281,7 @@ async def get_admin_status():
 @router.post("/characters/import", dependencies=[Depends(rate_limit("char_import", 10, 60))])
 async def import_character_card(
     payload: BodyDict,
+    user: Admin,
 ):
     """导入角色卡 YAML 文件
 
@@ -343,6 +344,7 @@ async def import_character_card(
 @router.post("/characters/import-batch")
 async def import_characters_batch(
     payload: BodyDict,
+    user: Admin,
 ):
     """批量导入角色卡（多角色 YAML，用 --- 分隔）
 
@@ -444,7 +446,7 @@ async def delete_character(
 
 
 @router.get("/onebot/messages")
-async def get_onebot_messages(limit: int = 50):
+async def get_onebot_messages(user: Admin, limit: int = 50):
     """获取 QQ 消息记录（用于 QQ 消息监控）
 
     查询 platform=qq 的会话中的最近消息，包含发送者和内容。
@@ -484,7 +486,7 @@ async def get_onebot_messages(limit: int = 50):
 
 
 @router.get("/proactive-shares")
-async def get_proactive_shares(limit: int = 50):
+async def get_proactive_shares(user: Admin, limit: int = 50):
     """获取主动分享历史记录
 
     仅查询 extra_data.share_type='proactive' 的消息，
@@ -537,6 +539,7 @@ async def get_proactive_shares(limit: int = 50):
 
 @router.post("/vector-search")
 async def vector_search(
+    user: Admin,
     character_id: UUID,
     query: str,
     top_k: int = 10,
@@ -593,7 +596,7 @@ async def vector_search(
 
 
 @router.get("/world/snapshots")
-async def get_world_snapshots(limit: int = 20):
+async def get_world_snapshots(user: Admin, limit: int = 20):
     """获取世界快照列表（用于冷启动恢复管理）
 
     Returns:
@@ -630,6 +633,7 @@ async def get_world_snapshots(limit: int = 20):
 
 @router.get("/logs")
 async def get_recent_logs(
+    user: Admin,
     lines: int = 100,
     level: Literal["debug", "info", "warning", "error"] | None = None,
 ):
@@ -684,7 +688,7 @@ async def get_recent_logs(
 
 
 @router.get("/metrics-detail")
-async def get_detailed_metrics():
+async def get_detailed_metrics(user: Admin):
     """获取详细的系统指标（解析 Prometheus 格式，返回结构化数据）
 
     返回比 /metrics/ 端点更易消费的 JSON 结构，包含：
@@ -865,7 +869,7 @@ _CONFIG_LABELS = {
 
 
 @router.get("/config")
-async def get_runtime_config():
+async def get_runtime_config(user: Admin):
     """获取运行时配置（环境变量默认值 + Redis 覆盖值）
 
     Returns:
@@ -934,7 +938,7 @@ async def update_runtime_config(
 
 
 @router.delete("/config/{key}")
-async def reset_config_item(key: str):
+async def reset_config_item(key: str, user: Admin):
     """重置单个配置项为默认值（删除 Redis 覆盖）
 
     Args:

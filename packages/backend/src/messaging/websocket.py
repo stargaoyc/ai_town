@@ -266,6 +266,7 @@ async def ws_chat_endpoint(
     character_id: str,
     user_id: str | None = None,
     platform: str = "web",
+    token: str | None = None,
 ):
     """Web 客户端 WebSocket 聊天端点
 
@@ -275,6 +276,7 @@ async def ws_chat_endpoint(
     查询参数：
     - user_id: 必填，用户标识
     - platform: 默认 "web"
+    - token: JWT（也可通过 Authorization: Bearer 头传递）
 
     协议：
     - 入站：纯文本 或 {"type":"message","content":"..."}
@@ -291,6 +293,32 @@ async def ws_chat_endpoint(
         return
 
     user_id = user_id.strip()
+
+    # === 鉴权（P0-8）：握手阶段校验 JWT，sub 必须与 user_id 一致 ===
+    # 防止任何人用任意 user_id 冒充用户连接并读取其对话历史
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        await websocket.accept()
+        await websocket.send_json(_safe_error("authentication required"))
+        await websocket.close(code=1008, reason="missing token")
+        return
+    try:
+        from src.auth import decode_token
+
+        payload = decode_token(token)
+    except Exception:
+        await websocket.accept()
+        await websocket.send_json(_safe_error("invalid token"))
+        await websocket.close(code=1008, reason="invalid token")
+        return
+    if payload.get("sub") != user_id:
+        await websocket.accept()
+        await websocket.send_json(_safe_error("token subject mismatch"))
+        await websocket.close(code=1008, reason="token subject mismatch")
+        return
 
     try:
         cid = UUID(character_id)

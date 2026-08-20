@@ -23,6 +23,8 @@ from structlog import get_logger
 
 from src.actions import Action, ActionRegistry, DecisionResult
 from src.config import settings
+from src.core.state_codec import decode_state_value, encode_state_mapping
+from src.cost_control import CircuitOpen
 from src.db.models import ActionRecord, Character
 from src.db.repositories import (
     ActionRepository,
@@ -96,6 +98,9 @@ class CharacterTickEngine:
             assert semaphore is not None
             async with semaphore:
                 await self._execute_tick(character_id)
+        except CircuitOpen:
+            # 熔断器开启时 LLM 调用必然失败，重试无意义，跳过本角色本周期
+            logger.warning("character_tick_skipped_circuit_open", character_id=str(character_id))
         finally:
             await self.redis.delete(lock_key)
 
@@ -230,7 +235,7 @@ class CharacterTickEngine:
         # 从 Redis 读取实时状态（缓存优先）
         redis_state = await self.redis.hgetall(f"char:{character_id}:state")
         state: dict[str, Any] = (
-            {str(k): v for k, v in redis_state.items()}
+            {str(k): decode_state_value(str(k), v) for k, v in redis_state.items()}
             if redis_state
             else {
                 "location": char_state.location,
@@ -240,25 +245,16 @@ class CharacterTickEngine:
                 "money": char_state.money,
                 "phone_battery": char_state.phone_battery,
                 "social_energy": char_state.social_energy,
+                "inventory": char_state.inventory,
             }
         )
 
-        # 确保 state 中的数值字段是 int 类型（Redis 读取为 str/bytes）
+        # 补齐 Redis 缺失的数值字段与 mood（新导入角色 Redis 可能未初始化完整）
         _NUMERIC_KEYS = {"stamina", "satiety", "money", "phone_battery", "social_energy"}
         for key in _NUMERIC_KEYS:
-            if key in state:
-                val = state[key]
-                if isinstance(val, (bytes, bytearray)):
-                    state[key] = int(val.decode())
-                elif isinstance(val, str):
-                    state[key] = int(val)
-            elif char_state:
+            if key not in state and char_state:
                 state[key] = getattr(char_state, key, 50)
-
-        # mood 可以是字符串
-        if "mood" in state and isinstance(state["mood"], (bytes, bytearray)):
-            state["mood"] = state["mood"].decode()
-        elif "mood" not in state and char_state:
+        if "mood" not in state and char_state:
             state["mood"] = getattr(char_state, "mood", "calm")
 
         # 从 Redis 读取世界状态
@@ -628,7 +624,11 @@ class CharacterTickEngine:
         tool_result: dict[str, Any],
         context: dict,
     ) -> None:
-        """将工具返回的状态 deltas 应用到角色 Redis 实时状态
+        """将工具返回的状态 deltas 应用到角色内存状态
+
+        P0-1：工具 delta 不再直接写 Redis，仅更新内存 state，
+        由 _execute_action 在 PG 事务提交后统一写 Redis，
+        避免工具变更绕过 PG 事务导致镜像不一致。
 
         支持的 delta 字段：
         - money_delta: 金钱变化（正=收入，负=支出）
@@ -641,8 +641,6 @@ class CharacterTickEngine:
             tool_result: 工具返回的结果字典
             context: 感知环境结果
         """
-        state_key = f"char:{character_id}:state"
-        updates: dict[str, str] = {}
         state = context["state"]
 
         # 金钱变化
@@ -650,7 +648,6 @@ class CharacterTickEngine:
         if money_delta and isinstance(money_delta, int | float):
             current_money = int(state.get("money", 0) or 0)
             new_money = max(0, current_money + int(money_delta))
-            updates["money"] = str(new_money)
             state["money"] = new_money
             logger.info(
                 "tool_delta_money",
@@ -663,8 +660,6 @@ class CharacterTickEngine:
         inventory_delta = tool_result.get("inventory_delta")
         if inventory_delta and isinstance(inventory_delta, dict):
             current_inventory: dict[str, int] = state.get("inventory") or {}
-            if not isinstance(current_inventory, dict):
-                current_inventory = {}
             for item_id, qty_change in inventory_delta.items():
                 current_qty = int(current_inventory.get(item_id, 0) or 0)
                 new_qty = max(0, current_qty + int(qty_change))
@@ -672,10 +667,6 @@ class CharacterTickEngine:
                     current_inventory[item_id] = new_qty
                 elif item_id in current_inventory:
                     del current_inventory[item_id]
-            # 序列化为 JSON 存储
-            import json
-
-            updates["inventory"] = json.dumps(current_inventory, ensure_ascii=False)
             state["inventory"] = current_inventory
             logger.info(
                 "tool_delta_inventory",
@@ -687,7 +678,6 @@ class CharacterTickEngine:
         # 情绪变化
         mood_delta = tool_result.get("mood_delta")
         if mood_delta and isinstance(mood_delta, str):
-            updates["mood"] = mood_delta
             state["mood"] = mood_delta
             logger.info(
                 "tool_delta_mood",
@@ -728,10 +718,6 @@ class CharacterTickEngine:
                     target_id=str(target_id),
                     error=str(e),
                 )
-
-        # 批量写入 Redis
-        if updates:
-            await self.redis.hset(state_key, mapping=updates)  # type: ignore[arg-type]
 
     async def _execute_action(self, character_id: UUID, decision: DecisionResult, context: dict) -> None:
         """执行 Action - 事务化
@@ -854,6 +840,7 @@ class CharacterTickEngine:
                     else None,
                     location=new_state.get("location"),
                     current_action=new_state.get("current_action"),
+                    inventory=new_state.get("inventory"),
                 )
 
                 # 写入状态历史快照（支持前端状态趋势图表）
@@ -876,7 +863,7 @@ class CharacterTickEngine:
             # 更新 Redis 实时状态
             await self.redis.hset(
                 f"char:{character_id}:state",
-                mapping={k: str(v) for k, v in new_state.items() if v is not None},
+                mapping=encode_state_mapping(new_state),  # type: ignore[arg-type]
             )
 
             from src.observability.metrics import ACTION_EXECUTION_DURATION, ACTION_EXECUTION_TOTAL

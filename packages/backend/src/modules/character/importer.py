@@ -192,14 +192,16 @@ class CharacterImporter:
             char:{id}:state -> Hash, 字段对应 CharacterState
         """
         key = f"char:{character_id}:state"
+        from src.core.state_codec import encode_state_value
+
         mapping = {
-            "location": state.location or "home",
-            "stamina": str(state.stamina),
-            "satiety": str(state.satiety),
-            "mood": state.mood or "calm",
-            "money": str(state.money),
-            "phone_battery": str(state.phone_battery),
-            "social_energy": str(state.social_energy),
+            "location": encode_state_value(state.location or "home"),
+            "stamina": encode_state_value(state.stamina),
+            "satiety": encode_state_value(state.satiety),
+            "mood": encode_state_value(state.mood or "calm"),
+            "money": encode_state_value(state.money),
+            "phone_battery": encode_state_value(state.phone_battery),
+            "social_energy": encode_state_value(state.social_energy),
         }
         await self.redis.hset(key, mapping=mapping)  # type: ignore[arg-type]
         logger.debug("Redis 状态缓存已更新: %s", key)

@@ -98,14 +98,14 @@ def _resolve_role(user_id: str) -> str:
     """根据用户名解析 RBAC 角色
 
     角色解析规则：
-    1. 若 settings.rbac_roles 为空（未配置），默认返回 "admin"（向后兼容）
+    1. 若 settings.rbac_roles 为空（未配置），默认返回 "viewer"（最小权限，admin 需显式配置）
     2. 若已配置 rbac_roles，解析 "user:role" 映射
     3. 用户名命中映射则返回对应角色
     4. 用户名未命中映射则返回 "viewer"（最小权限原则）
     """
     raw = settings.rbac_roles
     if not raw:
-        return "admin"
+        return "viewer"
     mapping: dict[str, str] = {}
     for item in raw.split(","):
         item = item.strip()

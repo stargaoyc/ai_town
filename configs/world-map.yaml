@@ -1,56 +1,160 @@
 # 世界地图 - 场景连通矩阵（移动耗时，单位：虚拟分钟）
 # 格式：{from: {to: minutes}}
+# 约束：矩阵必须对称（A→B == B→A），所有场景互相可达；loader 加载时校验，不满足则启动报错
 
 adjacency:
   home:
     school: 5
     cafe: 8
     bookstore: 8
+    library: 7
     park: 10
     shrine: 10
     coast: 12
-    library: 7
+    forest: 12
     plaza: 6
     shopping_street: 10
+    convenience_store: 10
 
   school:
     home: 5
     cafe: 6
     bookstore: 5
+    library: 4
     park: 8
     shrine: 12
     coast: 14
-    library: 4
+    forest: 13
     plaza: 5
     shopping_street: 7
+    convenience_store: 8
 
   cafe:
     home: 8
     school: 6
     bookstore: 3
+    library: 5
     park: 7
     shrine: 12
     coast: 12
-    library: 5
+    forest: 12
     plaza: 3
     shopping_street: 3
+    convenience_store: 5
+
+  bookstore:
+    home: 8
+    school: 5
+    cafe: 3
+    library: 3
+    park: 4
+    shrine: 10
+    coast: 9
+    forest: 12
+    plaza: 3
+    shopping_street: 3
+    convenience_store: 4
+
+  library:
+    home: 7
+    school: 4
+    cafe: 5
+    bookstore: 3
+    park: 5
+    shrine: 9
+    coast: 10
+    forest: 12
+    plaza: 4
+    shopping_street: 5
+    convenience_store: 6
+
+  park:
+    home: 10
+    school: 8
+    cafe: 7
+    bookstore: 4
+    library: 5
+    shrine: 8
+    coast: 6
+    forest: 8
+    plaza: 4
+    shopping_street: 6
+    convenience_store: 6
+
+  shrine:
+    home: 10
+    school: 12
+    cafe: 12
+    bookstore: 10
+    library: 9
+    park: 8
+    coast: 10
+    forest: 12
+    plaza: 10
+    shopping_street: 10
+    convenience_store: 10
+
+  coast:
+    home: 12
+    school: 14
+    cafe: 12
+    bookstore: 9
+    library: 10
+    park: 6
+    shrine: 10
+    forest: 10
+    plaza: 8
+    shopping_street: 8
+    convenience_store: 10
+
+  forest:
+    home: 12
+    school: 13
+    cafe: 12
+    bookstore: 12
+    library: 12
+    park: 8
+    shrine: 12
+    coast: 10
+    plaza: 10
+    shopping_street: 11
+    convenience_store: 12
 
   plaza:
     home: 6
     school: 5
     cafe: 3
     bookstore: 3
+    library: 4
     park: 4
     shrine: 10
     coast: 8
-    library: 4
+    forest: 10
     shopping_street: 4
+    convenience_store: 5
 
   shopping_street:
-    cafe: 3
-    bookstore: 3
-    convenience_store: 2
-    plaza: 4
     home: 10
     school: 7
+    cafe: 3
+    bookstore: 3
+    library: 5
+    park: 6
+    shrine: 10
     coast: 8
+    forest: 11
+    plaza: 4
+    convenience_store: 2
+
+  convenience_store:
+    home: 10
+    school: 8
+    cafe: 5
+    bookstore: 4
+    library: 6
+    park: 6
+    shrine: 10
+    coast: 10
+    forest: 12
+    plaza: 5
+    shopping_street: 2

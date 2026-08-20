@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     onebot_group_at_only: bool = False
     # 群组-角色映射：JSON 字符串 {"群号": "角色UUID"}，未配置的群使用默认角色
     onebot_group_character_map: str = "{}"
+    # OneBot 反向 WS 接入令牌：配置后强制校验 Authorization: Bearer / access_token 参数
+    onebot_access_token: str | None = None
 
 
 settings = Settings()  # type: ignore[call-arg]

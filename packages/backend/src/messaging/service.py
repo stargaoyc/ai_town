@@ -23,8 +23,6 @@ from uuid import UUID
 
 from structlog import get_logger
 
-from src.cost_control.budget_manager import get_budget_manager
-from src.cost_control.circuit_breaker import get_circuit_breaker
 from src.db.models import Character, Conversation, Message
 from src.db.repositories import (
     CharacterRepository,
@@ -560,18 +558,6 @@ class MessageService:
                 user_message=safe_user_message,
             )
 
-            # 成本控制：调用前检查预算 + 熔断器
-            budget_mgr = get_budget_manager()
-            breaker = get_circuit_breaker()
-            if breaker and not await breaker.can_execute():
-                logger.warning("circuit_breaker_open", character_id=str(character.id))
-                return DEFAULT_ERROR_REPLY, 0, 0.0, "circuit_open"
-            if budget_mgr:
-                budget_status = await budget_mgr.check_budget()
-                if budget_status["exceeded"]:
-                    logger.warning("budget_exceeded", character_id=str(character.id))
-                    return DEFAULT_ERROR_REPLY, 0, 0.0, "budget_exceeded"
-
             response = await self.llm.chat(prompt, model="chat", system_prompt=system_prompt)
 
             # chat.yaml 要求 LLM 输出 JSON：{"response", "emotion", "action"}
@@ -586,19 +572,9 @@ class MessageService:
             )
             estimated_cost = estimated_tokens * 0.000001  # 假设 $1/M tokens
 
-            # 成本控制：调用后记录 usage + 熔断器记录成功
-            if budget_mgr:
-                await budget_mgr.record_usage(estimated_tokens, estimated_cost)
-            if breaker:
-                await breaker.record_success()
-
             return reply_text, estimated_tokens, estimated_cost, None
 
         except Exception as e:
-            # 熔断器记录失败
-            breaker = get_circuit_breaker()
-            if breaker:
-                await breaker.record_failure()
             logger.error(
                 "llm_reply_failed",
                 character_id=str(character.id),

@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -375,6 +376,21 @@ class OneBotAdapter:
         协议：OneBot 实现连接后逐条推送事件 JSON（文本帧），
         本端点解析事件并分发到对应处理器。
         """
+        # P0-8：access-token 校验（OneBot 标准：Authorization: Bearer 或 access_token 参数）
+        # 配置 onebot_access_token 后强制校验，防止任何人冒充 OneBot 实现注入伪造事件
+        from src.config import settings
+
+        expected = settings.onebot_access_token
+        if expected:
+            presented = websocket.query_params.get("access_token")
+            if not presented:
+                auth_header = websocket.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    presented = auth_header[7:]
+            if not presented or not secrets.compare_digest(presented, expected):
+                logger.warning("onebot_auth_failed")
+                await websocket.close(code=1008, reason="invalid access token")
+                return
         await websocket.accept()
         await self._register(websocket)
         logger.info("onebot_client_connected", total_connections=len(self._connections))

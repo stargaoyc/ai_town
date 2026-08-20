@@ -22,6 +22,13 @@ from pydantic import BaseModel, create_model
 from structlog import get_logger
 
 from src.config import settings
+from src.cost_control import (
+    BudgetExceeded,
+    BudgetManager,
+    CircuitOpen,
+    get_budget_manager,
+    get_circuit_breaker,
+)
 
 logger = get_logger(__name__)
 
@@ -167,6 +174,7 @@ class LLMClient:
             logger.warning("chat_model_redirect_to_chat", original_model=model)
 
         start_perf = time.perf_counter()
+        await self._check_cost_control()
         try:
             # 当提供 system_prompt 时，使用 [SystemMessage, HumanMessage] 列表调用
             # SystemMessage 中的安全约束优先级最高，LLM 必须遵守
@@ -197,11 +205,11 @@ class LLMClient:
             prompt_tokens = int(token_usage.get("prompt_tokens", 0))
             completion_tokens = int(token_usage.get("completion_tokens", 0))
             total_tokens = prompt_tokens + completion_tokens
+            # 粗略费用估算：agnes-2.0-flash 约 $0.5/M input, $1.5/M output
+            estimated_cost = prompt_tokens * 0.0000005 + completion_tokens * 0.0000015
             if total_tokens > 0:
                 LLM_TOKENS_USED.labels(model=model, type="prompt").inc(prompt_tokens)
                 LLM_TOKENS_USED.labels(model=model, type="completion").inc(completion_tokens)
-                # 粗略费用估算：agnes-2.0-flash 约 $0.5/M input, $1.5/M output
-                estimated_cost = prompt_tokens * 0.0000005 + completion_tokens * 0.0000015
                 LLM_COST_TOTAL.inc(estimated_cost)
 
             from src.observability.langfuse_tracing import trace_llm_call
@@ -213,8 +221,10 @@ class LLMClient:
                 tokens=total_tokens,
                 latency_ms=int(elapsed * 1000),
             )
+            await self._record_cost_control_success(total_tokens, estimated_cost)
             return content if isinstance(content, str) else str(content)
         except Exception:
+            await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
 
             LLM_CALL_TOTAL.labels(model=model, status="failed").inc()
@@ -518,6 +528,7 @@ class LLMClient:
         structured_llm = self.chat_llm.with_structured_output(pydantic_model)
 
         start_perf = time.perf_counter()
+        await self._check_cost_control()
         try:
             result = await structured_llm.ainvoke(prompt)
             logger.debug("structured_output_completed", result_type=type(result).__name__)
@@ -550,10 +561,12 @@ class LLMClient:
                 tokens=total_tokens,
                 latency_ms=int(elapsed * 1000),
             )
+            await self._record_cost_control_success(total_tokens, estimated_cost)
             if isinstance(result, BaseModel):
                 return result.model_dump()
             return result
         except Exception:
+            await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
 
             LLM_CALL_TOTAL.labels(model=model, status="failed").inc()
@@ -595,6 +608,64 @@ class LLMClient:
         if isinstance(result, BaseModel):
             return result.model_dump()
         return result
+
+    # === 成本控制（统一挂载点）===
+
+    def _get_budget_manager(self) -> BudgetManager | None:
+        """获取预算管理器；未初始化时返回 None 跳过成本控制
+
+        embedding worker 等独立进程不初始化成本控制单例，
+        此时 LLM 调用不应因缺少单例而失败。
+        """
+        try:
+            return get_budget_manager()
+        except RuntimeError:
+            return None
+
+    async def _check_cost_control(self) -> None:
+        """调用前检查：熔断器 + 日预算（统一挂载点，覆盖 Tick 等全部 LLM 调用路径）
+
+        Raises:
+            CircuitOpen: 熔断器开启，拒绝调用
+            BudgetExceeded: 日预算已超出
+        """
+        breaker = get_circuit_breaker()
+        if breaker and not await breaker.can_execute():
+            state, failure_count, last_failure_time = await breaker.snapshot()
+            logger.warning(
+                "circuit_open_blocked",
+                state=state.value,
+                failure_count=failure_count,
+            )
+            raise CircuitOpen(state.value, failure_count, last_failure_time)
+
+        budget_mgr = self._get_budget_manager()
+        if budget_mgr:
+            budget_status = await budget_mgr.check_budget()
+            if budget_status["exceeded"]:
+                logger.warning(
+                    "budget_exceeded_blocked",
+                    used=budget_status["used"],
+                    budget=budget_status["budget"],
+                )
+                raise BudgetExceeded(
+                    used=budget_status["used"],
+                    budget=budget_status["budget"],
+                    remaining=budget_status["remaining"],
+                )
+
+    async def _record_cost_control_success(self, tokens: int, cost: float) -> None:
+        breaker = get_circuit_breaker()
+        if breaker:
+            await breaker.record_success()
+        budget_mgr = self._get_budget_manager()
+        if budget_mgr and tokens > 0:
+            await budget_mgr.record_usage(tokens, cost)
+
+    async def _record_cost_control_failure(self) -> None:
+        breaker = get_circuit_breaker()
+        if breaker:
+            await breaker.record_failure()
 
     # === 内部工具 ===
 

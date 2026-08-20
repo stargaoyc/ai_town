@@ -61,8 +61,51 @@ class SceneLoader:
         self._world_map = WorldMap(adjacency=map_raw.get("adjacency", {}))
         logger.info("加载世界地图: %d 个节点", len(self._world_map.adjacency))
 
+        # 校验连通矩阵（P0-9）：所有场景互相可达 + 对称性，不满足则启动报错
+        self._validate_world_map()
+
         # 初始化 Redis 状态
         await self._init_redis_state()
+
+    def _validate_world_map(self) -> None:
+        """校验连通矩阵：每个场景有出发边、目标存在、矩阵对称、全图可达
+
+        Raises:
+            ValueError: 矩阵不满足约束时抛出，阻止启动
+        """
+        scene_ids = set(self._scenes.keys())
+        adjacency = self._world_map.adjacency
+
+        missing_sources = scene_ids - set(adjacency.keys())
+        if missing_sources:
+            raise ValueError(f"world-map.yaml 缺少出发边的场景: {sorted(missing_sources)}")
+
+        for src, targets in adjacency.items():
+            unknown = set(targets.keys()) - scene_ids
+            if unknown:
+                raise ValueError(f"world-map.yaml 场景 {src} 指向未知场景: {sorted(unknown)}")
+            for dst, minutes in targets.items():
+                reverse = adjacency.get(dst, {}).get(src)
+                if reverse is None:
+                    raise ValueError(f"world-map.yaml 矩阵不对称: {src} → {dst} 无反向边")
+                if reverse != minutes:
+                    raise ValueError(
+                        f"world-map.yaml 矩阵不对称: {src} → {dst} ({minutes}) ≠ {dst} → {src} ({reverse})"
+                    )
+
+        # 可达性：从任一场景 BFS 必须覆盖全部场景
+        start = next(iter(scene_ids))
+        visited = {start}
+        queue = [start]
+        while queue:
+            current = queue.pop()
+            for neighbor in adjacency.get(current, {}):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        unreachable = scene_ids - visited
+        if unreachable:
+            raise ValueError(f"world-map.yaml 存在不可达场景: {sorted(unreachable)}")
 
     async def _init_redis_state(self) -> None:
         """初始化所有场景的 Redis 状态"""

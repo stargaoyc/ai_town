@@ -87,3 +87,8 @@ explicit_package_bases = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+[dependency-groups]
+dev = [
+    "ruff",
+]
+

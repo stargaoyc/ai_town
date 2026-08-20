@@ -8,13 +8,14 @@
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import func, select
 from structlog import get_logger
 
+from src.auth import get_current_user
 from src.db.models import Character, Conversation, Message
 from src.db.repositories import ConversationRepository, MessageRepository
 from src.db.session import db
@@ -112,6 +113,7 @@ async def get_message_history(
     conversation_id: str,
     limit: int = 50,
     before: str | None = None,
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """获取会话消息历史（支持游标分页）
 
@@ -139,6 +141,15 @@ async def get_message_history(
             ) from None
 
     async with db.session() as session:
+        # 会话归属校验（P0-8）：仅会话所属用户可读，防止任意人读取任意用户私信
+        conv = await ConversationRepository(session).get_by_id(conv_id)
+        if conv is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        if conv.user_id != user["user_id"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Not allowed to access this conversation",
+            )
         repo = MessageRepository(session)
         messages = await repo.list_by_conversation(
             conversation_id=conv_id,
@@ -166,20 +177,26 @@ async def get_message_history(
 
 @router.get("/conversations")
 async def list_conversations(
+    current_user: dict[str, Any] = Depends(get_current_user),
     character_id: str | None = None,
     user_id: str | None = None,
     limit: int = 50,
 ):
-    """查询会话列表
+    """查询会话列表（仅返回当前用户的会话）
 
     Args:
+        current_user: 当前认证用户（JWT/API Key）
         character_id: 可选，按角色过滤
-        user_id: 可选，按用户过滤
+        user_id: 可选，按用户过滤；与当前用户不一致时拒绝
         limit: 返回数量上限
 
     Returns:
         会话列表（按 last_message_at 倒序）
     """
+    auth_user_id = current_user["user_id"]
+    if user_id is not None and user_id != auth_user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: cannot access other user's conversations")
+
     async with db.session() as session:
         repo = ConversationRepository(session)
 
@@ -199,10 +216,25 @@ async def list_conversations(
                 cid = UUID(character_id)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid UUID format") from None
-            conversations = await repo.list_by_character(cid, limit=limit)
+            stmt = (
+                select(Conversation)
+                .where(
+                    Conversation.character_id == cid,
+                    Conversation.user_id == auth_user_id,
+                )
+                .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            conversations = list(result.scalars())
         else:
-            # 无过滤条件：返回所有会话（按 last_message_at 倒序）
-            stmt = select(Conversation).order_by(Conversation.last_message_at.desc().nullslast()).limit(limit)
+            # 无过滤条件：返回当前用户的所有会话（按 last_message_at 倒序）
+            stmt = (
+                select(Conversation)
+                .where(Conversation.user_id == auth_user_id)
+                .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(limit)
+            )
             result = await session.execute(stmt)
             conversations = list(result.scalars())
 
