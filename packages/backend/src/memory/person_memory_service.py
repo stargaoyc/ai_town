@@ -3,6 +3,7 @@
 管理角色对每个用户的独立记忆，每次用户交互后更新记忆。
 """
 
+from typing import Any
 from uuid import UUID
 
 from structlog import get_logger
@@ -23,7 +24,7 @@ class PersonMemoryService:
     记忆有热度机制：交互越频繁热度越高，长时间不交互热度衰减。
     """
 
-    def __init__(self, session_factory, llm_client=None):
+    def __init__(self, session_factory: Any, llm_client: Any = None):
         """
         Args:
             session_factory: 异步会话工厂（async context manager），
@@ -33,7 +34,7 @@ class PersonMemoryService:
         self.session_factory = session_factory
         self._llm = llm_client
 
-    async def get_memory(self, character_id: UUID, user_id: str) -> dict | None:
+    async def get_memory(self, character_id: UUID, user_id: str) -> dict[str, Any] | None:
         """获取角色对某用户的记忆
 
         Args:
@@ -64,7 +65,7 @@ class PersonMemoryService:
         platform: str,
         user_message: str,
         character_reply: str,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """交互后更新角色对用户的记忆
 
         Args:
@@ -183,4 +184,4 @@ class PersonMemoryService:
         memory = await self.get_memory(character_id, user_id)
         if not memory:
             return "（初次与该用户交流）"
-        return memory.get("content", "（无记忆）")
+        return str(memory.get("content", "（无记忆）"))

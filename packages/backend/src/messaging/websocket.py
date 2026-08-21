@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -43,7 +44,7 @@ class WebSocketManager:
     def __new__(cls) -> WebSocketManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._initialized = False  # type: ignore[attr-defined]
+            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self) -> None:
@@ -117,7 +118,7 @@ class WebSocketManager:
         self,
         user_id: str,
         character_id: str,
-        message: dict,
+        message: dict[str, Any],
     ) -> bool:
         """向指定 (user_id, character_id) 推送 JSON 消息
 
@@ -149,7 +150,7 @@ class WebSocketManager:
             await self.disconnect(user_id, character_id)
             return False
 
-    async def broadcast(self, character_id: str, message: dict) -> int:
+    async def broadcast(self, character_id: str, message: dict[str, Any]) -> int:
         """向某角色的所有在线用户广播消息（用于角色主动消息）
 
         Args:
@@ -243,7 +244,7 @@ def _parse_incoming(raw: str) -> str | None:
     return text
 
 
-def _safe_error(message: str) -> dict:
+def _safe_error(message: str) -> dict[str, Any]:
     """构造标准错误消息"""
     return {"type": "error", "message": message}
 
@@ -267,7 +268,7 @@ async def ws_chat_endpoint(
     user_id: str | None = None,
     platform: str = "web",
     token: str | None = None,
-):
+) -> None:
     """Web 客户端 WebSocket 聊天端点
 
     路径参数：

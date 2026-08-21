@@ -8,6 +8,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
@@ -33,7 +34,7 @@ router = APIRouter(prefix="/api/v1", tags=["characters"])
 
 
 @router.get("/characters")
-async def list_characters(limit: int = 20, active_only: bool = False):
+async def list_characters(limit: int = 20, active_only: bool = False) -> dict[str, Any]:
     """获取角色列表
 
     Args:
@@ -66,7 +67,7 @@ async def list_characters(limit: int = 20, active_only: bool = False):
 
 
 @router.get("/characters/{character_id}")
-async def get_character(character_id: str):
+async def get_character(character_id: str) -> dict[str, Any]:
     """获取角色详情
 
     Args:
@@ -115,7 +116,7 @@ async def get_character(character_id: str):
 
 
 @router.get("/characters/{character_id}/reflections")
-async def get_reflections(character_id: str, limit: int = 10):
+async def get_reflections(character_id: str, limit: int = 10) -> dict[str, Any]:
     """获取角色反思记录
 
     Args:
@@ -148,7 +149,7 @@ async def get_reflections(character_id: str, limit: int = 10):
 
 
 @router.get("/characters/{character_id}/plans")
-async def get_plans(character_id: str):
+async def get_plans(character_id: str) -> dict[str, Any]:
     """获取角色进行中的计划
 
     Args:
@@ -187,7 +188,7 @@ async def get_plans(character_id: str):
 
 
 @router.get("/characters/{character_id}/actions")
-async def get_action_history(character_id: str, limit: int = 50):
+async def get_action_history(character_id: str, limit: int = 50) -> dict[str, Any]:
     """获取角色行为历史
 
     Args:
@@ -227,7 +228,7 @@ async def get_action_history(character_id: str, limit: int = 50):
 
 
 @router.post("/characters/{character_id}/move")
-async def move_character(character_id: str, to_scene: str, hour: int | None = None):
+async def move_character(character_id: str, to_scene: str, hour: int | None = None) -> dict[str, Any]:
     """角色移动到指定场景
 
     Args:
@@ -277,7 +278,7 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
 
 
 @router.get("/characters/{character_id}/schedule")
-async def get_character_schedule(character_id: str, hour: int | None = None):
+async def get_character_schedule(character_id: str, hour: int | None = None) -> dict[str, Any]:
     """获取角色作息状态
 
     Args:
@@ -327,7 +328,7 @@ async def get_character_schedule(character_id: str, hour: int | None = None):
 
 
 @router.get("/characters/{character_id}/relations")
-async def get_character_relations(character_id: str):
+async def get_character_relations(character_id: str) -> dict[str, Any]:
     """获取角色的所有关系"""
     redis = get_redis()
     if not redis:
@@ -358,7 +359,7 @@ async def get_character_relations(character_id: str):
 
 
 @router.get("/characters/{character_id}/nearby")
-async def get_character_nearby(character_id: str):
+async def get_character_nearby(character_id: str) -> dict[str, Any]:
     """获取与该角色同场景的其他角色（多智能体交互可见性）
 
     用于前端展示「当前场景中还有谁」，让用户感知到角色间的社交可能性。
@@ -470,7 +471,7 @@ async def record_interaction(
     target_id: str,
     strength_delta: int = 0,
     notes: str | None = None,
-):
+) -> dict[str, Any]:
     """记录角色间互动（更新关系）"""
     redis = get_redis()
     if not redis:
@@ -502,7 +503,7 @@ async def record_interaction(
 
 
 @router.get("/characters/{character_id}/state-history")
-async def get_character_state_history(character_id: UUID, limit: int = 50):
+async def get_character_state_history(character_id: UUID, limit: int = 50) -> dict[str, Any]:
     """获取角色状态历史记录（用于状态图表）
 
     Args:
@@ -571,7 +572,7 @@ async def get_character_state_history(character_id: UUID, limit: int = 50):
 
 
 @router.get("/characters/{character_id}/messages")
-async def get_character_messages(character_id: UUID, limit: int = 50):
+async def get_character_messages(character_id: UUID, limit: int = 50) -> dict[str, Any]:
     """获取角色的所有消息历史（跨会话）
 
     Args:

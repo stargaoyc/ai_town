@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -28,7 +30,7 @@ from src.observability.logging import (
 
 
 @pytest.fixture(scope="session")
-def otel_tracer():
+def otel_tracer() -> Any:
     """设置真实 OTel TracerProvider，返回可用于创建 active span 的 tracer。
 
     set_tracer_provider 全局只能调用一次（后续调用被忽略并记录 warning），
@@ -46,7 +48,7 @@ def otel_tracer():
 
 
 @pytest.fixture(autouse=True)
-def _clear_contextvars():
+def _clear_contextvars() -> Iterator[None]:
     """每个测试前后清理 contextvars，避免测试间状态泄漏"""
     clear_context()
     yield
@@ -58,7 +60,7 @@ def _clear_contextvars():
 # ---------------------------------------------------------------------------
 
 
-def test_add_trace_context_no_active_span():
+def test_add_trace_context_no_active_span() -> None:
     """无 active span 时不添加 trace_id（返回原始 event_dict）"""
     event_dict = {"event": "test"}
     result = add_trace_context(None, "info", event_dict)
@@ -67,7 +69,7 @@ def test_add_trace_context_no_active_span():
     assert "span_id" not in result
 
 
-def test_add_trace_context_with_active_span(otel_tracer):
+def test_add_trace_context_with_active_span(otel_tracer: Any) -> None:
     """有 active span 时添加 trace_id（32 hex）和 span_id（16 hex）"""
     with otel_tracer.start_as_current_span("test-span"):
         event_dict = {"event": "test"}
@@ -85,7 +87,7 @@ def test_add_trace_context_with_active_span(otel_tracer):
         assert result["event"] == "test"
 
 
-def test_add_trace_context_with_active_span_does_not_mutate_input(otel_tracer):
+def test_add_trace_context_with_active_span_does_not_mutate_input(otel_tracer: Any) -> None:
     """注入时不应修改传入的 event_dict（返回新 dict 或原 dict 增量）"""
     with otel_tracer.start_as_current_span("test-span"):
         event_dict = {"event": "test"}
@@ -95,7 +97,7 @@ def test_add_trace_context_with_active_span_does_not_mutate_input(otel_tracer):
         assert result["event"] == "test"
 
 
-def test_add_trace_context_otel_unavailable():
+def test_add_trace_context_otel_unavailable() -> None:
     """OTel 未安装时优雅降级（直接返回 event_dict）"""
     event_dict = {"event": "test", "key": "value"}
     with patch("src.observability.logging._OTEL_AVAILABLE", False):
@@ -110,28 +112,28 @@ def test_add_trace_context_otel_unavailable():
 # ---------------------------------------------------------------------------
 
 
-def test_setup_logging_json():
+def test_setup_logging_json() -> None:
     """json 格式正确配置"""
     setup_logging(log_level="info", log_format="json")
     logger = structlog.get_logger("test")
     assert logger is not None
 
 
-def test_setup_logging_console():
+def test_setup_logging_console() -> None:
     """console 格式正确配置"""
     setup_logging(log_level="debug", log_format="console")
     logger = structlog.get_logger("test")
     assert logger is not None
 
 
-def test_setup_logging_structlog_usable():
+def test_setup_logging_structlog_usable() -> None:
     """配置后 structlog 可用（不抛异常）"""
     setup_logging(log_level="info", log_format="json")
     logger = structlog.get_logger("test")
     logger.info("test_event", key="value")
 
 
-def test_setup_logging_invalid_level_defaults_to_info():
+def test_setup_logging_invalid_level_defaults_to_info() -> None:
     """未知日志级别回退到 INFO"""
     setup_logging(log_level="unknown_level", log_format="json")
     logger = structlog.get_logger("test")
@@ -143,7 +145,7 @@ def test_setup_logging_invalid_level_defaults_to_info():
 # ---------------------------------------------------------------------------
 
 
-def test_bind_context_appears_in_logs():
+def test_bind_context_appears_in_logs() -> None:
     """绑定后日志包含绑定的字段"""
     setup_logging(log_level="info", log_format="json")
     bind_context(user_id="test_user", request_id="abc-123")
@@ -155,7 +157,7 @@ def test_bind_context_appears_in_logs():
     assert logs[0]["request_id"] == "abc-123"
 
 
-def test_bind_context_multiple_fields():
+def test_bind_context_multiple_fields() -> None:
     """绑定多个字段后日志全部包含"""
     setup_logging(log_level="info", log_format="json")
     bind_context(
@@ -176,7 +178,7 @@ def test_bind_context_multiple_fields():
 # ---------------------------------------------------------------------------
 
 
-def test_clear_context_removes_bound_fields():
+def test_clear_context_removes_bound_fields() -> None:
     """清除后日志不包含之前绑定的字段"""
     setup_logging(log_level="info", log_format="json")
     bind_context(user_id="test_user")
@@ -187,7 +189,7 @@ def test_clear_context_removes_bound_fields():
     assert "user_id" not in logs[0]
 
 
-def test_clear_context_allows_rebind():
+def test_clear_context_allows_rebind() -> None:
     """清除后可重新绑定新字段"""
     setup_logging(log_level="info", log_format="json")
     bind_context(user_id="old_user")
@@ -199,7 +201,7 @@ def test_clear_context_allows_rebind():
     assert logs[0]["user_id"] == "new_user"
 
 
-def test_clear_context_idempotent():
+def test_clear_context_idempotent() -> None:
     """多次调用 clear_context 不报错"""
     clear_context()
     clear_context()

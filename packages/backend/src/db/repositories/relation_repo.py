@@ -3,6 +3,7 @@
 双向关系需两条记录（A→B 与 B→A）。get_or_create 用于社交 Action 前置准备。
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -27,7 +28,7 @@ class RelationRepository(BaseRepository[Relation]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def update_relation(self, character_id: UUID, target_id: UUID, **fields) -> None:
+    async def update_relation(self, character_id: UUID, target_id: UUID, **fields: Any) -> None:
         """更新角色对目标角色的关系字段（strength/relationship_type/notes 等）
 
         Relation 为复合主键（character_id, target_id），需同时按两者定位。

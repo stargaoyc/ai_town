@@ -122,7 +122,7 @@ async def load_runtime_config(redis: Redis) -> RuntimeConfig:
     try:
         raw = await redis.get(_CONFIG_OVERRIDES_KEY)
         if raw:
-            overrides = json.loads(raw)  # type: ignore[arg-type]
+            overrides = json.loads(raw)
             # 仅取已知字段
             for key in RuntimeConfig.model_fields:
                 if key in overrides:

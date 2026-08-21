@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from structlog import get_logger
@@ -11,6 +12,10 @@ from src.runtime import get_redis
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 logger = get_logger(__name__)
+
+# 依赖类型别名（规避 B008：不在函数默认参数中调用 Depends/Body）
+CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
+BodyDict = Annotated[dict[str, Any], Body(...)]
 
 
 def _notif_key(user_id: str) -> str:
@@ -23,7 +28,7 @@ async def _create_notification(
     notif_type: str,
     title: str,
     content: str,
-) -> dict:
+) -> dict[str, Any]:
     """创建通知并写入 Redis（内部函数，可被其他模块调用）"""
     from uuid6 import uuid7
 
@@ -47,10 +52,10 @@ async def _create_notification(
 
 @router.get("")
 async def list_notifications(
+    user: CurrentUser,
     limit: int = 50,
     unread_only: bool = False,
-    user: dict = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """获取通知列表
 
     Args:
@@ -70,7 +75,7 @@ async def list_notifications(
     notifications = []
     for raw in raw_list:
         try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
+            notif = json.loads(raw)
             if unread_only and notif.get("read"):
                 continue
             notifications.append(notif)
@@ -87,9 +92,9 @@ async def list_notifications(
 
 @router.post("")
 async def create_notification(
-    payload: dict = Body(...),
-    user: dict = Depends(get_current_user),
-):
+    payload: BodyDict,
+    user: CurrentUser,
+) -> dict[str, Any]:
     """手动创建通知（前端"模拟通知"按钮调用）
 
     Body:
@@ -109,8 +114,8 @@ async def create_notification(
 @router.put("/{notif_id}/read")
 async def mark_notification_read(
     notif_id: str,
-    user: dict = Depends(get_current_user),
-):
+    user: CurrentUser,
+) -> dict[str, Any]:
     """标记单条通知为已读"""
     user_id = user["user_id"]
     redis = get_redis()
@@ -119,7 +124,7 @@ async def mark_notification_read(
     raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
     for i, raw in enumerate(raw_list):
         try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
+            notif = json.loads(raw)
             if notif.get("id") == notif_id:
                 notif["read"] = True
                 await redis.lset(_notif_key(user_id), i, json.dumps(notif))
@@ -132,8 +137,8 @@ async def mark_notification_read(
 
 @router.put("/read-all")
 async def mark_all_notifications_read(
-    user: dict = Depends(get_current_user),
-):
+    user: CurrentUser,
+) -> dict[str, Any]:
     """标记所有通知为已读"""
     user_id = user["user_id"]
     redis = get_redis()
@@ -143,7 +148,7 @@ async def mark_all_notifications_read(
     updated = 0
     for i, raw in enumerate(raw_list):
         try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
+            notif = json.loads(raw)
             if not notif.get("read"):
                 notif["read"] = True
                 await redis.lset(_notif_key(user_id), i, json.dumps(notif))
@@ -157,8 +162,8 @@ async def mark_all_notifications_read(
 @router.delete("/{notif_id}")
 async def delete_notification(
     notif_id: str,
-    user: dict = Depends(get_current_user),
-):
+    user: CurrentUser,
+) -> dict[str, Any]:
     """删除单条通知"""
     user_id = user["user_id"]
     redis = get_redis()
@@ -167,10 +172,10 @@ async def delete_notification(
     raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
     for raw in raw_list:
         try:
-            notif = json.loads(raw)  # type: ignore[arg-type]
+            notif = json.loads(raw)
             if notif.get("id") == notif_id:
                 # LREM 按 value 删除（需要精确匹配原始 JSON 字符串）
-                await redis.lrem(_notif_key(user_id), 1, raw)  # type: ignore[arg-type]
+                await redis.lrem(_notif_key(user_id), 1, raw.decode() if isinstance(raw, bytes) else raw)
                 return {"success": True, "id": notif_id}
         except (json.JSONDecodeError, TypeError):
             continue
@@ -180,8 +185,8 @@ async def delete_notification(
 
 @router.delete("")
 async def clear_all_notifications(
-    user: dict = Depends(get_current_user),
-):
+    user: CurrentUser,
+) -> dict[str, Any]:
     """清除所有通知"""
     user_id = user["user_id"]
     redis = get_redis()

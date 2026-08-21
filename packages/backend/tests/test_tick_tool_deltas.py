@@ -5,10 +5,14 @@
 - inventory 等工具变更随 _execute_action 的 PG 事务落库
 """
 
+from typing import Any, cast
 from uuid import UUID
+
+from redis.asyncio import Redis
 
 from src.actions import ActionRegistry
 from src.core.character.tick import CharacterTickEngine
+from src.llm import LLMClient, PromptTemplates
 
 _CHARACTER_ID = UUID("01964000-0000-7000-8000-000000000001")
 
@@ -17,17 +21,22 @@ class FakeRedis:
     """记录 hset 调用的假 Redis，用于断言工具 delta 不再直写"""
 
     def __init__(self) -> None:
-        self.hset_calls: list[tuple[str, dict]] = []
+        self.hset_calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def hset(self, key: str, mapping: dict | None = None, **kwargs) -> None:
+    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self.hset_calls.append((key, mapping or {}))
 
 
 def _make_engine(redis: FakeRedis) -> CharacterTickEngine:
-    return CharacterTickEngine(redis=redis, registry=ActionRegistry(), llm=None, prompts=None)
+    return CharacterTickEngine(
+        redis=cast(Redis, redis),
+        registry=ActionRegistry(),
+        llm=cast(LLMClient, None),
+        prompts=cast(PromptTemplates, None),
+    )
 
 
-async def test_apply_tool_deltas_updates_memory_state_only():
+async def test_apply_tool_deltas_updates_memory_state_only() -> None:
     redis = FakeRedis()
     engine = _make_engine(redis)
     context = {"state": {"money": 100, "inventory": {}, "mood": "calm"}}
@@ -45,7 +54,7 @@ async def test_apply_tool_deltas_updates_memory_state_only():
     assert context["state"]["mood"] == "happy"
 
 
-async def test_apply_tool_deltas_inventory_removes_zero_qty():
+async def test_apply_tool_deltas_inventory_removes_zero_qty() -> None:
     redis = FakeRedis()
     engine = _make_engine(redis)
     context = {"state": {"inventory": {"coffee": 2}}}
@@ -59,7 +68,7 @@ async def test_apply_tool_deltas_inventory_removes_zero_qty():
     assert context["state"]["inventory"] == {"book": 1}
 
 
-async def test_apply_tool_deltas_money_never_negative():
+async def test_apply_tool_deltas_money_never_negative() -> None:
     redis = FakeRedis()
     engine = _make_engine(redis)
     context = {"state": {"money": 10}}

@@ -7,6 +7,7 @@
 """
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/api/v1", tags=["world"])
 
 
 @router.get("/world")
-async def get_world_state():
+async def get_world_state() -> dict[str, Any]:
     """获取世界状态
 
     Returns:
@@ -65,7 +66,7 @@ async def get_world_state():
 
 
 @router.get("/world/events/{tick_id}")
-async def get_world_events(tick_id: int):
+async def get_world_events(tick_id: int) -> dict[str, Any]:
     """获取指定 Tick 的世界事件
 
     Args:
@@ -100,7 +101,7 @@ async def get_world_events_range(
     end_tick: int = 0,
     event_type: str | None = None,
     limit: int = 100,
-):
+) -> dict[str, Any]:
     """查询 Tick 区间内的所有世界事件（用于事件时间线）
 
     Args:

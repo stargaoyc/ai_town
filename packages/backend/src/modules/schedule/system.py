@@ -144,7 +144,7 @@ class ScheduleSystem:
         if schedule not in self._profiles:
             logger.warning("未知作息类型 %s，使用 normal", schedule)
             return "normal"
-        return schedule
+        return str(schedule)
 
     def _is_in_sleep_window(self, profile: ScheduleProfile, hour: int) -> bool:
         """判断是否在睡眠时段

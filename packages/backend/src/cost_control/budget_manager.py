@@ -21,6 +21,7 @@ Redis Key 设计：
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -101,7 +102,7 @@ class BudgetManager:
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         return _COST_KEY_TEMPLATE.format(date=today)
 
-    async def get_today_usage(self) -> dict:
+    async def get_today_usage(self) -> dict[str, Any]:
         """获取当日累计使用量
 
         Returns:
@@ -118,7 +119,7 @@ class BudgetManager:
             "count": int(raw.get("count", 0)),
         }
 
-    async def record_usage(self, tokens: int, cost: float) -> dict:
+    async def record_usage(self, tokens: int, cost: float) -> dict[str, Any]:
         """记录一次 LLM 调用的 usage
 
         使用 Redis HINCRBY（tokens/count）+ HINCRBYFLOAT（cost）累加，
@@ -153,7 +154,7 @@ class BudgetManager:
             "count": int(count_total),
         }
 
-    async def check_budget(self) -> dict:
+    async def check_budget(self) -> dict[str, Any]:
         """检查预算状态（只读，不修改计数）
 
         Returns:

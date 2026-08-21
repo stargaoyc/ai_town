@@ -8,6 +8,8 @@
 3. 资源检查：当前状态足以承担 Action 的消耗（体力/饱腹度/社交能量/手机电量/金钱）
 """
 
+from typing import Any
+
 from structlog import get_logger
 
 from src.actions.base import Action
@@ -42,7 +44,7 @@ class ActionRegistry:
         """列出所有已注册的 Action"""
         return list(self._actions.values())
 
-    def get_candidates(self, state: dict, scene: str | None = None) -> list[Action]:
+    def get_candidates(self, state: dict[str, Any], scene: str | None = None) -> list[Action]:
         """获取当前可执行的候选 Action 列表
 
         Args:
@@ -83,7 +85,7 @@ class ActionRegistry:
         return candidates
 
     @staticmethod
-    def _has_enough_resources(action: Action, state: dict) -> bool:
+    def _has_enough_resources(action: Action, state: dict[str, Any]) -> bool:
         """检查当前状态是否足以承担 Action 的各项消耗"""
         # 体力消耗（energy_cost < 0 表示消耗）
         if action.energy_cost < 0 and int(state.get("stamina", 0)) < -action.energy_cost:

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ from src.observability.langfuse_integration import (
 
 
 @pytest.fixture(autouse=True)
-def reset_langfuse_client():
+def reset_langfuse_client() -> Iterator[None]:
     """每个测试前后重置全局 langfuse 客户端，避免测试间状态泄漏"""
     old = langfuse_integration._langfuse_client
     langfuse_integration._langfuse_client = None
@@ -32,7 +33,7 @@ def reset_langfuse_client():
 
 
 @pytest.fixture
-def unconfigured_langfuse():
+def unconfigured_langfuse() -> Iterator[None]:
     """模拟 Langfuse 未配置（host/public_key/secret_key 均为 None）
 
     项目 .env 可能已配置 langfuse，此 fixture 通过 patch settings
@@ -49,13 +50,13 @@ def unconfigured_langfuse():
 # ---------------------------------------------------------------------------
 
 
-def test_get_langfuse_returns_none_when_not_configured(unconfigured_langfuse):
+def test_get_langfuse_returns_none_when_not_configured(unconfigured_langfuse: None) -> None:
     """未配置时返回 None（settings 中 langfuse_host/public_key/secret_key 可能为 None）"""
     client = get_langfuse()
     assert client is None
 
 
-def test_get_langfuse_returns_none_when_host_missing():
+def test_get_langfuse_returns_none_when_host_missing() -> None:
     """langfuse_host 为 None 时返回 None"""
     with patch.object(langfuse_integration.settings, "langfuse_host", None):
         with patch.object(langfuse_integration.settings, "langfuse_public_key", "pk"):
@@ -64,7 +65,7 @@ def test_get_langfuse_returns_none_when_host_missing():
                 assert client is None
 
 
-def test_get_langfuse_returns_none_when_public_key_missing():
+def test_get_langfuse_returns_none_when_public_key_missing() -> None:
     """langfuse_public_key 为 None 时返回 None"""
     with patch.object(langfuse_integration.settings, "langfuse_host", "http://localhost"):
         with patch.object(langfuse_integration.settings, "langfuse_public_key", None):
@@ -73,7 +74,7 @@ def test_get_langfuse_returns_none_when_public_key_missing():
                 assert client is None
 
 
-def test_get_langfuse_returns_none_when_secret_key_missing():
+def test_get_langfuse_returns_none_when_secret_key_missing() -> None:
     """langfuse_secret_key 为 None 时返回 None"""
     with patch.object(langfuse_integration.settings, "langfuse_host", "http://localhost"):
         with patch.object(langfuse_integration.settings, "langfuse_public_key", "pk"):
@@ -82,7 +83,7 @@ def test_get_langfuse_returns_none_when_secret_key_missing():
                 assert client is None
 
 
-def test_get_langfuse_returns_cached_client():
+def test_get_langfuse_returns_cached_client() -> None:
     """已初始化的客户端被缓存，重复调用返回同一实例"""
     mock_client = MagicMock()
     langfuse_integration._langfuse_client = mock_client
@@ -98,7 +99,7 @@ def test_get_langfuse_returns_cached_client():
 # ---------------------------------------------------------------------------
 
 
-def test_record_llm_trace_no_error_when_uninitialized(unconfigured_langfuse):
+def test_record_llm_trace_no_error_when_uninitialized(unconfigured_langfuse: None) -> None:
     """Langfuse 未初始化时不报错（优雅降级）"""
     assert get_langfuse() is None
     # 不应抛出异常
@@ -112,7 +113,7 @@ def test_record_llm_trace_no_error_when_uninitialized(unconfigured_langfuse):
     )
 
 
-def test_record_llm_trace_with_error_param_when_uninitialized(unconfigured_langfuse):
+def test_record_llm_trace_with_error_param_when_uninitialized(unconfigured_langfuse: None) -> None:
     """未初始化时即使传入 error 参数也不报错"""
     assert get_langfuse() is None
     record_llm_trace(
@@ -126,7 +127,7 @@ def test_record_llm_trace_with_error_param_when_uninitialized(unconfigured_langf
     )
 
 
-def test_record_llm_trace_calls_client_with_correct_params():
+def test_record_llm_trace_calls_client_with_correct_params() -> None:
     """传入参数正确调用 Langfuse 客户端"""
     mock_client = MagicMock()
     mock_trace = MagicMock()
@@ -154,7 +155,7 @@ def test_record_llm_trace_calls_client_with_correct_params():
     assert call_kwargs["metadata"]["duration_seconds"] == 1.5
 
 
-def test_record_llm_trace_with_error_records_error_level():
+def test_record_llm_trace_with_error_records_error_level() -> None:
     """error 参数非 None 时使用 ERROR level 记录"""
     mock_client = MagicMock()
     mock_trace = MagicMock()
@@ -179,7 +180,7 @@ def test_record_llm_trace_with_error_records_error_level():
     assert call_kwargs["metadata"]["error"] == "ValueError: something went wrong"
 
 
-def test_record_llm_trace_truncates_long_prompt():
+def test_record_llm_trace_truncates_long_prompt() -> None:
     """超长 prompt 被截断"""
     mock_client = MagicMock()
     mock_trace = MagicMock()
@@ -201,7 +202,7 @@ def test_record_llm_trace_truncates_long_prompt():
     assert call_kwargs["input"].endswith("...[truncated]")
 
 
-def test_record_llm_trace_client_exception_swallowed():
+def test_record_llm_trace_client_exception_swallowed() -> None:
     """客户端抛异常时被捕获，不影响调用方（不抛异常）"""
     mock_client = MagicMock()
     mock_client.trace.side_effect = RuntimeError("langfuse down")
@@ -224,7 +225,7 @@ def test_record_llm_trace_client_exception_swallowed():
 
 
 @pytest.mark.asyncio
-async def test_trace_llm_call_passthrough_when_uninitialized(unconfigured_langfuse):
+async def test_trace_llm_call_passthrough_when_uninitialized(unconfigured_langfuse: None) -> None:
     """Langfuse 未初始化时直接透传（不影响业务）"""
     assert get_langfuse() is None
 
@@ -237,7 +238,7 @@ async def test_trace_llm_call_passthrough_when_uninitialized(unconfigured_langfu
 
 
 @pytest.mark.asyncio
-async def test_trace_llm_call_preserves_return_value(unconfigured_langfuse):
+async def test_trace_llm_call_preserves_return_value(unconfigured_langfuse: None) -> None:
     """装饰 async 函数后正常执行，返回值不变"""
     assert get_langfuse() is None
 
@@ -250,7 +251,7 @@ async def test_trace_llm_call_preserves_return_value(unconfigured_langfuse):
 
 
 @pytest.mark.asyncio
-async def test_trace_llm_call_with_mock_client():
+async def test_trace_llm_call_with_mock_client() -> None:
     """Langfuse 初始化后正确记录 generation"""
     mock_client = MagicMock()
     mock_trace = MagicMock()
@@ -274,7 +275,7 @@ async def test_trace_llm_call_with_mock_client():
 
 
 @pytest.mark.asyncio
-async def test_trace_llm_call_records_exception_and_reraises():
+async def test_trace_llm_call_records_exception_and_reraises() -> None:
     """被装饰函数抛异常时记录 ERROR 并 re-raise"""
     mock_client = MagicMock()
     mock_trace = MagicMock()
@@ -295,7 +296,7 @@ async def test_trace_llm_call_records_exception_and_reraises():
 
 
 @pytest.mark.asyncio
-async def test_trace_llm_call_preserves_function_metadata(unconfigured_langfuse):
+async def test_trace_llm_call_preserves_function_metadata(unconfigured_langfuse: None) -> None:
     """装饰器保留原函数元信息（functools.wraps）"""
     assert get_langfuse() is None
 
@@ -309,7 +310,7 @@ async def test_trace_llm_call_preserves_function_metadata(unconfigured_langfuse)
 
 
 @pytest.mark.asyncio
-async def test_trace_llm_call_extracts_prompt_from_args():
+async def test_trace_llm_call_extracts_prompt_from_args() -> None:
     """装饰器从位置参数提取 prompt"""
     mock_client = MagicMock()
     mock_trace = MagicMock()

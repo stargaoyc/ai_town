@@ -6,6 +6,7 @@
 """
 
 import random
+from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -69,7 +70,7 @@ class WeatherEvolution(WorldEvolution):
             )
             logger.info("weather_evolution_initialized", weather=weather)
 
-    async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
+    async def evolve(self, redis: Redis, tick_id: int, world_state: dict[str, Any]) -> dict[str, Any]:
         """按间隔更新或保持当前天气"""
         interval = settings.world_weather_interval
         state = await self.hgetall_json(redis, WEATHER_KEY)
@@ -134,10 +135,10 @@ class WeatherEvolution(WorldEvolution):
             base -= 5
         return base
 
-    async def _current_season(self, redis: Redis, world_state: dict) -> str:
+    async def _current_season(self, redis: Redis, world_state: dict[str, Any]) -> str:
         """从 world_state 或时间哈希读取当前季节"""
         season = world_state.get("season")
         if season:
-            return season
+            return str(season)
         time_state = await self.hgetall_json(redis, TIME_KEY)
-        return time_state.get("season", "spring")
+        return str(time_state.get("season", "spring"))

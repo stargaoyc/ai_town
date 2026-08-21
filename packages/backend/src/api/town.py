@@ -5,6 +5,8 @@
 - 场景详情查询（含实时状态：拥挤度、在场角色）
 """
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 
 from src.runtime import get_scene_loader
@@ -13,7 +15,7 @@ router = APIRouter(prefix="/api/v1/town", tags=["town"])
 
 
 @router.get("/scenes")
-async def list_scenes():
+async def list_scenes() -> dict[str, Any]:
     """获取所有场景列表"""
     scene_loader = get_scene_loader()
     if not scene_loader:
@@ -38,7 +40,7 @@ async def list_scenes():
 
 
 @router.get("/scenes/{scene_id}")
-async def get_scene_detail(scene_id: str):
+async def get_scene_detail(scene_id: str) -> dict[str, Any]:
     """获取场景详情（含实时状态）"""
     scene_loader = get_scene_loader()
     if not scene_loader:

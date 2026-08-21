@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
@@ -32,7 +33,9 @@ class Character(Base):
     name: Mapped[str] = mapped_column(String(100), comment="角色名")
     age: Mapped[int | None] = mapped_column(Integer, comment="年龄")
     occupation: Mapped[str | None] = mapped_column(String(100), comment="职业")
-    traits: Mapped[dict] = mapped_column(JSONB, default=dict, comment="特征字典（personality/hobby/schedule/mbti 等）")
+    traits: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, comment="特征字典（personality/hobby/schedule/mbti 等）"
+    )
     backstory: Mapped[str | None] = mapped_column(Text, comment="背景故事")
     avatar_url: Mapped[str | None] = mapped_column(String(500), comment="头像 URL")
     voice_preset: Mapped[str | None] = mapped_column(String(100), comment="语音预设")
@@ -67,8 +70,8 @@ class CharacterState(Base):
     satiety: Mapped[int] = mapped_column(Integer, default=60, comment="饱腹度 0-100")
     mood: Mapped[str | None] = mapped_column(String(20), comment="情绪")
     money: Mapped[int] = mapped_column(Integer, default=500, comment="金钱")
-    inventory: Mapped[dict] = mapped_column(JSONB, default=dict, comment="物品栏")
-    current_action: Mapped[dict | None] = mapped_column(JSONB, comment="当前动作")
+    inventory: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, comment="物品栏")
+    current_action: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="当前动作")
     phone_battery: Mapped[int] = mapped_column(Integer, default=75, comment="手机电量 0-100")
     social_energy: Mapped[int] = mapped_column(Integer, default=60, comment="社交能量 0-100")
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False, comment="乐观锁版本号（防止并发覆盖）")

@@ -1,11 +1,14 @@
 """RBAC 角色权限控制"""
 
+from collections.abc import Callable, Coroutine
+from typing import Any
+
 from fastapi import HTTPException, Request
 
 from src.auth import decode_token
 
 
-def require_role(*roles: str):
+def require_role(*roles: str) -> Callable[[Request], Coroutine[Any, Any, dict[str, Any]]]:
     """要求用户具有指定角色之一
 
     用法：
@@ -14,7 +17,7 @@ def require_role(*roles: str):
             ...
     """
 
-    async def dependency(request: Request):
+    async def dependency(request: Request) -> dict[str, Any]:
         # 从请求头获取 token
         auth_header = request.headers.get("authorization", "")
         if not auth_header.startswith("Bearer "):

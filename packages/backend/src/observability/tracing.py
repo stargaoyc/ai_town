@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from structlog import get_logger
@@ -45,12 +45,12 @@ try:
     _OTEL_SDK_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _OTEL_SDK_AVAILABLE = False
-    OTLPSpanExporter = None  # type: ignore[assignment]
-    Resource = None  # type: ignore[assignment]
-    TracerProvider = None  # type: ignore[assignment]
-    BatchSpanProcessor = None  # type: ignore[assignment]
-    ConsoleSpanExporter = None  # type: ignore[assignment]
-    TraceIdRatioBased = None  # type: ignore[assignment]
+    OTLPSpanExporter = None  # type: ignore[assignment, misc]
+    Resource = None  # type: ignore[assignment, misc]
+    TracerProvider = None  # type: ignore[assignment, misc]
+    BatchSpanProcessor = None  # type: ignore[assignment, misc]
+    ConsoleSpanExporter = None  # type: ignore[assignment, misc]
+    TraceIdRatioBased = None  # type: ignore[assignment, misc]
 
 # 自动 instrument：FastAPI
 try:
@@ -59,7 +59,7 @@ try:
     _FASTAPI_INSTRUMENTOR_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _FASTAPI_INSTRUMENTOR_AVAILABLE = False
-    FastAPIInstrumentor = None  # type: ignore[assignment]
+    FastAPIInstrumentor = None  # type: ignore[assignment, misc]
 
 # 自动 instrument：asyncpg
 try:
@@ -68,14 +68,14 @@ try:
     _ASYNCPG_INSTRUMENTOR_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _ASYNCPG_INSTRUMENTOR_AVAILABLE = False
-    AsyncPGInstrumentor = None  # type: ignore[assignment]
+    AsyncPGInstrumentor = None  # type: ignore[assignment, misc]
 
 
 class _NoOpTracer:
     """OTel API 不可用时的兜底 tracer，确保 trace_span 装饰器不崩溃。"""
 
     @contextlib.contextmanager
-    def start_as_current_span(self, name: str, *args: Any, **kwargs: Any):  # noqa: ARG002
+    def start_as_current_span(self, name: str, *args: Any, **kwargs: Any) -> Iterator[None]:  # noqa: ARG002
         yield None
 
 
@@ -108,13 +108,13 @@ def setup_tracing(app: FastAPI) -> None:
         return
 
     # 资源：标识服务
-    resource = Resource.create({"service.name": settings.otel_service_name})  # type: ignore[union-attr]
+    resource = Resource.create({"service.name": settings.otel_service_name})
 
     # 采样器
-    sampler = TraceIdRatioBased(rate=settings.otel_traces_sampler_rate)  # type: ignore[union-attr]
+    sampler = TraceIdRatioBased(rate=settings.otel_traces_sampler_rate)
 
     # TracerProvider
-    tracer_provider = TracerProvider(resource=resource, sampler=sampler)  # type: ignore[union-attr]
+    tracer_provider = TracerProvider(resource=resource, sampler=sampler)
 
     # Exporter + SpanProcessor
     if settings.otel_endpoint is None:
@@ -131,7 +131,7 @@ def setup_tracing(app: FastAPI) -> None:
         endpoint = settings.otel_endpoint.rstrip("/")
         if not endpoint.endswith("/v1/traces"):
             endpoint += "/v1/traces"
-        exporter = OTLPSpanExporter(endpoint=endpoint)  # type: ignore[union-attr]
+        exporter = OTLPSpanExporter(endpoint=endpoint)
         logger.info(
             "otel_tracing_otlp_exporter",
             endpoint=settings.otel_endpoint,
@@ -139,15 +139,15 @@ def setup_tracing(app: FastAPI) -> None:
             sampler_rate=settings.otel_traces_sampler_rate,
         )
 
-    tracer_provider.add_span_processor(BatchSpanProcessor(exporter))  # type: ignore[union-attr]
+    tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
 
     # 注册为全局 TracerProvider
-    trace.set_tracer_provider(tracer_provider)  # type: ignore[union-attr]
+    trace.set_tracer_provider(tracer_provider)
 
     # 自动 instrument FastAPI 路由
     if _FASTAPI_INSTRUMENTOR_AVAILABLE:
         try:
-            FastAPIInstrumentor.instrument_app(app)  # type: ignore[union-attr]
+            FastAPIInstrumentor.instrument_app(app)
             logger.info("otel_fastapi_instrumented")
         except Exception as e:
             logger.warning(
@@ -164,7 +164,7 @@ def setup_tracing(app: FastAPI) -> None:
     # 自动 instrument 数据库查询
     if _ASYNCPG_INSTRUMENTOR_AVAILABLE:
         try:
-            AsyncPGInstrumentor().instrument()  # type: ignore[union-attr]
+            AsyncPGInstrumentor().instrument()
             logger.info("otel_asyncpg_instrumented")
         except Exception as e:
             logger.warning(

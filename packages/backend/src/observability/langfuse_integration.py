@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from structlog import get_logger
 
-from src.config import settings
+from src.config import settings as settings
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
@@ -58,7 +58,7 @@ try:
 
     _LANGFUSE_AVAILABLE = True
 except ImportError:
-    _Langfuse = None  # type: ignore[assignment,misc]
+    _Langfuse = None
     _LANGFUSE_AVAILABLE = False
 
 
@@ -90,7 +90,7 @@ def setup_langfuse() -> Langfuse | None:
         return None
 
     try:
-        _langfuse_client = _Langfuse(  # type: ignore[union-attr]
+        _langfuse_client = _Langfuse(
             host=settings.langfuse_host,
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
@@ -124,7 +124,7 @@ def _truncate(text: str, max_length: int = _MAX_TEXT_LENGTH) -> str:
     return text[:max_length] + "...[truncated]"
 
 
-def _extract_prompt(args: tuple, kwargs: dict) -> str:
+def _extract_prompt(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     """从函数参数中提取 prompt 文本
 
     优先从 kwargs 中查找 prompt/content/message/text/input 键，
@@ -140,7 +140,7 @@ def _extract_prompt(args: tuple, kwargs: dict) -> str:
     return ""
 
 
-def _extract_model(kwargs: dict) -> str:
+def _extract_model(kwargs: dict[str, Any]) -> str:
     """从函数参数中提取 model 名称"""
     return str(kwargs.get("model", "unknown"))
 

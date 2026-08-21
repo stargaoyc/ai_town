@@ -8,6 +8,7 @@
 """
 
 from datetime import datetime, timedelta
+from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -93,7 +94,7 @@ class TimeEvolution(WorldEvolution):
             )
             logger.info("time_evolution_initialized", world_time=initial.isoformat())
 
-    async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
+    async def evolve(self, redis: Redis, tick_id: int, world_state: dict[str, Any]) -> dict[str, Any]:
         """推进虚拟时钟一个 Tick"""
         state = await self.hgetall_json(redis, TIME_KEY)
         if state and "world_time" in state:

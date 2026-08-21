@@ -3,7 +3,7 @@
 Character 为静态档案，CharacterState 为 PG 镜像（Redis 为主）。
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
@@ -80,7 +80,7 @@ class CharacterRepository(BaseRepository[Character]):
             return None
         return row[0], row[1]
 
-    async def update_state(self, character_id: UUID, **fields) -> None:
+    async def update_state(self, character_id: UUID, **fields: Any) -> None:
         """更新角色实时状态字段（任意合法列名通过关键字参数传入）"""
         if not fields:
             return

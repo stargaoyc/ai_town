@@ -19,11 +19,13 @@ from __future__ import annotations
 import re
 import time
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
-from src.db.models import Character, Conversation, Message
+from src.db.models import Character, CharacterState, Conversation, Message
 from src.db.repositories import (
     CharacterRepository,
     ConversationRepository,
@@ -32,6 +34,9 @@ from src.db.repositories import (
 )
 from src.llm import LLMClient, PromptTemplates
 from src.security.prompt_guard import PromptGuard
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 logger = get_logger(__name__)
 
@@ -100,10 +105,10 @@ class MessageService:
 
     def __init__(
         self,
-        session,
+        session: AsyncSession,
         llm: LLMClient,
         prompts: PromptTemplates,
-        redis=None,
+        redis: Redis | None = None,
     ):
         """
         Args:
@@ -264,7 +269,7 @@ class MessageService:
         user_id: str,
         platform: str,
         content: str,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """处理用户消息的完整流程
 
         流程：
@@ -456,9 +461,9 @@ class MessageService:
         self,
         conversation: Conversation,
         character: Character,
-        state,
+        state: CharacterState,
         history: list[Message],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """构造 LLM 上下文字段（供 chat.yaml 模板渲染使用）
 
         返回包含所有 chat 模板占位符的字典：
@@ -494,13 +499,13 @@ class MessageService:
                 if world_state:
                     import json
 
-                    world_time_raw = world_state.get("world_time", "")
+                    world_time_raw = str(world_state.get("world_time", ""))
                     try:
                         parsed = json.loads(world_time_raw)
                         world_time = parsed if isinstance(parsed, str) else world_time_raw
                     except (json.JSONDecodeError, TypeError):
                         world_time = world_time_raw
-                    weather = world_state.get("weather", "sunny")
+                    weather = str(world_state.get("weather", "sunny"))
             except Exception:
                 pass  # Redis 读取失败不影响对话
 
@@ -519,7 +524,7 @@ class MessageService:
     async def _generate_reply(
         self,
         character: Character,
-        context: dict,
+        context: dict[str, Any],
         history: list[Message],
         user_message: str,
     ) -> tuple[str, int, float, str | None]:

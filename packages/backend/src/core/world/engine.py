@@ -64,8 +64,8 @@ class WorldEngine:
         self.tick_id = 0
         self.is_leader = False
         self._stop_event = asyncio.Event()
-        self._leader_task: asyncio.Task | None = None
-        self._tick_task: asyncio.Task | None = None
+        self._leader_task: asyncio.Task[None] | None = None
+        self._tick_task: asyncio.Task[None] | None = None
         # 上一次持久化的世界状态（用于事件去重，仅在状态变化时写入 world_events）
         self._last_persisted_state: dict[str, Any] = {}
 

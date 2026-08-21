@@ -7,7 +7,11 @@
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any, cast
 from uuid import UUID
+
+from pytest import MonkeyPatch
+from redis.asyncio import Redis
 
 from src.core import rehydration
 
@@ -16,13 +20,13 @@ _CHAR_ID = UUID("01964000-0000-7000-8000-000000000001")
 
 class FakeRedis:
     def __init__(self) -> None:
-        self.hashes: dict[str, dict] = {}
-        self.hset_calls: list[tuple[str, dict]] = []
+        self.hashes: dict[str, dict[str, Any]] = {}
+        self.hset_calls: list[tuple[str, dict[str, Any]]] = []
 
     async def exists(self, key: str) -> int:
         return 1 if key in self.hashes else 0
 
-    async def hset(self, key: str, mapping: dict | None = None, **kwargs) -> None:
+    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self.hset_calls.append((key, mapping or {}))
 
 
@@ -34,7 +38,7 @@ class FakeCtx:
     async def __aenter__(self) -> FakeSession:
         return FakeSession()
 
-    async def __aexit__(self, *args) -> bool:
+    async def __aexit__(self, *args: Any) -> bool:
         return False
 
 
@@ -43,7 +47,7 @@ class FakeSessionFactory:
         return FakeCtx()
 
 
-def _fake_char_state(**overrides) -> SimpleNamespace:
+def _fake_char_state(**overrides: Any) -> SimpleNamespace:
     base = {
         "character_id": _CHAR_ID,
         "location": "home",
@@ -60,19 +64,19 @@ def _fake_char_state(**overrides) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
-def _patch_repos(monkeypatch, char_states: list, snapshot) -> None:
+def _patch_repos(monkeypatch: MonkeyPatch, char_states: list[Any], snapshot: Any) -> None:
     class FakeCharRepo:
-        def __init__(self, session) -> None:
+        def __init__(self, session: Any) -> None:
             pass
 
-        async def get_all_states(self) -> list:
+        async def get_all_states(self) -> list[Any]:
             return char_states
 
     class FakeSnapshotRepo:
-        def __init__(self, session) -> None:
+        def __init__(self, session: Any) -> None:
             pass
 
-        async def get_latest(self):
+        async def get_latest(self) -> Any:
             return snapshot
 
     monkeypatch.setattr(rehydration, "CharacterRepository", FakeCharRepo)
@@ -80,11 +84,11 @@ def _patch_repos(monkeypatch, char_states: list, snapshot) -> None:
     monkeypatch.setattr(rehydration, "db", SimpleNamespace(session=FakeSessionFactory()))
 
 
-async def test_rehydrate_restores_missing_character_state(monkeypatch):
+async def test_rehydrate_restores_missing_character_state(monkeypatch: MonkeyPatch) -> None:
     redis = FakeRedis()
     _patch_repos(monkeypatch, [_fake_char_state()], None)
 
-    await rehydration.rehydrate_states(redis)
+    await rehydration.rehydrate_states(cast(Redis, redis))
 
     assert len(redis.hset_calls) == 1
     key, mapping = redis.hset_calls[0]
@@ -94,17 +98,17 @@ async def test_rehydrate_restores_missing_character_state(monkeypatch):
     assert "current_action" not in mapping  # None 值不落 Redis
 
 
-async def test_rehydrate_skips_existing_character_state(monkeypatch):
+async def test_rehydrate_skips_existing_character_state(monkeypatch: MonkeyPatch) -> None:
     redis = FakeRedis()
     redis.hashes[f"char:{_CHAR_ID}:state"] = {"money": "999"}
     _patch_repos(monkeypatch, [_fake_char_state()], None)
 
-    await rehydration.rehydrate_states(redis)
+    await rehydration.rehydrate_states(cast(Redis, redis))
 
     assert redis.hset_calls == []
 
 
-async def test_rehydrate_restores_world_state_from_snapshot(monkeypatch):
+async def test_rehydrate_restores_world_state_from_snapshot(monkeypatch: MonkeyPatch) -> None:
     redis = FakeRedis()
     snapshot = SimpleNamespace(
         tick_id=1234,
@@ -113,7 +117,7 @@ async def test_rehydrate_restores_world_state_from_snapshot(monkeypatch):
     )
     _patch_repos(monkeypatch, [], snapshot)
 
-    await rehydration.rehydrate_states(redis)
+    await rehydration.rehydrate_states(cast(Redis, redis))
 
     assert len(redis.hset_calls) == 1
     key, mapping = redis.hset_calls[0]
@@ -123,12 +127,12 @@ async def test_rehydrate_restores_world_state_from_snapshot(monkeypatch):
     assert mapping["world_time"] == "2026-08-20T12:00:00+00:00"
 
 
-async def test_rehydrate_skips_existing_world_state(monkeypatch):
+async def test_rehydrate_skips_existing_world_state(monkeypatch: MonkeyPatch) -> None:
     redis = FakeRedis()
     redis.hashes["world:state"] = {"tick_id": "999"}
     snapshot = SimpleNamespace(tick_id=1234, world_time=None, weather=None)
     _patch_repos(monkeypatch, [], snapshot)
 
-    await rehydration.rehydrate_states(redis)
+    await rehydration.rehydrate_states(cast(Redis, redis))
 
     assert redis.hset_calls == []

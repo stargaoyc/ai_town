@@ -57,7 +57,7 @@ class JWTHandler:
 
         token = jwt.encode(payload, self.secret, algorithm=self.algorithm)
         logger.debug("jwt_created", user_id=user_id)
-        return token
+        return str(token)
 
     def decode_token(self, token: str) -> dict[str, Any]:
         """解码并验证 JWT

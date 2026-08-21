@@ -204,7 +204,7 @@ class CharacterTickEngine:
             action=decision.action,
         )
 
-    async def _perceive(self, character_id: UUID) -> dict:
+    async def _perceive(self, character_id: UUID) -> dict[str, Any]:
         """感知环境 - 读取角色状态、世界状态、记忆、同场景其他角色
 
         Args:
@@ -257,14 +257,11 @@ class CharacterTickEngine:
         if "mood" not in state and char_state:
             state["mood"] = getattr(char_state, "mood", "calm")
 
-        # 从 Redis 读取世界状态
+        # 从 Redis 读取世界状态（hgetall 返回值可能含 bytes，统一解码为 str）
         world_state = await self.redis.hgetall("world:state")
-        world = dict(world_state) if world_state else {}
-
-        # 解码 world state 中的 bytes
-        for key, value in world.items():
-            if isinstance(value, bytes):
-                world[key] = value.decode()
+        world: dict[str, Any] = {
+            str(k): v.decode() if isinstance(v, bytes) else v for k, v in (world_state or {}).items()
+        }
 
         # 检索相关记忆（需要 db session 创建 RetrievalService）
         # embedding 失败时降级为空记忆列表，不阻断 Tick
@@ -300,7 +297,7 @@ class CharacterTickEngine:
 
         # 感知同场景其他角色（多智能体交互关键）
         # 提供角色名、性格、当前动作、关系强度，供 LLM 决策是否发起社交
-        nearby_characters: list[dict] = []
+        nearby_characters: list[dict[str, Any]] = []
         current_location = state.get("location")
         if current_location:
             try:
@@ -369,7 +366,7 @@ class CharacterTickEngine:
     async def _decide(
         self,
         character_id: UUID,
-        context: dict,
+        context: dict[str, Any],
         candidates: list[Action],
         tool_observations: list[dict[str, Any]] | None = None,
     ) -> DecisionResult:
@@ -534,7 +531,9 @@ class CharacterTickEngine:
             proactive_share_intent=proactive_share_intent,
         )
 
-    async def _execute_tool(self, character_id: UUID, decision: DecisionResult, context: dict) -> dict | None:
+    async def _execute_tool(
+        self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """执行工具调用
 
         当 LLM 决定使用工具时，通过 ToolRegistry 直接调用本地 async 函数，
@@ -622,7 +621,7 @@ class CharacterTickEngine:
         self,
         character_id: UUID,
         tool_result: dict[str, Any],
-        context: dict,
+        context: dict[str, Any],
     ) -> None:
         """将工具返回的状态 deltas 应用到角色内存状态
 
@@ -719,7 +718,7 @@ class CharacterTickEngine:
                     error=str(e),
                 )
 
-    async def _execute_action(self, character_id: UUID, decision: DecisionResult, context: dict) -> None:
+    async def _execute_action(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """执行 Action - 事务化
 
         流程：
@@ -887,7 +886,7 @@ class CharacterTickEngine:
         self,
         character_id: UUID,
         decision: DecisionResult,
-        context: dict,
+        context: dict[str, Any],
     ) -> str | None:
         """处理角色间对话（多智能体交互核心）
 
@@ -952,7 +951,7 @@ class CharacterTickEngine:
         target_id_str: str,
         character: Any,
         decision: DecisionResult,
-        context: dict,
+        context: dict[str, Any],
     ) -> str | None:
         """chat_with 实际执行逻辑（在跨角色锁保护下运行）"""
         async with db.session() as session:
@@ -1098,7 +1097,7 @@ class CharacterTickEngine:
 
         return dialogue
 
-    async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict) -> None:
+    async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """记忆沉淀
 
         流程：
@@ -1174,7 +1173,9 @@ class CharacterTickEngine:
             action=decision.action,
         )
 
-    async def _maybe_proactive_share(self, character_id: UUID, decision: DecisionResult, context: dict) -> None:
+    async def _maybe_proactive_share(
+        self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
+    ) -> None:
         """主动分享 - 角色主动向用户推送消息
 
         触发条件：LLM 决策的 proactive_share_intent=True

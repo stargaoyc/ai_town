@@ -8,6 +8,7 @@
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -125,7 +126,7 @@ class ConversationRepository(BaseRepository[Conversation]):
     async def update_context(
         self,
         conversation_id: UUID,
-        context: dict,
+        context: dict[str, Any],
     ) -> None:
         """更新会话上下文摘要
 

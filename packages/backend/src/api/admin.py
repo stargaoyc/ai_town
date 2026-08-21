@@ -22,6 +22,18 @@ from structlog import get_logger
 
 from src.auth.rbac import require_role
 from src.config import Settings, settings
+from src.config_runtime import (
+    RuntimeConfig,
+)
+from src.config_runtime import (
+    get_runtime_config as _get_runtime_config_singleton,
+)
+from src.config_runtime import (
+    reset_runtime_config as _reset_runtime_config_item,
+)
+from src.config_runtime import (
+    update_runtime_config as _update_runtime_config_items,
+)
 from src.core.world.evolutions.time_evolution import (
     TIME_KEY,
     compute_day_phase,
@@ -60,7 +72,7 @@ BodyDict = Annotated[dict[str, Any], Body(...)]
 async def force_tick(
     user: AdminOrOperator,
     character_id: str | None = None,
-):
+) -> dict[str, Any]:
     """强制触发 Tick（管理接口）
 
     Args:
@@ -116,7 +128,7 @@ async def force_tick(
 
 
 @router.post("/world/tick")
-async def force_world_tick(user: AdminOrOperator):
+async def force_world_tick(user: AdminOrOperator) -> dict[str, Any]:
     """强制触发 World Tick（管理接口）
 
     Returns:
@@ -141,7 +153,7 @@ async def force_world_tick(user: AdminOrOperator):
 async def reset_world_time(
     user: Admin,
     new_time: str | None = None,
-):
+) -> dict[str, Any]:
     """重置世界虚拟时间（管理接口）
 
     清除 Redis 中的旧时间状态，让时间演化器在下次 Tick 时重新初始化。
@@ -173,7 +185,7 @@ async def reset_world_time(
             parsed = datetime.fromisoformat(new_time)
             await redis.hset(
                 TIME_KEY,
-                mapping={  # type: ignore[arg-type]
+                mapping={
                     "world_time": parsed.isoformat(),
                     "tick_id": "0",
                     "day_phase": compute_day_phase(parsed.hour),
@@ -183,7 +195,7 @@ async def reset_world_time(
             # 同步到主哈希
             await redis.hset(
                 "world:state",
-                mapping={  # type: ignore[arg-type]
+                mapping={
                     "world_time": parsed.isoformat(),
                     "tick_id": "0",
                 },
@@ -207,7 +219,7 @@ async def reset_world_time(
 
 
 @router.get("/status")
-async def get_admin_status(user: Admin):
+async def get_admin_status(user: Admin) -> dict[str, Any]:
     """获取系统状态（管理接口）
 
     Returns:
@@ -282,7 +294,7 @@ async def get_admin_status(user: Admin):
 async def import_character_card(
     payload: BodyDict,
     user: Admin,
-):
+) -> dict[str, Any]:
     """导入角色卡 YAML 文件
 
     通过 JSON body 提供 yaml 字段（值为 YAML 字符串）。
@@ -345,7 +357,7 @@ async def import_character_card(
 async def import_characters_batch(
     payload: BodyDict,
     user: Admin,
-):
+) -> dict[str, Any]:
     """批量导入角色卡（多角色 YAML，用 --- 分隔）
 
     Args:
@@ -405,7 +417,7 @@ async def import_characters_batch(
 async def delete_character(
     character_id: UUID,
     user: Admin,
-):
+) -> dict[str, Any]:
     """删除角色及其所有相关数据（管理接口，仅 admin）
 
     删除范围（依赖 PG ON DELETE CASCADE 自动级联）：
@@ -446,7 +458,7 @@ async def delete_character(
 
 
 @router.get("/onebot/messages")
-async def get_onebot_messages(user: Admin, limit: int = 50):
+async def get_onebot_messages(user: Admin, limit: int = 50) -> dict[str, Any]:
     """获取 QQ 消息记录（用于 QQ 消息监控）
 
     查询 platform=qq 的会话中的最近消息，包含发送者和内容。
@@ -486,7 +498,7 @@ async def get_onebot_messages(user: Admin, limit: int = 50):
 
 
 @router.get("/proactive-shares")
-async def get_proactive_shares(user: Admin, limit: int = 50):
+async def get_proactive_shares(user: Admin, limit: int = 50) -> dict[str, Any]:
     """获取主动分享历史记录
 
     仅查询 extra_data.share_type='proactive' 的消息，
@@ -543,7 +555,7 @@ async def vector_search(
     character_id: UUID,
     query: str,
     top_k: int = 10,
-):
+) -> dict[str, Any]:
     """向量检索测试 - 调试 pgvector 检索
 
     Args:
@@ -596,7 +608,7 @@ async def vector_search(
 
 
 @router.get("/world/snapshots")
-async def get_world_snapshots(user: Admin, limit: int = 20):
+async def get_world_snapshots(user: Admin, limit: int = 20) -> dict[str, Any]:
     """获取世界快照列表（用于冷启动恢复管理）
 
     Returns:
@@ -636,7 +648,7 @@ async def get_recent_logs(
     user: Admin,
     lines: int = 100,
     level: Literal["debug", "info", "warning", "error"] | None = None,
-):
+) -> dict[str, Any]:
     """获取最近的系统日志（从 data/logs/backend.log 读取）
 
     Args:
@@ -688,7 +700,7 @@ async def get_recent_logs(
 
 
 @router.get("/metrics-detail")
-async def get_detailed_metrics(user: Admin):
+async def get_detailed_metrics(user: Admin) -> dict[str, Any]:
     """获取详细的系统指标（解析 Prometheus 格式，返回结构化数据）
 
     返回比 /metrics/ 端点更易消费的 JSON 结构，包含：
@@ -708,7 +720,7 @@ async def get_detailed_metrics(user: Admin):
         # 解析所有指标族
         families = list(text_string_to_metric_families(raw_text))
 
-        result = {
+        result: dict[str, Any] = {
             "world": {},
             "characters": {},
             "actions": {},
@@ -838,19 +850,6 @@ async def get_detailed_metrics(user: Admin):
 #
 # 详见 src/config_runtime.py
 
-from src.config_runtime import (
-    RuntimeConfig,
-)
-from src.config_runtime import (
-    get_runtime_config as _get_runtime_config_singleton,
-)
-from src.config_runtime import (
-    reset_runtime_config as _reset_runtime_config_item,
-)
-from src.config_runtime import (
-    update_runtime_config as _update_runtime_config_items,
-)
-
 # 配置项中文说明（供前端展示）
 _CONFIG_LABELS = {
     "share_cooldown_seconds": "分享冷却时间（秒）",
@@ -869,7 +868,7 @@ _CONFIG_LABELS = {
 
 
 @router.get("/config")
-async def get_runtime_config(user: Admin):
+async def get_runtime_config(user: Admin) -> dict[str, Any]:
     """获取运行时配置（环境变量默认值 + Redis 覆盖值）
 
     Returns:
@@ -908,7 +907,7 @@ async def get_runtime_config(user: Admin):
 async def update_runtime_config(
     updates: BodyDict,
     user: Admin,
-):
+) -> dict[str, Any]:
     """更新运行时配置（写入 Redis 覆盖值，无需重启）
 
     通过 Pydantic 校验后写入 Redis，立即生效。
@@ -938,7 +937,7 @@ async def update_runtime_config(
 
 
 @router.delete("/config/{key}")
-async def reset_config_item(key: str, user: Admin):
+async def reset_config_item(key: str, user: Admin) -> dict[str, Any]:
     """重置单个配置项为默认值（删除 Redis 覆盖）
 
     Args:

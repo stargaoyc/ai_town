@@ -69,19 +69,30 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-ignore = [
-  "E501",
-  "B904", # 异常链，手动处理需谨慎
-  "B008", # FastAPI 默认值调用，实际无害
-  "E402", # 导入位置（如有特殊原因可忽略）
-  "B027", # 空抽象方法（可改为抽象方法或移除）
-]
+
+[tool.ruff.lint.per-file-ignores]
+# WorldEvolution.setup 为可选生命周期钩子：子类按需覆写而非强制实现，
+# 不适用 @abstractmethod（B027 仅此一处，精确豁免到文件）
+"src/core/world/evolutions/base.py" = ["B027"]
 
 [tool.mypy]
 python_version = "3.13"
 strict = true
-ignore_missing_imports = true
+ignore_missing_imports = false
 explicit_package_bases = true
+
+# 以下第三方库无类型标注（无 py.typed / 无官方 stub），精确豁免而非全局忽略，
+# 新增依赖若缺 stub 应显式加入此列表
+[[tool.mypy.overrides]]
+module = ["yaml", "jose.*", "langfuse.*", "apscheduler.*"]
+ignore_missing_imports = true
+
+# opentelemetry-instrumentation 系列无完整类型标注（无 py.typed），
+# 其 Instrumentor 类的方法未注解；no-untyped-call 按调用方模块检查，
+# 故仅对唯一调用点 tracing.py 放宽该项
+[[tool.mypy.overrides]]
+module = ["src.observability.tracing"]
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

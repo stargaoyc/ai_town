@@ -10,7 +10,9 @@ move: 移动到指定场景（参数 target_scene）
 """
 
 import json
+from typing import Any
 
+from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.actions.base import Action, ActionCategory
@@ -23,7 +25,7 @@ MOVE_MATRIX_REDIS_KEY = "world:state:matrix"
 DEFAULT_MOVE_DURATION = 10
 
 
-def _move_executor(state: dict, params: dict) -> dict:
+def _move_executor(state: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     """移动执行器：仅更新位置；体力消耗由 energy_cost 字段统一应用"""
     target = params.get("target_scene")
     if not target:
@@ -31,7 +33,7 @@ def _move_executor(state: dict, params: dict) -> dict:
     return {"location": target}
 
 
-async def compute_move_duration(redis, from_scene: str, to_scene: str) -> int:
+async def compute_move_duration(redis: Redis, from_scene: str, to_scene: str) -> int:
     """从 Redis 移动矩阵查询两点间的移动耗时（虚拟分钟）
 
     Args:

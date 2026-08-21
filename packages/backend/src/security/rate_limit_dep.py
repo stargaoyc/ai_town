@@ -1,18 +1,23 @@
 """FastAPI 速率限制依赖"""
 
+from collections.abc import Callable, Coroutine
+from typing import Any
+
 from fastapi import HTTPException, Request
 
 from src.runtime import get_rate_limiter
 
 
-def rate_limit(key_prefix: str, max_requests: int = 60, window_seconds: int = 60):
+def rate_limit(
+    key_prefix: str, max_requests: int = 60, window_seconds: int = 60
+) -> Callable[[Request], Coroutine[Any, Any, None]]:
     """创建速率限制依赖
 
     用法：
         @app.post("/api/v1/messages/send", dependencies=[Depends(rate_limit("msg_send", 60, 60))])
     """
 
-    async def dependency(request: Request):
+    async def dependency(request: Request) -> None:
         limiter = get_rate_limiter()
         if not limiter:
             return  # 限流器不可用时放行

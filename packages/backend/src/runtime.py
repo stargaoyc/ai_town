@@ -9,7 +9,7 @@ main.py 的 lifespan 初始化后通过 set_* 方法写入，其他模块通过 
     llm = get_llm()      # 返回 LLMClient | None
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from src.actions import ActionRegistry
     from src.adapters import OneBotAdapter
     from src.core import WorldEngine
+    from src.core.character.tick import CharacterTickEngine
     from src.llm import LLMClient, PromptTemplates
     from src.memory.embedding_worker import EmbeddingWorker
     from src.messaging import WebSocketManager
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 # 运行时实例（初始化为 None，由 main.py lifespan 设置）
 _redis: "Redis | None" = None
 _world_engine: "WorldEngine | None" = None
-_character_engine = None  # CharacterTickEngine，类型可选
+_character_engine: "CharacterTickEngine | None" = None
 _registry: "ActionRegistry | None" = None
 _llm: "LLMClient | None" = None
 _prompts: "PromptTemplates | None" = None
@@ -53,77 +54,77 @@ _backend_port: int = 8001
 # === Setter 方法（仅 main.py lifespan 调用）===
 
 
-def set_redis(value) -> None:
+def set_redis(value: "Redis | None") -> None:
     global _redis
     _redis = value
 
 
-def set_world_engine(value) -> None:
+def set_world_engine(value: "WorldEngine | None") -> None:
     global _world_engine
     _world_engine = value
 
 
-def set_character_engine(value) -> None:
+def set_character_engine(value: "CharacterTickEngine | None") -> None:
     global _character_engine
     _character_engine = value
 
 
-def set_registry(value) -> None:
+def set_registry(value: "ActionRegistry | None") -> None:
     global _registry
     _registry = value
 
 
-def set_llm(value) -> None:
+def set_llm(value: "LLMClient | None") -> None:
     global _llm
     _llm = value
 
 
-def set_prompts(value) -> None:
+def set_prompts(value: "PromptTemplates | None") -> None:
     global _prompts
     _prompts = value
 
 
-def set_embedding_worker(value) -> None:
+def set_embedding_worker(value: "EmbeddingWorker | None") -> None:
     global _embedding_worker
     _embedding_worker = value
 
 
-def set_partition_scheduler(value) -> None:
+def set_partition_scheduler(value: "PartitionScheduler | None") -> None:
     global _partition_scheduler
     _partition_scheduler = value
 
 
-def set_rate_limiter(value) -> None:
+def set_rate_limiter(value: "RateLimiter | None") -> None:
     global _rate_limiter
     _rate_limiter = value
 
 
-def set_ws_manager(value) -> None:
+def set_ws_manager(value: "WebSocketManager | None") -> None:
     global _ws_manager
     _ws_manager = value
 
 
-def set_onebot_adapter(value) -> None:
+def set_onebot_adapter(value: "OneBotAdapter | None") -> None:
     global _onebot_adapter
     _onebot_adapter = value
 
 
-def set_scene_loader(value) -> None:
+def set_scene_loader(value: "SceneLoader | None") -> None:
     global _scene_loader
     _scene_loader = value
 
 
-def set_schedule_system(value) -> None:
+def set_schedule_system(value: "ScheduleSystem | None") -> None:
     global _schedule_system
     _schedule_system = value
 
 
-def set_duration_calculator(value) -> None:
+def set_duration_calculator(value: "DurationCalculator | None") -> None:
     global _duration_calculator
     _duration_calculator = value
 
 
-def set_movement_system(value) -> None:
+def set_movement_system(value: "MovementSystem | None") -> None:
     global _movement_system
     _movement_system = value
 
@@ -136,77 +137,77 @@ def set_backend_port(port: int) -> None:
 # === Getter 方法（业务模块调用）===
 
 
-def get_redis():
+def get_redis() -> "Redis | None":
     """获取 Redis 客户端实例"""
     return _redis
 
 
-def get_world_engine():
+def get_world_engine() -> "WorldEngine | None":
     """获取世界引擎实例"""
     return _world_engine
 
 
-def get_character_engine():
+def get_character_engine() -> "CharacterTickEngine | None":
     """获取角色 Tick 引擎实例"""
     return _character_engine
 
 
-def get_registry():
+def get_registry() -> "ActionRegistry | None":
     """获取 Action Registry 实例"""
     return _registry
 
 
-def get_llm():
+def get_llm() -> "LLMClient | None":
     """获取 LLM 客户端实例"""
     return _llm
 
 
-def get_prompts():
+def get_prompts() -> "PromptTemplates | None":
     """获取 Prompt 模板实例"""
     return _prompts
 
 
-def get_embedding_worker():
+def get_embedding_worker() -> "EmbeddingWorker | None":
     """获取 Embedding Worker 实例"""
     return _embedding_worker
 
 
-def get_partition_scheduler():
+def get_partition_scheduler() -> "PartitionScheduler | None":
     """获取分区调度器实例"""
     return _partition_scheduler
 
 
-def get_rate_limiter():
+def get_rate_limiter() -> "RateLimiter | None":
     """获取速率限制器实例"""
     return _rate_limiter
 
 
-def get_ws_manager():
+def get_ws_manager() -> "WebSocketManager | None":
     """获取 WebSocket 管理器实例"""
     return _ws_manager
 
 
-def get_onebot_adapter():
+def get_onebot_adapter() -> "OneBotAdapter | None":
     """获取 OneBot 适配器实例"""
     return _onebot_adapter
 
 
-def get_scene_loader():
+def get_scene_loader() -> "SceneLoader | None":
     """获取场景加载器实例"""
     return _scene_loader
 
 
-def get_schedule_system():
+def get_schedule_system() -> "ScheduleSystem | None":
     """获取作息系统实例"""
     return _schedule_system
 
 
-def get_duration_calculator():
+def get_duration_calculator() -> "DurationCalculator | None":
     """获取动态耗时计算器实例"""
     return _duration_calculator
 
 
-def get_movement_system():
+def get_movement_system() -> "MovementSystem | None":
     """获取移动系统实例"""
     return _movement_system
 
@@ -229,7 +230,7 @@ async def create_notification(
     notif_type: str,
     title: str,
     content: str,
-) -> dict:
+) -> dict[str, Any]:
     """创建通知并写入 Redis
 
     使用 runtime 持有的 Redis 客户端，消除业务模块对 main.py 的反向依赖。

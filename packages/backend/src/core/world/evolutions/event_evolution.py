@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime, timedelta
+from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -18,7 +19,7 @@ logger = get_logger(__name__)
 EVENTS_KEY = "world:state:events"
 
 # 节日日历：(month, day) → 事件定义（name / 持续天数 / 描述）
-FESTIVAL_CALENDAR: dict[tuple[int, int], dict] = {
+FESTIVAL_CALENDAR: dict[tuple[int, int], dict[str, Any]] = {
     (1, 1): {"name": "新年祭", "duration_days": 1, "description": "新年伊始，小镇共庆。"},
     (4, 5): {"name": "樱花祭", "duration_days": 3, "description": "樱花盛放，镇民齐聚公园赏花。"},
     (7, 15): {"name": "夏日祭", "duration_days": 2, "description": "夏日烟花与捞金鱼。"},
@@ -44,7 +45,7 @@ class EventEvolution(WorldEvolution):
             await redis.delete(EVENTS_KEY)
             logger.info("event_evolution_initialized")
 
-    async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
+    async def evolve(self, redis: Redis, tick_id: int, world_state: dict[str, Any]) -> dict[str, Any]:
         """触发节日并清理已结束事件"""
         time_state = await self.hgetall_json(redis, TIME_KEY)
         if not time_state or "world_time" not in time_state:

@@ -232,7 +232,7 @@ class LLMClient:
 
     async def multimodal_chat(
         self,
-        content: str | list[dict[str, Any]],
+        content: str | list[str | dict[Any, Any]],
         model: str | None = None,
     ) -> str:
         """多模态对话（支持文本+图像理解）
@@ -257,7 +257,7 @@ class LLMClient:
             logger.warning("multimodal_chat_model_redirect_to_chat", original_model=model)
 
         # 构建多模态消息
-        message = HumanMessage(content=content)  # type: ignore[call-overload]
+        message = HumanMessage(content=content)
 
         effective_model = model or "chat"
         start_perf = time.perf_counter()
@@ -266,7 +266,7 @@ class LLMClient:
             resp_content = response.content
             logger.debug(
                 "multimodal_chat_completed",
-                content_types=[c.get("type", "text") for c in content],
+                content_types=[c.get("type", "text") if isinstance(c, dict) else "text" for c in content],
                 response_length=len(resp_content),
             )
             elapsed = time.perf_counter() - start_perf
@@ -339,7 +339,7 @@ class LLMClient:
         response = await self.openai.images.generate(
             model=settings.model_strong,
             prompt=prompt,
-            size=size,  # type: ignore[arg-type]
+            size=size,
             extra_body=extra_body,
         )
 
@@ -492,7 +492,7 @@ class LLMClient:
                 url = data.get("url")
                 if not url:
                     raise RuntimeError(f"video_completed_no_url: {data}")
-                return url
+                return str(url)
 
             if status == "failed":
                 error = data.get("error")
@@ -574,7 +574,7 @@ class LLMClient:
 
     async def multimodal_structured_output(
         self,
-        content: str | list[dict[str, Any]],
+        content: str | list[str | dict[Any, Any]],
         schema: dict[str, Any],
         model: str | None = None,
     ) -> dict[str, Any]:
@@ -597,12 +597,12 @@ class LLMClient:
         pydantic_model = self._schema_to_pydantic(schema)
         structured_llm = self.chat_llm.with_structured_output(pydantic_model)
 
-        message = HumanMessage(content=content)  # type: ignore[call-overload]
+        message = HumanMessage(content=content)
 
         result = await structured_llm.ainvoke([message])
         logger.debug(
             "multimodal_structured_output_completed",
-            content_types=[c.get("type", "text") for c in content],
+            content_types=[c.get("type", "text") if isinstance(c, dict) else "text" for c in content],
             result_type=type(result).__name__,
         )
         if isinstance(result, BaseModel):

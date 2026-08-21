@@ -6,7 +6,7 @@
 
 import uuid
 
-from fastapi import HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from structlog import get_logger
 
@@ -68,6 +68,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
-def register_exception_handlers(app) -> None:
+def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器到 FastAPI 应用"""
     app.add_exception_handler(Exception, global_exception_handler)

@@ -5,6 +5,8 @@
 - 单个 Action 详情查询
 """
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 
 from src.runtime import get_registry
@@ -13,7 +15,7 @@ router = APIRouter(prefix="/api/v1", tags=["actions"])
 
 
 @router.get("/actions")
-async def list_actions():
+async def list_actions() -> dict[str, Any]:
     """获取所有 Action
 
     Returns:
@@ -41,7 +43,7 @@ async def list_actions():
 
 
 @router.get("/actions/{action_id}")
-async def get_action(action_id: str):
+async def get_action(action_id: str) -> dict[str, Any]:
     """获取单个 Action 详情
 
     Args:

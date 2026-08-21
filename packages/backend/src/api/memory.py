@@ -5,7 +5,7 @@
 - 角色对用户的记忆：Person Memory
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["memory-extension"])
 
-AdminOrOperator = Annotated[dict, Depends(require_role("admin", "operator"))]
+AdminOrOperator = Annotated[dict[str, Any], Depends(require_role("admin", "operator"))]
 
 
 def _get_diary_service() -> DiaryService:
@@ -41,7 +41,7 @@ async def list_diaries(
     character_id: str,
     period: Literal["day", "week", "month", "year"] | None = None,
     limit: int = Query(20, ge=1, le=200),
-):
+) -> dict[str, Any]:
     """获取角色日记列表
 
     Args:
@@ -62,10 +62,10 @@ async def list_diaries(
 @router.post("/characters/{character_id}/diaries/generate")
 async def generate_diary(
     character_id: str,
-    _user: AdminOrOperator,  # type: ignore[valid-type]
+    _user: AdminOrOperator,
     period: Literal["day", "week", "month", "year"] = "day",
     character_name: str = "",
-):
+) -> dict[str, Any]:
     """为角色生成指定周期的日记
 
     需 admin/operator 权限。
@@ -108,7 +108,7 @@ async def generate_diary(
 async def get_person_memory(
     character_id: str,
     user_id: str = Query(..., description="用户标识"),
-):
+) -> dict[str, Any]:
     """获取角色对某用户的记忆"""
     try:
         cid = UUID(character_id)
@@ -126,7 +126,7 @@ async def get_person_memory(
 async def list_person_memories(
     character_id: str,
     limit: int = Query(50, ge=1, le=500),
-):
+) -> dict[str, Any]:
     """获取角色对所有用户的记忆列表（按热度倒序）"""
     try:
         cid = UUID(character_id)
@@ -161,7 +161,7 @@ async def list_person_memories(
 
 
 @router.get("/memories/{character_id}")
-async def get_memories(character_id: str, limit: int = 20):
+async def get_memories(character_id: str, limit: int = 20) -> dict[str, Any]:
     """获取角色记忆
 
     Args:

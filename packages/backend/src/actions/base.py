@@ -16,6 +16,7 @@
 
 from collections.abc import Callable
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -59,16 +60,16 @@ class Action(BaseModel):
     money_cost: int = 0  # 金钱消耗（正数=花费金额）
     money_gain: int = 0  # 金钱收益（正数=获得金额）
     phone_battery_cost: int = 0  # 手机电量变化（正=恢复，负=消耗）
-    precondition: Callable | None = None  # 前置条件检查函数
-    executor: Callable | None = None  # 执行器函数（可选，默认只更新状态）
-    params_schema: dict | None = None  # 参数 JSON Schema（用于 LLM 决策）
+    precondition: Callable[..., bool] | None = None  # 前置条件检查函数
+    executor: Callable[..., Any] | None = None  # 执行器函数（可选，默认只更新状态）
+    params_schema: dict[str, Any] | None = None  # 参数 JSON Schema（用于 LLM 决策）
 
 
 class ActionResult(BaseModel):
     """Action 执行结果"""
 
     success: bool
-    new_state: dict  # 状态变更
+    new_state: dict[str, Any]  # 状态变更
     message: str | None = None
 
 
@@ -80,9 +81,9 @@ class DecisionResult(BaseModel):
 
     action: str  # 选中的 Action ID
     reason: str  # 决策理由
-    params: dict = Field(default_factory=dict)  # 执行参数
+    params: dict[str, Any] = Field(default_factory=dict)  # 执行参数
     duration: int | None = None  # 动态耗时（仅 allow_dynamic_duration=True 时有效）
-    plan_changes: list[dict] = Field(default_factory=list)  # 计划变更
+    plan_changes: list[dict[str, Any]] = Field(default_factory=list)  # 计划变更
     proactive_share_intent: bool = False  # 是否想主动分享
 
 
@@ -96,7 +97,7 @@ def clamp_resource(value: int, lo: int = _RESOURCE_MIN, hi: int = _RESOURCE_MAX)
     return max(lo, min(hi, value))
 
 
-def apply_cost_fields(state: dict, action: Action) -> dict:
+def apply_cost_fields(state: dict[str, Any], action: Action) -> dict[str, Any]:
     """根据 Action 的资源字段计算状态变更（带符号增量，资源自动 clamp 到 [0,100]）
 
     当 action.executor 为 None 时，执行层使用本函数应用默认状态更新；
@@ -106,7 +107,7 @@ def apply_cost_fields(state: dict, action: Action) -> dict:
     Returns:
         发生变化的字段及其新值（绝对值）。
     """
-    changes: dict = {}
+    changes: dict[str, Any] = {}
     if action.energy_cost:
         changes["stamina"] = clamp_resource(state.get("stamina", 0) + action.energy_cost)
     if action.satiety_cost:

@@ -8,6 +8,7 @@
 """
 
 import secrets
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from structlog import get_logger
@@ -38,7 +39,7 @@ router = APIRouter(tags=["system"])
 
 
 @router.get("/health")
-async def health():
+async def health() -> dict[str, Any]:
     """健康检查
 
     返回服务状态、各模块运行状态、World Tick ID。
@@ -86,14 +87,14 @@ async def health():
     }
 
 
-def _get_current_world_time():
+def _get_current_world_time() -> dict[str, Any] | None:
     """读取当前世界时间（同步版本，用于 health 端点）"""
     # 这里返回 None，实际时间通过 /admin/status 异步获取
     return None
 
 
 @router.post("/api/v1/auth/login", dependencies=[Depends(rate_limit("login", 5, 60))])
-async def login(body: dict):
+async def login(body: dict[str, Any]) -> dict[str, Any]:
     """登录接口 - 账号密码换取 JWT Token
 
     请求体: {"username": "admin", "password": "admin123"}
@@ -123,7 +124,7 @@ async def login(body: dict):
 
 
 @router.get("/api/v1/modules")
-async def list_modules():
+async def list_modules() -> dict[str, Any]:
     """列出所有系统模块及其运行状态
 
     Returns:
@@ -238,7 +239,7 @@ async def calculate_duration(
     crowdedness: float = 0.0,
     stamina: int = 100,
     mood: str = "calm",
-):
+) -> dict[str, Any]:
     """计算动态耗时
 
     Args:

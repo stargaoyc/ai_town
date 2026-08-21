@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from structlog import get_logger
 
 from src.observability.langfuse_integration import get_langfuse
@@ -50,7 +52,7 @@ def trace_llm_call(
         return
 
     try:
-        metadata: dict = {
+        metadata: dict[str, Any] = {
             "latency_ms": latency_ms,
             "tokens": tokens,
         }
@@ -66,7 +68,7 @@ def trace_llm_call(
             model=model,
             input=_truncate(prompt),
             output=_truncate(response),
-            usage={"total_tokens": tokens} if tokens else None,  # type: ignore[arg-type]
+            usage={"total_tokens": tokens} if tokens else None,
             metadata=metadata,
         )
     except Exception:

@@ -27,22 +27,22 @@ from src.observability.metrics import (
 # ---------------------------------------------------------------------------
 
 
-def test_world_tick_duration_is_histogram():
+def test_world_tick_duration_is_histogram() -> None:
     """WORLD_TICK_DURATION 是 Histogram"""
     assert isinstance(WORLD_TICK_DURATION, Histogram)
 
 
-def test_world_tick_total_is_counter():
+def test_world_tick_total_is_counter() -> None:
     """WORLD_TICK_TOTAL 是 Counter"""
     assert isinstance(WORLD_TICK_TOTAL, Counter)
 
 
-def test_llm_tokens_used_is_counter():
+def test_llm_tokens_used_is_counter() -> None:
     """LLM_TOKENS_USED 是 Counter"""
     assert isinstance(LLM_TOKENS_USED, Counter)
 
 
-def test_llm_tokens_used_has_correct_labels():
+def test_llm_tokens_used_has_correct_labels() -> None:
     """LLM_TOKENS_USED 有 labels ["model", "type"]"""
     label_names = list(LLM_TOKENS_USED._labelnames)
     assert "model" in label_names
@@ -50,17 +50,17 @@ def test_llm_tokens_used_has_correct_labels():
     assert len(label_names) == 2
 
 
-def test_active_characters_is_gauge():
+def test_active_characters_is_gauge() -> None:
     """ACTIVE_CHARACTERS 是 Gauge"""
     assert isinstance(ACTIVE_CHARACTERS, Gauge)
 
 
-def test_redis_connected_is_gauge():
+def test_redis_connected_is_gauge() -> None:
     """REDIS_CONNECTED 是 Gauge"""
     assert isinstance(REDIS_CONNECTED, Gauge)
 
 
-def test_world_tick_id_is_gauge():
+def test_world_tick_id_is_gauge() -> None:
     """WORLD_TICK_ID 是 Gauge"""
     assert isinstance(WORLD_TICK_ID, Gauge)
 
@@ -70,13 +70,13 @@ def test_world_tick_id_is_gauge():
 # ---------------------------------------------------------------------------
 
 
-def test_counter_inc_no_error():
+def test_counter_inc_no_error() -> None:
     """Counter.inc() 不报错"""
     WORLD_TICK_TOTAL.inc()
     WORLD_TICK_TOTAL.inc(1)
 
 
-def test_counter_inc_with_amount():
+def test_counter_inc_with_amount() -> None:
     """Counter.inc(amount) 累加正确"""
     before = WORLD_TICK_TOTAL._value.get()
     WORLD_TICK_TOTAL.inc(5)
@@ -84,28 +84,28 @@ def test_counter_inc_with_amount():
     assert after - before == 5
 
 
-def test_histogram_observe_no_error():
+def test_histogram_observe_no_error() -> None:
     """Histogram.observe(0.5) 不报错"""
     WORLD_TICK_DURATION.observe(0.5)
 
 
-def test_histogram_observe_zero():
+def test_histogram_observe_zero() -> None:
     """Histogram.observe(0) 不报错"""
     WORLD_TICK_DURATION.observe(0)
 
 
-def test_gauge_set_no_error():
+def test_gauge_set_no_error() -> None:
     """Gauge.set(42) 不报错"""
     WORLD_TICK_ID.set(42)
 
 
-def test_gauge_set_value_reflected():
+def test_gauge_set_value_reflected() -> None:
     """Gauge.set() 值被正确设置"""
     ACTIVE_CHARACTERS.set(7)
     assert ACTIVE_CHARACTERS._value.get() == 7
 
 
-def test_gauge_set_redis_connected():
+def test_gauge_set_redis_connected() -> None:
     """REDIS_CONNECTED Gauge 可 set 0/1"""
     REDIS_CONNECTED.set(1)
     assert REDIS_CONNECTED._value.get() == 1
@@ -113,13 +113,13 @@ def test_gauge_set_redis_connected():
     assert REDIS_CONNECTED._value.get() == 0
 
 
-def test_counter_with_labels_inc_no_error():
+def test_counter_with_labels_inc_no_error() -> None:
     """带标签的 Counter.labels("chat", "success").inc() 不报错"""
     LLM_TOKENS_USED.labels("chat", "success").inc()
     LLM_TOKENS_USED.labels("chat", "success").inc(3)
 
 
-def test_counter_with_labels_different_values():
+def test_counter_with_labels_different_values() -> None:
     """带标签的 Counter 不同标签值独立计数"""
     LLM_TOKENS_USED.labels("model-a", "prompt").inc(10)
     LLM_TOKENS_USED.labels("model-a", "completion").inc(20)
@@ -131,12 +131,12 @@ def test_counter_with_labels_different_values():
 # ---------------------------------------------------------------------------
 
 
-def test_setup_metrics_callable():
+def test_setup_metrics_callable() -> None:
     """setup_metrics 函数存在且可调用"""
     assert callable(setup_metrics)
 
 
-def test_setup_metrics_with_mock_app():
+def test_setup_metrics_with_mock_app() -> None:
     """setup_metrics 使用 mock FastAPI app 可正常执行"""
     mock_app = MagicMock()
     setup_metrics(mock_app)
@@ -149,7 +149,7 @@ def test_setup_metrics_with_mock_app():
     assert mount_args.args[0] == "/metrics"
 
 
-def test_setup_metrics_mounts_metrics_endpoint():
+def test_setup_metrics_mounts_metrics_endpoint() -> None:
     """setup_metrics 挂载 /metrics 端点"""
     mock_app = MagicMock()
     setup_metrics(mock_app)
@@ -159,7 +159,7 @@ def test_setup_metrics_mounts_metrics_endpoint():
     assert len(mount_args.args) >= 2
 
 
-def test_setup_metrics_adds_prometheus_middleware():
+def test_setup_metrics_adds_prometheus_middleware() -> None:
     """setup_metrics 注册 PrometheusMiddleware"""
     from src.observability.metrics import PrometheusMiddleware
 

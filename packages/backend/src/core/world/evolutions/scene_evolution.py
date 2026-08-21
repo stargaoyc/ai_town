@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -21,7 +22,7 @@ VISITORS_KEY = "world:scene:visitors"
 
 # 默认场景注册表：开放时段 (start_hour, end_hour) 与容量
 # end_hour 可大于 24，表示跨午夜（如 bar 18 → 次日 02:00 记作 26）
-DEFAULT_SCENES: dict[str, dict] = {
+DEFAULT_SCENES: dict[str, dict[str, Any]] = {
     "cafe": {"open_hours": (7, 22), "capacity": 30},
     "school": {"open_hours": (8, 17), "capacity": 100},
     "park": {"open_hours": (6, 22), "capacity": 50},
@@ -57,7 +58,7 @@ class SceneEvolution(WorldEvolution):
 
     name = "scene"
 
-    def __init__(self, scenes: dict[str, dict] | None = None) -> None:
+    def __init__(self, scenes: dict[str, dict[str, Any]] | None = None) -> None:
         self.scenes = scenes or DEFAULT_SCENES
 
     async def setup(self, redis: Redis) -> None:
@@ -67,7 +68,7 @@ class SceneEvolution(WorldEvolution):
             await self._refresh(redis, hour=8, visitors_map={})
             logger.info("scene_evolution_initialized", scenes=list(self.scenes.keys()))
 
-    async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
+    async def evolve(self, redis: Redis, tick_id: int, world_state: dict[str, Any]) -> dict[str, Any]:
         """刷新所有场景状态"""
         # 读取当前虚拟时间以获取小时
         time_state = await self.hgetall_json(redis, TIME_KEY)
@@ -84,9 +85,9 @@ class SceneEvolution(WorldEvolution):
         logger.info("scenes_updated", tick_id=tick_id, hour=hour, scene_count=len(scenes_state))
         return {"locations": scenes_state}
 
-    async def _refresh(self, redis: Redis, hour: int, visitors_map: dict) -> dict[str, dict]:
+    async def _refresh(self, redis: Redis, hour: int, visitors_map: dict[str, Any]) -> dict[str, dict[str, Any]]:
         """根据小时与在场人数重算并写回所有场景状态"""
-        scenes_state: dict[str, dict] = {}
+        scenes_state: dict[str, dict[str, Any]] = {}
         for scene_id, cfg in self.scenes.items():
             visitors = int(visitors_map.get(scene_id, 0))
             capacity = max(1, cfg["capacity"])

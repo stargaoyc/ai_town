@@ -6,6 +6,7 @@
 
 import json
 from abc import ABC, abstractmethod
+from typing import Any
 
 from redis.asyncio import Redis
 
@@ -20,7 +21,7 @@ class WorldEvolution(ABC):
     name: str  # 演化器名称
 
     @abstractmethod
-    async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
+    async def evolve(self, redis: Redis, tick_id: int, world_state: dict[str, Any]) -> dict[str, Any]:
         """推进一个 Tick，返回更新的世界状态字段
 
         Args:
@@ -42,7 +43,7 @@ class WorldEvolution(ABC):
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def hset_json(redis: Redis, key: str, mapping: dict) -> None:
+    async def hset_json(redis: Redis, key: str, mapping: dict[str, Any]) -> None:
         """将字典写入 Redis Hash，每个 value 以 JSON 字符串存储"""
         if not mapping:
             return
@@ -50,7 +51,7 @@ class WorldEvolution(ABC):
         await redis.hset(key, mapping=encoded)  # type: ignore[arg-type]
 
     @staticmethod
-    async def hgetall_json(redis: Redis, key: str) -> dict:
+    async def hgetall_json(redis: Redis, key: str) -> dict[str, Any]:
         """读取 Redis Hash 并反序列化 JSON 值，返回 dict"""
         raw = await redis.hgetall(key)
         if not raw:

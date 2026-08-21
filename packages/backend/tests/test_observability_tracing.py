@@ -19,19 +19,19 @@ from src.observability.tracing import get_tracer, trace_span
 # ---------------------------------------------------------------------------
 
 
-def test_get_tracer_returns_object():
+def test_get_tracer_returns_object() -> None:
     """返回的 tracer 对象不为 None"""
     tracer = get_tracer()
     assert tracer is not None
 
 
-def test_get_tracer_with_custom_name():
+def test_get_tracer_with_custom_name() -> None:
     """可以指定 tracer 名称"""
     tracer = get_tracer("custom-tracer-name")
     assert tracer is not None
 
 
-def test_get_tracer_returns_same_tracer_on_repeated_calls():
+def test_get_tracer_returns_same_tracer_on_repeated_calls() -> None:
     """重复调用返回可用的 tracer（不为 None）"""
     tracer1 = get_tracer()
     tracer2 = get_tracer()
@@ -45,7 +45,7 @@ def test_get_tracer_returns_same_tracer_on_repeated_calls():
 
 
 @pytest.mark.asyncio
-async def test_trace_span_async_executes():
+async def test_trace_span_async_executes() -> None:
     """装饰 async 函数后正常执行"""
 
     @trace_span("test-async-span")
@@ -57,7 +57,7 @@ async def test_trace_span_async_executes():
 
 
 @pytest.mark.asyncio
-async def test_trace_span_async_preserves_return_value():
+async def test_trace_span_async_preserves_return_value() -> None:
     """装饰后函数返回值不变"""
 
     @trace_span("test-span")
@@ -69,7 +69,7 @@ async def test_trace_span_async_preserves_return_value():
 
 
 @pytest.mark.asyncio
-async def test_trace_span_async_with_kwargs():
+async def test_trace_span_async_with_kwargs() -> None:
     """装饰 async 函数支持 kwargs 透传"""
 
     @trace_span("test-span")
@@ -81,7 +81,7 @@ async def test_trace_span_async_with_kwargs():
 
 
 @pytest.mark.asyncio
-async def test_trace_span_async_records_exception_and_reraises():
+async def test_trace_span_async_records_exception_and_reraises() -> None:
     """异常时 span 记录异常但 re-raise"""
     mock_span = MagicMock()
     mock_tracer = MagicMock()
@@ -101,7 +101,7 @@ async def test_trace_span_async_records_exception_and_reraises():
 
 
 @pytest.mark.asyncio
-async def test_trace_span_async_no_exception_no_record():
+async def test_trace_span_async_no_exception_no_record() -> None:
     """正常执行时不调用 record_exception"""
     mock_span = MagicMock()
     mock_tracer = MagicMock()
@@ -120,7 +120,7 @@ async def test_trace_span_async_no_exception_no_record():
 
 
 @pytest.mark.asyncio
-async def test_trace_span_async_sets_attributes():
+async def test_trace_span_async_sets_attributes() -> None:
     """装饰 async 函数后 span 设置 code.function 与 result.type 属性"""
     mock_span = MagicMock()
     mock_tracer = MagicMock()
@@ -144,7 +144,7 @@ async def test_trace_span_async_sets_attributes():
 # ---------------------------------------------------------------------------
 
 
-def test_trace_span_sync_executes():
+def test_trace_span_sync_executes() -> None:
     """装饰 sync 函数后正常执行"""
 
     @trace_span("test-sync-span")
@@ -155,7 +155,7 @@ def test_trace_span_sync_executes():
     assert result == 7
 
 
-def test_trace_span_sync_preserves_return_value():
+def test_trace_span_sync_preserves_return_value() -> None:
     """装饰 sync 函数后返回值不变"""
 
     @trace_span("test-span")
@@ -166,7 +166,7 @@ def test_trace_span_sync_preserves_return_value():
     assert result == "expected_value"
 
 
-def test_trace_span_sync_records_exception_and_reraises():
+def test_trace_span_sync_records_exception_and_reraises() -> None:
     """sync 函数异常时 span 记录异常但 re-raise"""
     mock_span = MagicMock()
     mock_tracer = MagicMock()
@@ -185,7 +185,7 @@ def test_trace_span_sync_records_exception_and_reraises():
         mock_span.record_exception.assert_called_once()
 
 
-def test_trace_span_sync_sets_attributes():
+def test_trace_span_sync_sets_attributes() -> None:
     """装饰 sync 函数后 span 设置 code.function 属性"""
     mock_span = MagicMock()
     mock_tracer = MagicMock()
@@ -209,7 +209,7 @@ def test_trace_span_sync_sets_attributes():
 # ---------------------------------------------------------------------------
 
 
-def test_trace_span_preserves_function_name():
+def test_trace_span_preserves_function_name() -> None:
     """装饰器保留原函数 __name__（functools.wraps）"""
 
     @trace_span("test-span")
@@ -219,7 +219,7 @@ def test_trace_span_preserves_function_name():
     assert my_named_function.__name__ == "my_named_function"
 
 
-def test_trace_span_preserves_function_docstring():
+def test_trace_span_preserves_function_docstring() -> None:
     """装饰器保留原函数 __doc__"""
 
     @trace_span("test-span")

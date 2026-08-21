@@ -97,7 +97,7 @@ class CircuitBreaker:
         if not raw:
             return CircuitState.CLOSED, 0, 0.0
         try:
-            state = CircuitState(raw.get("state", "CLOSED"))
+            state = CircuitState(str(raw.get("state", "CLOSED")))
         except ValueError:
             state = CircuitState.CLOSED
         failure_count = int(raw.get("failure_count", 0))

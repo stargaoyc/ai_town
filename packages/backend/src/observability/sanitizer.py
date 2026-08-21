@@ -22,7 +22,7 @@ def sanitize_url(url: str) -> str:
     return url
 
 
-def sanitize_value(key: str, value) -> str:
+def sanitize_value(key: str, value: object) -> str:
     """根据字段名判断是否需要脱敏"""
     sensitive_keys = {"password", "secret", "api_key", "token", "authorization"}
     if any(s in key.lower() for s in sensitive_keys):

@@ -6,6 +6,7 @@
 """
 
 import random
+from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -18,7 +19,7 @@ logger = get_logger(__name__)
 RESOURCES_KEY = "world:state:resources"
 
 # 默认商品：基础库存、基础价格、单 Tick 消耗量、补货目标
-DEFAULT_GOODS: dict[str, dict] = {
+DEFAULT_GOODS: dict[str, dict[str, Any]] = {
     "food": {"base_inventory": 100, "base_price": 10, "consumption": 5, "restock_to": 100},
     "energy": {"base_inventory": 80, "base_price": 15, "consumption": 4, "restock_to": 80},
     "coffee": {"base_inventory": 50, "base_price": 8, "consumption": 3, "restock_to": 50},
@@ -37,7 +38,7 @@ class ResourceEvolution(WorldEvolution):
 
     name = "resource"
 
-    def __init__(self, goods: dict[str, dict] | None = None) -> None:
+    def __init__(self, goods: dict[str, dict[str, Any]] | None = None) -> None:
         self.goods = goods or DEFAULT_GOODS
 
     async def setup(self, redis: Redis) -> None:
@@ -50,10 +51,10 @@ class ResourceEvolution(WorldEvolution):
             await self.hset_json(redis, RESOURCES_KEY, mapping)
             logger.info("resource_evolution_initialized", goods=list(self.goods.keys()))
 
-    async def evolve(self, redis: Redis, tick_id: int, world_state: dict) -> dict:
+    async def evolve(self, redis: Redis, tick_id: int, world_state: dict[str, Any]) -> dict[str, Any]:
         """推进一轮库存与物价"""
         current = await self.hgetall_json(redis, RESOURCES_KEY)
-        new_state: dict[str, dict] = {}
+        new_state: dict[str, dict[str, Any]] = {}
 
         for gid, g in self.goods.items():
             # 读取当前库存（缺失则用基础值）

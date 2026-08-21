@@ -9,6 +9,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Index, String
@@ -40,9 +41,9 @@ class WorldSnapshot(Base):
     tick_id: Mapped[int] = mapped_column(BigInteger, comment="快照对应的 Tick 序号")
     world_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), comment="虚拟世界时间")
     weather: Mapped[str | None] = mapped_column(String(20), comment="天气状态")
-    locations: Mapped[dict | None] = mapped_column(JSONB, comment="所有场景状态 JSON")
-    resources: Mapped[dict | None] = mapped_column(JSONB, comment="资源状态 JSON")
-    active_events: Mapped[dict | None] = mapped_column(JSONB, comment="活跃事件列表 JSON")
+    locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="所有场景状态 JSON")
+    resources: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="资源状态 JSON")
+    active_events: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="活跃事件列表 JSON")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default="now()", comment="快照创建时间"
     )

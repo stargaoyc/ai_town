@@ -11,6 +11,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Index, String, UniqueConstraint
@@ -51,7 +52,7 @@ class WorldEvent(Base):
     event_key: Mapped[str] = mapped_column(
         String(100), default="default", comment="事件键（区分同 Tick 同类型不同实体，默认 default）"
     )
-    payload: Mapped[dict] = mapped_column(JSONB, comment="变更内容（仅差分）")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, comment="变更内容（仅差分）")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
 
     __table_args__ = (

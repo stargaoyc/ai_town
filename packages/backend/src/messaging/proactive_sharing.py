@@ -22,10 +22,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
 from src.config import settings
@@ -37,6 +38,9 @@ from src.db.repositories import (
 )
 from src.llm import LLMClient, PromptTemplates
 from src.llm.prompts import SAFETY_SYSTEM_PROMPT
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 logger = get_logger(__name__)
 
@@ -73,11 +77,11 @@ class ProactiveSharingService:
 
     def __init__(
         self,
-        session,
+        session: AsyncSession,
         llm: LLMClient,
         prompts: PromptTemplates,
-        ws_manager=None,
-        redis=None,
+        ws_manager: Any = None,
+        redis: Redis | None = None,
     ):
         """
         Args:
@@ -354,14 +358,14 @@ class ProactiveSharingService:
                 if world_state:
                     import json
 
-                    world_time_raw = world_state.get("world_time", "")
+                    world_time_raw = str(world_state.get("world_time", ""))
                     try:
                         world_time = json.loads(world_time_raw)
                         if not isinstance(world_time, str):
                             world_time = world_time_raw
                     except (json.JSONDecodeError, TypeError):
                         world_time = world_time_raw
-                    weather = world_state.get("weather", "sunny")
+                    weather = str(world_state.get("weather", "sunny"))
                     world_section = f"当前虚拟时间: {world_time}，天气: {weather}\n"
             except Exception:
                 pass

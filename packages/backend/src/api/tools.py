@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from structlog import get_logger
@@ -19,6 +19,10 @@ from src.tools.registry import TOOLS_ENABLED_KEY
 
 router = APIRouter(prefix="/api/v1/tools", tags=["tools"])
 logger = get_logger(__name__)
+
+# 依赖类型别名（规避 B008：不在函数默认参数中调用 Depends/Body）
+AdminUser = Annotated[dict[str, Any], Depends(require_role("admin"))]
+BodyDict = Annotated[dict[str, Any], Body(...)]
 
 
 # 命名空间元数据（用于 /servers 端点展示）
@@ -65,7 +69,7 @@ async def _is_namespace_enabled(namespace: str) -> bool:
 
 
 @router.get("/servers")
-async def list_tool_servers():
+async def list_tool_servers() -> dict[str, Any]:
     """列出所有工具命名空间
 
     Returns:
@@ -94,7 +98,7 @@ async def list_tool_servers():
 
 
 @router.get("/servers/health")
-async def check_tool_servers_health():
+async def check_tool_servers_health() -> dict[str, Any]:
     """检查所有工具命名空间的健康状态
 
     本地工具为进程内调用，始终在线。
@@ -119,7 +123,7 @@ async def check_tool_servers_health():
 
 
 @router.get("/servers/{server_name}")
-async def get_tool_server_detail(server_name: str):
+async def get_tool_server_detail(server_name: str) -> dict[str, Any]:
     """获取单个命名空间详情
 
     Args:
@@ -144,7 +148,7 @@ async def get_tool_server_detail(server_name: str):
 
 
 @router.get("/tools")
-async def list_all_tools():
+async def list_all_tools() -> dict[str, Any]:
     """列出所有已启用工具
 
     Returns:
@@ -176,9 +180,9 @@ async def list_all_tools():
 @router.put("/servers/{server_name}/enabled")
 async def toggle_tool_server(
     server_name: str,
-    payload: dict = Body(...),
-    user=Depends(require_role("admin")),
-):
+    payload: BodyDict,
+    user: AdminUser,
+) -> dict[str, Any]:
     """启用/禁用整个命名空间的所有工具
 
     状态持久化到 Redis hash `tools:enabled`，Character Tick 决策时
@@ -222,10 +226,10 @@ async def toggle_tool_server(
 @router.post("/tools/{tool_name}/invoke")
 async def invoke_tool(
     tool_name: str,
+    user: AdminUser,
     server_name: str | None = None,
-    args: dict = Body(default={}),
-    user=Depends(require_role("admin")),
-):
+    args: Annotated[dict[str, Any] | None, Body()] = None,
+) -> dict[str, Any]:
     """调用本地工具（测试用）
 
     Args:
@@ -249,7 +253,7 @@ async def invoke_tool(
     # 测试调用：只传 LLM 可填参数，不注入角色状态
     # 状态变更类工具会因缺少 current_money 等参数而返回错误，这是预期行为
     try:
-        result = await meta["func"](**args)
+        result = await meta["func"](**(args or {}))
         return {
             "success": True,
             "tool": full_name,

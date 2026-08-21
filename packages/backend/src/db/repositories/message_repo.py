@@ -7,6 +7,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -33,7 +34,7 @@ class MessageRepository(BaseRepository[Message]):
         content: str,
         tokens: int | None = None,
         cost: float | None = None,
-        extra_data: dict | None = None,
+        extra_data: dict[str, Any] | None = None,
     ) -> Message:
         """新增一条消息
 

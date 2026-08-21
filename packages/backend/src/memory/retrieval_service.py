@@ -3,6 +3,7 @@
 使用 MemoryRepository.search_hybrid() 实现语义 + 重要性 + 时间衰减排序
 """
 
+from typing import Any
 from uuid import UUID
 
 from structlog import get_logger
@@ -25,7 +26,7 @@ class RetrievalService:
         character_id: UUID,
         query: str,
         top_k: int = 10,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """检索相关记忆
 
         流程：

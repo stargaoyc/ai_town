@@ -37,11 +37,17 @@ import asyncio
 import json
 import re
 import secrets
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 from structlog import get_logger
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
+
+    from src.llm import LLMClient, PromptTemplates
 
 from src.db.session import db
 from src.messaging import MessageService
@@ -111,7 +117,7 @@ def _get_configured_self_id() -> str | None:
     return settings.onebot_self_id
 
 
-def _get_llm_globals() -> tuple[object | None, object | None, object | None]:
+def _get_llm_globals() -> tuple[LLMClient | None, PromptTemplates | None, Redis | None]:
     """延迟获取全局 LLM 客户端与 Prompt 模板（避免循环导入）
 
     Returns:
@@ -122,7 +128,7 @@ def _get_llm_globals() -> tuple[object | None, object | None, object | None]:
     return get_llm(), get_prompts(), get_redis()
 
 
-def _extract_text(event: dict) -> str:
+def _extract_text(event: dict[str, Any]) -> str:
     """从 OneBot v12 消息事件中提取纯文本
 
     优先使用 raw_message（OneBot v12 规范定义的纯文本表示）；
@@ -156,7 +162,7 @@ def _extract_text(event: dict) -> str:
 _CQ_AT_PATTERN = re.compile(r"\[CQ:at,qq=(\d+)[^\]]*\]")
 
 
-def _is_mentioned_self(event: dict, self_id: str | None) -> bool:
+def _is_mentioned_self(event: dict[str, Any], self_id: str | None) -> bool:
     """检测群聊消息是否 @ 了机器人
 
     检测顺序（任一命中即视为被 @）：
@@ -201,7 +207,7 @@ def _is_mentioned_self(event: dict, self_id: str | None) -> bool:
     return False
 
 
-def _strip_at_prefix(event: dict, self_id: str | None, text: str) -> str:
+def _strip_at_prefix(event: dict[str, Any], self_id: str | None, text: str) -> str:
     """移除消息中的 @机器人 前缀，保留实际内容
 
     Args:
@@ -218,7 +224,7 @@ def _strip_at_prefix(event: dict, self_id: str | None, text: str) -> str:
     self_id_str = str(self_id)
 
     # 移除 [CQ:at,qq=<self_id>...] 码
-    def _replace_at(m: re.Match) -> str:
+    def _replace_at(m: re.Match[str]) -> str:
         return "" if m.group(1) == self_id_str else m.group(0)
 
     cleaned = _CQ_AT_PATTERN.sub(_replace_at, text)
@@ -435,7 +441,7 @@ class OneBotAdapter:
             except Exception:
                 pass
 
-    async def handle_event(self, event: dict, onebot_ws: WebSocket) -> None:
+    async def handle_event(self, event: dict[str, Any], onebot_ws: WebSocket) -> None:
         """分发 OneBot 事件到对应处理器（兼容 OneBot 11 和 v12）
 
         OneBot 11 使用 post_type，OneBot v12 使用 type。
@@ -458,7 +464,7 @@ class OneBotAdapter:
         else:
             logger.debug("onebot_unknown_event", event_type=event_type)
 
-    async def _handle_message_event(self, event: dict, onebot_ws: WebSocket) -> None:
+    async def _handle_message_event(self, event: dict[str, Any], onebot_ws: WebSocket) -> None:
         """处理 OneBot 消息事件（私聊 / 群聊），兼容 OneBot 11 和 v12
 
         流程：
@@ -580,10 +586,11 @@ class OneBotAdapter:
         # 调用 MessageService 处理用户消息
         try:
             async with db.session() as session:
+                assert llm_client is not None and prompts_obj is not None
                 svc = MessageService(
                     session=session,
-                    llm=llm_client,  # type: ignore[arg-type]
-                    prompts=prompts_obj,  # type: ignore[arg-type]
+                    llm=llm_client,
+                    prompts=prompts_obj,
                     redis=redis_client,
                 )
                 result = await svc.handle_user_message(
@@ -633,7 +640,7 @@ class OneBotAdapter:
                 exc_info=True,
             )
 
-    async def _handle_meta_event(self, event: dict) -> None:
+    async def _handle_meta_event(self, event: dict[str, Any]) -> None:
         """处理 OneBot 元事件（心跳 / 生命周期）
 
         兼容 OneBot v12 (detail_type) 和 OneBot 11 (meta_event_type)。
@@ -705,10 +712,11 @@ class OneBotAdapter:
         # 调用 MessageService.should_reply_in_group
         try:
             async with db.session() as session:
+                assert llm_client is not None and prompts_obj is not None
                 svc = MessageService(
                     session=session,
-                    llm=llm_client,  # type: ignore[arg-type]
-                    prompts=prompts_obj,  # type: ignore[arg-type]
+                    llm=llm_client,
+                    prompts=prompts_obj,
                     redis=redis_client,
                 )
                 internal_user_id = f"qq_{sender_user_id}" if sender_user_id is not None else "qq_unknown"
@@ -791,7 +799,7 @@ class OneBotAdapter:
                 return
             # OneBot 11: send_group_msg
             action_name = "send_group_msg"
-            params: dict = {
+            params: dict[str, Any] = {
                 "group_id": group_id,
                 "message": message,
             }

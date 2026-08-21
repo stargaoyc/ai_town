@@ -20,6 +20,7 @@ API 路由：
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -27,13 +28,16 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
+from starlette.types import ASGIApp, Receive, Scope, Send
 from structlog import get_logger
 
+from src import runtime
 from src.actions import ActionRegistry, register_all
 from src.adapters import OneBotAdapter
 from src.api.actions import router as actions_router
 from src.api.admin import router as admin_router
 from src.api.characters import router as characters_router
+from src.api.exceptions import register_exception_handlers
 from src.api.memory import router as memory_ext_router
 from src.api.messages import router as messages_router
 from src.api.notifications import router as notifications_router
@@ -84,13 +88,17 @@ logger = get_logger(__name__)
 # === 全局实例 ===
 redis: Redis | None = None
 world_engine: WorldEngine | None = None
-character_engine: CharacterTickEngine | None = None  # type: ignore
+character_engine: CharacterTickEngine | None = None
 registry: ActionRegistry | None = None
 llm: LLMClient | None = None
 prompts: PromptTemplates | None = None
 embedding_worker: EmbeddingWorker | None = None
 partition_scheduler: PartitionScheduler | None = None
 rate_limiter: RateLimiter | None = None
+scene_loader: SceneLoader | None = None
+schedule_system: ScheduleSystem | None = None
+duration_calculator: DurationCalculator | None = None
+movement_system: MovementSystem | None = None
 
 # WebSocket 连接管理器（单例）- 用于 Web 客户端实时聊天
 ws_manager = WebSocketManager()
@@ -98,11 +106,9 @@ ws_manager = WebSocketManager()
 # OneBot v12 适配器（QQ 机器人接入）
 onebot_adapter = OneBotAdapter()
 
-from src import runtime
-
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期管理
 
     初始化顺序：
@@ -238,10 +244,10 @@ async def lifespan(app: FastAPI):
         raise
 
     # 3.5 启动 Embedding Worker（异步向量化后台任务）
-    embedding_task: asyncio.Task | None = None
+    embedding_task: asyncio.Task[None] | None = None
     try:
         embedding_worker = EmbeddingWorker(
-            session_factory=db.session,  # type: ignore[union-attr]
+            session_factory=db.session,
             llm_client=llm,
             batch_size=20,
             poll_interval=5.0,
@@ -280,7 +286,7 @@ async def lifespan(app: FastAPI):
         raise
 
     # 5. 启动 Character Tick Engine（如果模块可用）
-    character_tick_task: asyncio.Task | None = None
+    character_tick_task: asyncio.Task[None] | None = None
     if CHARACTER_ENGINE_AVAILABLE and CharacterTickEngine is not None:
         try:
             character_engine = CharacterTickEngine(
@@ -308,7 +314,7 @@ async def lifespan(app: FastAPI):
         )
 
     # 5.5 启动日记自动生成调度器（后台任务）
-    diary_scheduler_task: asyncio.Task | None = None
+    diary_scheduler_task: asyncio.Task[None] | None = None
     try:
         diary_scheduler_task = asyncio.create_task(_diary_scheduler_loop())
         logger.info("diary_scheduler_started")
@@ -623,10 +629,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # 鉴权中间件（ASGI 层面，兼容 WebSocket）
-from starlette.types import ASGIApp, Receive, Scope, Send
-
-
 class AuthMiddleware:
     """ASGI 鉴权中间件：仅 /api/ 路径需要鉴权，WebSocket 和其他路径豁免
 
@@ -743,9 +747,6 @@ setup_tracing(app)
 setup_metrics(app)
 setup_langfuse()
 logger.info("observability_initialized")
-
-# 注册全局异常处理器
-from src.api.exceptions import register_exception_handlers
 
 register_exception_handlers(app)
 logger.info("exception_handlers_registered")

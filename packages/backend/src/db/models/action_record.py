@@ -4,6 +4,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text
@@ -33,12 +34,12 @@ class ActionRecord(Base):
     character_id: Mapped[UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), comment="角色 ID")
     action_id: Mapped[str] = mapped_column(String(100), comment="Action 标识符")
     action_name: Mapped[str] = mapped_column(String(100), comment="Action 显示名")
-    params: Mapped[dict | None] = mapped_column(JSONB, comment="执行参数")
+    params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="执行参数")
     reason: Mapped[str | None] = mapped_column(Text, comment="LLM 决策理由")
     result: Mapped[str | None] = mapped_column(Text, comment="执行结果")
     duration_minutes: Mapped[int] = mapped_column(Integer, comment="耗时（虚拟分钟）")
     location: Mapped[str | None] = mapped_column(String(50), comment="执行场景")
-    related_characters: Mapped[list] = mapped_column(JSONB, default=list, comment="相关角色 ID 列表")
+    related_characters: Mapped[list[Any]] = mapped_column(JSONB, default=list, comment="相关角色 ID 列表")
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="执行时间")
 
     __table_args__ = (

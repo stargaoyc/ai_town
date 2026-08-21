@@ -8,11 +8,13 @@
 """
 
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel
+from redis.asyncio import Redis
 
 from src.cost_control import BudgetExceeded, CircuitOpen, set_circuit_breaker
 from src.cost_control.budget_manager import set_budget_manager
@@ -20,7 +22,7 @@ from src.llm.client import LLMClient
 
 
 @pytest.fixture(autouse=True)
-def _reset_cost_control_singletons():
+def _reset_cost_control_singletons() -> Iterator[None]:
     # 单例无 unset API，测试间直接重置模块级全局保证隔离
     import src.cost_control.budget_manager as bm
     import src.cost_control.circuit_breaker as cb
@@ -39,7 +41,7 @@ class FakeRedis:
     async def hgetall(self, key: str) -> dict[str, str]:
         return dict(self.data.get(key, {}))
 
-    async def hset(self, key: str, mapping: dict[str, str] | None = None, **kwargs) -> None:
+    async def hset(self, key: str, mapping: dict[str, str] | None = None, **kwargs: Any) -> None:
         self.data.setdefault(key, {}).update(mapping or {})
 
     def pipeline(self) -> "FakePipeline":
@@ -67,6 +69,7 @@ class FakePipeline:
         results: list[Any] = []
         for kind, key, field, amount in self._ops:
             store = self.redis.data.setdefault(key, {})
+            new: int | float
             if kind == "hincrby":
                 new = int(store.get(field, "0")) + int(amount)
                 store[field] = str(new)
@@ -81,7 +84,7 @@ class FakePipeline:
 
 
 class FakeChatResponse:
-    def __init__(self, content: str, metadata: dict | None = None) -> None:
+    def __init__(self, content: str, metadata: dict[str, Any] | None = None) -> None:
         self.content = content
         self.response_metadata = metadata or {}
 
@@ -106,7 +109,7 @@ class FakeChatLLM:
         self.error = error
         self.calls = 0
 
-    async def ainvoke(self, prompt: str | list) -> FakeChatResponse:
+    async def ainvoke(self, prompt: str | list[Any]) -> FakeChatResponse:
         self.calls += 1
         if self.error:
             raise self.error
@@ -137,7 +140,7 @@ def _today_key() -> str:
     return f"llm:cost:{datetime.now(UTC).strftime('%Y-%m-%d')}"
 
 
-async def test_uninitialized_cost_control_skips_gracefully():
+async def test_uninitialized_cost_control_skips_gracefully() -> None:
     # 不调用 set_budget_manager / set_circuit_breaker（模拟 embedding worker 独立进程）
     fake_llm = FakeChatLLM(response=FakeChatResponse("hi"))
     client = _make_client(fake_llm)
@@ -148,9 +151,9 @@ async def test_uninitialized_cost_control_skips_gracefully():
     assert fake_llm.calls == 1
 
 
-async def test_chat_circuit_open_raises_and_skips_llm():
+async def test_chat_circuit_open_raises_and_skips_llm() -> None:
     redis = FakeRedis()
-    set_circuit_breaker(redis, failure_threshold=1, recovery_timeout=60)
+    set_circuit_breaker(cast(Redis, redis), failure_threshold=1, recovery_timeout=60)
     # 预置 OPEN 且未超时（last_failure_time=now），can_execute 返回 False
     await redis.hset(
         "llm:circuit_breaker",
@@ -169,9 +172,9 @@ async def test_chat_circuit_open_raises_and_skips_llm():
     assert fake_llm.calls == 0
 
 
-async def test_chat_budget_exceeded_raises_and_skips_llm():
+async def test_chat_budget_exceeded_raises_and_skips_llm() -> None:
     redis = FakeRedis()
-    set_budget_manager(redis, daily_budget_usd=1.0)
+    set_budget_manager(cast(Redis, redis), daily_budget_usd=1.0)
     # 预置已用成本 = 预算（used >= budget）
     await redis.hset(_today_key(), mapping={"tokens": "1000", "cost": "1.0", "count": "1"})
     fake_llm = FakeChatLLM(response=FakeChatResponse("hi"))
@@ -183,10 +186,10 @@ async def test_chat_budget_exceeded_raises_and_skips_llm():
     assert fake_llm.calls == 0
 
 
-async def test_chat_success_records_usage():
+async def test_chat_success_records_usage() -> None:
     redis = FakeRedis()
-    set_budget_manager(redis, daily_budget_usd=10.0)
-    set_circuit_breaker(redis, failure_threshold=5, recovery_timeout=60)
+    set_budget_manager(cast(Redis, redis), daily_budget_usd=10.0)
+    set_circuit_breaker(cast(Redis, redis), failure_threshold=5, recovery_timeout=60)
     fake_llm = FakeChatLLM(
         response=FakeChatResponse(
             "hi",
@@ -204,9 +207,9 @@ async def test_chat_success_records_usage():
     assert float(usage["cost"]) > 0
 
 
-async def test_chat_failure_records_breaker_failure():
+async def test_chat_failure_records_breaker_failure() -> None:
     redis = FakeRedis()
-    set_circuit_breaker(redis, failure_threshold=2, recovery_timeout=60)
+    set_circuit_breaker(cast(Redis, redis), failure_threshold=2, recovery_timeout=60)
     fake_llm = FakeChatLLM(error=RuntimeError("boom"))
     client = _make_client(fake_llm)
 
@@ -218,9 +221,9 @@ async def test_chat_failure_records_breaker_failure():
     assert state["failure_count"] == "1"
 
 
-async def test_chat_failure_reaches_threshold_opens_breaker():
+async def test_chat_failure_reaches_threshold_opens_breaker() -> None:
     redis = FakeRedis()
-    set_circuit_breaker(redis, failure_threshold=1, recovery_timeout=60)
+    set_circuit_breaker(cast(Redis, redis), failure_threshold=1, recovery_timeout=60)
     fake_llm = FakeChatLLM(error=RuntimeError("boom"))
     client = _make_client(fake_llm)
 
@@ -232,9 +235,9 @@ async def test_chat_failure_reaches_threshold_opens_breaker():
     assert state["failure_count"] == "1"
 
 
-async def test_structured_output_circuit_open_raises():
+async def test_structured_output_circuit_open_raises() -> None:
     redis = FakeRedis()
-    set_circuit_breaker(redis, failure_threshold=1, recovery_timeout=60)
+    set_circuit_breaker(cast(Redis, redis), failure_threshold=1, recovery_timeout=60)
     await redis.hset(
         "llm:circuit_breaker",
         mapping={
@@ -252,9 +255,9 @@ async def test_structured_output_circuit_open_raises():
     assert fake_llm.calls == 0
 
 
-async def test_structured_output_success_records_usage():
+async def test_structured_output_success_records_usage() -> None:
     redis = FakeRedis()
-    set_budget_manager(redis, daily_budget_usd=10.0)
+    set_budget_manager(cast(Redis, redis), daily_budget_usd=10.0)
     fake_llm = FakeChatLLM()
     client = _make_client(fake_llm)
 

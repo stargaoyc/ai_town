@@ -1,6 +1,7 @@
 """测试通用 fixtures"""
 
 import os
+from typing import Any
 
 # Settings() 在 src/config.py 导入时即实例化，需要这些环境变量；
 # 测试不会真正连接数据库/Redis，此处仅提供占位值避免导入失败。
@@ -17,7 +18,7 @@ from src.modules.duration.calculator import DurationCalculator
 
 
 @pytest.fixture
-def sample_state():
+def sample_state() -> dict[str, Any]:
     """标准角色状态字典"""
     return {
         "location": "home",
@@ -32,13 +33,13 @@ def sample_state():
 
 
 @pytest.fixture
-def registry():
+def registry() -> ActionRegistry:
     """空 Action 注册表"""
     return ActionRegistry()
 
 
 @pytest.fixture
-def populated_registry():
+def populated_registry() -> ActionRegistry:
     """包含预置 Action 的注册表"""
     reg = ActionRegistry()
     from src.actions import register_all
@@ -48,6 +49,6 @@ def populated_registry():
 
 
 @pytest.fixture
-def duration_calculator():
+def duration_calculator() -> DurationCalculator:
     """耗时计算器"""
     return DurationCalculator()

@@ -63,7 +63,7 @@ class EmbeddingWorker:
     async def run(self) -> None:
         """启动 worker 主循环"""
         self._running = True
-        logger.info(  # type: ignore[call-arg]
+        logger.info(
             "embedding_worker_started",
             batch_size=self.batch_size,
             poll_interval=self.poll_interval,
@@ -126,7 +126,7 @@ class EmbeddingWorker:
                     # 检测熔断（fail_count 达到 5 表示刚刚跨过阈值）
                     if episode.fail_count + 1 >= 5:
                         circuit_break_count += 1
-                    logger.error(  # type: ignore[call-arg]
+                    logger.error(
                         "embedding_failed",
                         episode_id=str(episode.id),
                         character_id=str(episode.character_id),
@@ -137,7 +137,7 @@ class EmbeddingWorker:
 
             await session.commit()
 
-            logger.info(  # type: ignore[call-arg]
+            logger.info(
                 "embedding_batch_done",
                 count=len(episodes),
                 success=success_count,
@@ -150,7 +150,7 @@ class EmbeddingWorker:
 # === 独立运行入口 ===
 
 
-async def main():
+async def main() -> None:
     """独立运行 embedding worker"""
     from src.db.session import db
     from src.llm.client import LLMClient

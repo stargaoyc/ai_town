@@ -22,6 +22,7 @@
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -255,7 +256,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             circuit_broken=new_fail_count >= 5,
         )
 
-    async def search_hybrid(self, character_id: UUID, query_vec: list[float], top_k: int = 10) -> list[dict]:
+    async def search_hybrid(self, character_id: UUID, query_vec: list[float], top_k: int = 10) -> list[dict[str, Any]]:
         """混合检索（原生 SQL - HNSW + 重要性 + 时间衰减）
 
         ⚠️ 分区裁剪：WHERE character_id = $1 触发 HASH 分区裁剪，

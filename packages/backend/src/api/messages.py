@@ -27,6 +27,9 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["messages"])
 
+# 依赖类型别名（规避 B008：不在函数默认参数中调用 Depends）
+CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
+
 
 # === Phase 3 API：消息服务 ===
 
@@ -37,7 +40,7 @@ async def send_message(
     user_id: Annotated[str, Body(...)],
     platform: str = "web",
     content: str = "",
-):
+) -> dict[str, Any]:
     """发送消息给角色并获取回复
 
     Args:
@@ -111,10 +114,10 @@ async def send_message(
 @router.get("/messages/history")
 async def get_message_history(
     conversation_id: str,
+    user: CurrentUser,
     limit: int = 50,
     before: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """获取会话消息历史（支持游标分页）
 
     Args:
@@ -177,11 +180,11 @@ async def get_message_history(
 
 @router.get("/conversations")
 async def list_conversations(
-    current_user: dict[str, Any] = Depends(get_current_user),
+    current_user: CurrentUser,
     character_id: str | None = None,
     user_id: str | None = None,
     limit: int = 50,
-):
+) -> dict[str, Any]:
     """查询会话列表（仅返回当前用户的会话）
 
     Args:
@@ -259,7 +262,7 @@ async def get_message_stats(
     character_id: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-):
+) -> dict[str, Any]:
     """获取消息统计（token/cost 累计，供成本监控）
 
     Args:

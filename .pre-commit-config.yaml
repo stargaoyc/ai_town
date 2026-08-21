@@ -20,6 +20,16 @@ repos:
         files: ^packages/backend/(src|tests)/.*\.py$
         pass_filenames: true
 
+  # ===== 后端: mypy 类型检查（strict，全量跑以获得完整 import 上下文）=====
+  - repo: local
+    hooks:
+      - id: mypy-backend
+        name: mypy (backend)
+        entry: uv run --project packages/backend mypy src/ tests/
+        language: system
+        files: ^packages/backend/(src|tests)/.*\.py$
+        pass_filenames: false
+
   # ===== 前端: oxlint + oxfmt =====
   - repo: local
     hooks:

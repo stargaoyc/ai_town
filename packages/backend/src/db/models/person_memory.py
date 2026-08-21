@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, func
@@ -45,7 +46,7 @@ class PersonMemory(Base):
         server_default=func.now(),
         comment="最后交互时间",
     )
-    preferences: Mapped[dict | None] = mapped_column(JSONB, comment="用户偏好（结构化）")
+    preferences: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="用户偏好（结构化）")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),

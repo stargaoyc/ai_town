@@ -64,7 +64,8 @@ def _load_scenes() -> list[dict[str, Any]]:
         data = yaml.safe_load(f)
     if not data:
         return []
-    return data.get("scenes", [])
+    scenes: list[dict[str, Any]] = data.get("scenes", [])
+    return scenes
 
 
 async def get_world_info() -> dict[str, Any]:

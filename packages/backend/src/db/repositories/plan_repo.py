@@ -3,6 +3,7 @@
 LLM 决策返回 planChanges 时更新此表，计划影响候选 Action 的 precondition 评估。
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -46,7 +47,7 @@ class PlanRepository(BaseRepository[Plan]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def update_plan(self, plan_id: UUID, **fields) -> None:
+    async def update_plan(self, plan_id: UUID, **fields: Any) -> None:
         """更新计划字段（status/progress/priority 等）"""
         if not fields:
             return

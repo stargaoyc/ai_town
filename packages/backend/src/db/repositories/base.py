@@ -5,6 +5,7 @@
 """
 
 from typing import TypeVar
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,7 @@ class BaseRepository[ModelT]:
         self.session = session
         self.model = model
 
-    async def get_by_id(self, id) -> ModelT | None:
+    async def get_by_id(self, id: UUID) -> ModelT | None:
         """按主键查询单条记录，不存在返回 None"""
         return await self.session.get(self.model, id)
 

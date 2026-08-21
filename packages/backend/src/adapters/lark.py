@@ -34,6 +34,7 @@ import asyncio
 import json
 import os
 import time
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -311,7 +312,7 @@ class LarkAdapter:
         # 默认 ACK，避免 Lark 重试
         return JSONResponse({"code": 0, "msg": "ok"})
 
-    async def _handle_message_event(self, event_payload: dict) -> None:
+    async def _handle_message_event(self, event_payload: dict[str, Any]) -> None:
         """处理 im.message.receive_v1 事件
 
         流程：

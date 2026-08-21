@@ -12,7 +12,7 @@ from src.cost_control.circuit_breaker import CircuitBreaker, CircuitState
 
 
 @pytest.fixture
-def mock_redis():
+def mock_redis() -> AsyncMock:
     redis = AsyncMock()
     redis.hgetall = AsyncMock(return_value={})
     redis.hset = AsyncMock()
@@ -20,7 +20,7 @@ def mock_redis():
 
 
 @pytest.fixture
-def breaker(mock_redis):
+def breaker(mock_redis: AsyncMock) -> CircuitBreaker:
     return CircuitBreaker(mock_redis, failure_threshold=5, recovery_timeout=60)
 
 
@@ -30,13 +30,13 @@ def breaker(mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_can_execute_closed_returns_true(breaker, mock_redis):
+async def test_can_execute_closed_returns_true(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {}
     assert await breaker.can_execute() is True
 
 
 @pytest.mark.asyncio
-async def test_can_execute_open_not_timed_out_returns_false(breaker, mock_redis):
+async def test_can_execute_open_not_timed_out_returns_false(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "OPEN",
         "failure_count": "5",
@@ -48,7 +48,9 @@ async def test_can_execute_open_not_timed_out_returns_false(breaker, mock_redis)
 
 
 @pytest.mark.asyncio
-async def test_can_execute_open_timed_out_transitions_to_half_open(breaker, mock_redis):
+async def test_can_execute_open_timed_out_transitions_to_half_open(
+    breaker: CircuitBreaker, mock_redis: AsyncMock
+) -> None:
     old_time = time.time() - 120  # 120s > recovery_timeout(60s)
     mock_redis.hgetall.return_value = {
         "state": "OPEN",
@@ -63,7 +65,7 @@ async def test_can_execute_open_timed_out_transitions_to_half_open(breaker, mock
 
 
 @pytest.mark.asyncio
-async def test_can_execute_half_open_returns_true(breaker, mock_redis):
+async def test_can_execute_half_open_returns_true(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "HALF_OPEN",
         "failure_count": "5",
@@ -78,7 +80,7 @@ async def test_can_execute_half_open_returns_true(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_success_half_open_to_closed(breaker, mock_redis):
+async def test_record_success_half_open_to_closed(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "HALF_OPEN",
         "failure_count": "5",
@@ -92,7 +94,7 @@ async def test_record_success_half_open_to_closed(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_success_closed_resets_failure_count(breaker, mock_redis):
+async def test_record_success_closed_resets_failure_count(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "CLOSED",
         "failure_count": "3",
@@ -106,7 +108,7 @@ async def test_record_success_closed_resets_failure_count(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_success_closed_zero_count_no_write(breaker, mock_redis):
+async def test_record_success_closed_zero_count_no_write(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     """CLOSED 且 failure_count=0 时无需写入"""
     mock_redis.hgetall.return_value = {
         "state": "CLOSED",
@@ -123,7 +125,7 @@ async def test_record_success_closed_zero_count_no_write(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_failure_closed_accumulates(breaker, mock_redis):
+async def test_record_failure_closed_accumulates(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "CLOSED",
         "failure_count": "2",
@@ -137,7 +139,7 @@ async def test_record_failure_closed_accumulates(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_failure_reaches_threshold_opens(breaker, mock_redis):
+async def test_record_failure_reaches_threshold_opens(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "CLOSED",
         "failure_count": "4",  # +1 = 5 达阈值
@@ -151,7 +153,7 @@ async def test_record_failure_reaches_threshold_opens(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_failure_half_open_to_open(breaker, mock_redis):
+async def test_record_failure_half_open_to_open(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "HALF_OPEN",
         "failure_count": "5",
@@ -164,7 +166,7 @@ async def test_record_failure_half_open_to_open(breaker, mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_record_failure_open_refreshes_last_failure_time(breaker, mock_redis):
+async def test_record_failure_open_refreshes_last_failure_time(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     old_time = 100.0
     mock_redis.hgetall.return_value = {
         "state": "OPEN",
@@ -180,7 +182,7 @@ async def test_record_failure_open_refreshes_last_failure_time(breaker, mock_red
 
 
 @pytest.mark.asyncio
-async def test_record_failure_below_threshold_stays_closed(breaker, mock_redis):
+async def test_record_failure_below_threshold_stays_closed(breaker: CircuitBreaker, mock_redis: AsyncMock) -> None:
     mock_redis.hgetall.return_value = {
         "state": "CLOSED",
         "failure_count": "0",

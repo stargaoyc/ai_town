@@ -5,6 +5,7 @@
 """
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from structlog import get_logger
@@ -33,7 +34,7 @@ class DiaryService:
         "year": 365,
     }
 
-    def __init__(self, session_factory, llm_client=None):
+    def __init__(self, session_factory: Any, llm_client: Any = None):
         """
         Args:
             session_factory: 异步会话工厂（async context manager），
@@ -56,7 +57,7 @@ class DiaryService:
         character_name: str,
         period: str = "day",
         target_date: datetime | None = None,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """为角色生成指定周期的日记
 
         Args:
@@ -162,7 +163,7 @@ class DiaryService:
             )
             return None
 
-    async def generate_diaries_for_all_characters(self, period: str) -> dict:
+    async def generate_diaries_for_all_characters(self, period: str) -> dict[str, Any]:
         """为所有活跃角色批量生成指定周期的日记
 
         对每个角色先检查当前周期是否已生成今日日记，已存在则跳过（幂等）。
@@ -267,7 +268,7 @@ class DiaryService:
             "failed": failed,
         }
 
-    async def _save_diary(self, data: dict) -> None:
+    async def _save_diary(self, data: dict[str, Any]) -> None:
         """保存日记到数据库"""
         from sqlalchemy import text
 
@@ -296,7 +297,7 @@ class DiaryService:
         character_id: UUID,
         period: str | None = None,
         limit: int = 20,
-    ) -> list:
+    ) -> list[Any]:
         """获取角色的日记列表
 
         Args:

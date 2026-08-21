@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import structlog
 import yaml
@@ -185,7 +186,7 @@ class CharacterImporter:
         logger.info("角色更新完成: %s (%s)", existing.name, existing.id)
         return existing
 
-    async def _cache_state_to_redis(self, character_id, state: CharacterState) -> None:
+    async def _cache_state_to_redis(self, character_id: UUID, state: CharacterState) -> None:
         """将角色状态缓存到 Redis
 
         Redis 结构：

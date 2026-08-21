@@ -5,19 +5,23 @@
 - 缺出发边 / 不对称 / 耗时不等 / 孤岛 / 未知目标 → ValueError 启动报错
 """
 
+from pathlib import Path
+from typing import Any, cast
+
 import pytest
+from redis.asyncio import Redis
 
 from src.modules.town.loader import SceneLoader
 
 
 class FakeRedis:
     def __init__(self) -> None:
-        self.hashes: dict[str, dict] = {}
+        self.hashes: dict[str, dict[str, Any]] = {}
 
     async def exists(self, key: str) -> int:
         return 1 if key in self.hashes else 0
 
-    async def hset(self, key: str, mapping: dict | None = None, **kwargs) -> None:
+    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self.hashes[key] = mapping or {}
 
 
@@ -43,7 +47,9 @@ scenes:
     activities: [relax]
 """
 
-_SCENES_YAML_WITH_FOREST = _SCENES_YAML + """
+_SCENES_YAML_WITH_FOREST = (
+    _SCENES_YAML
+    + """
   - id: forest
     name: 森林
     type: outdoor
@@ -51,9 +57,10 @@ _SCENES_YAML_WITH_FOREST = _SCENES_YAML + """
     capacity: 30
     activities: [explore]
 """
+)
 
 
-def _write(tmp_path, scenes: str, map_text: str) -> tuple[str, str]:
+def _write(tmp_path: Path, scenes: str, map_text: str) -> tuple[str, str]:
     scenes_path = tmp_path / "scenes.yaml"
     map_path = tmp_path / "world-map.yaml"
     scenes_path.write_text(scenes, encoding="utf-8")
@@ -61,14 +68,14 @@ def _write(tmp_path, scenes: str, map_text: str) -> tuple[str, str]:
     return str(scenes_path), str(map_path)
 
 
-async def _load(tmp_path, map_text: str, scenes: str = _SCENES_YAML) -> SceneLoader:
+async def _load(tmp_path: Path, map_text: str, scenes: str = _SCENES_YAML) -> SceneLoader:
     scenes_path, map_path = _write(tmp_path, scenes, map_text)
-    loader = SceneLoader(FakeRedis())
+    loader = SceneLoader(cast(Redis, FakeRedis()))
     await loader.load_from_files(scenes_path, map_path)
     return loader
 
 
-async def test_valid_symmetric_map_loads(tmp_path):
+async def test_valid_symmetric_map_loads(tmp_path: Path) -> None:
     map_text = """  home:
     cafe: 8
     park: 10
@@ -84,7 +91,7 @@ async def test_valid_symmetric_map_loads(tmp_path):
     assert loader.get_travel_time("park", "home") == 10
 
 
-async def test_missing_source_scene_raises(tmp_path):
+async def test_missing_source_scene_raises(tmp_path: Path) -> None:
     map_text = """  home:
     cafe: 8
   cafe:
@@ -94,7 +101,7 @@ async def test_missing_source_scene_raises(tmp_path):
         await _load(tmp_path, map_text)
 
 
-async def test_missing_reverse_edge_raises(tmp_path):
+async def test_missing_reverse_edge_raises(tmp_path: Path) -> None:
     map_text = """  home:
     cafe: 8
   cafe:
@@ -107,7 +114,7 @@ async def test_missing_reverse_edge_raises(tmp_path):
         await _load(tmp_path, map_text)
 
 
-async def test_asymmetric_duration_raises(tmp_path):
+async def test_asymmetric_duration_raises(tmp_path: Path) -> None:
     map_text = """  home:
     cafe: 8
     park: 10
@@ -122,7 +129,7 @@ async def test_asymmetric_duration_raises(tmp_path):
         await _load(tmp_path, map_text)
 
 
-async def test_unknown_target_raises(tmp_path):
+async def test_unknown_target_raises(tmp_path: Path) -> None:
     map_text = """  home:
     cafe: 8
     nowhere: 5
@@ -136,7 +143,7 @@ async def test_unknown_target_raises(tmp_path):
         await _load(tmp_path, map_text)
 
 
-async def test_unreachable_scene_raises(tmp_path):
+async def test_unreachable_scene_raises(tmp_path: Path) -> None:
     map_text = """  home:
     cafe: 8
   cafe:

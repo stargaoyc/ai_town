@@ -7,6 +7,7 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Numeric, String, Text
@@ -34,7 +35,7 @@ class Conversation(Base):
         String(20),
         comment="来源平台（web/qq/lark/internal）",
     )
-    context: Mapped[dict | None] = mapped_column(JSONB, comment="对话上下文")
+    context: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="对话上下文")
     last_message_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), comment="最后消息时间")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
     # v4 新增：触发器自动维护
@@ -81,7 +82,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, comment="消息内容")
     tokens: Mapped[int | None] = mapped_column(Integer, comment="LLM token 消耗")
     cost: Mapped[float | None] = mapped_column(Numeric(10, 6), comment="调用费用（USD）")
-    extra_data: Mapped[dict | None] = mapped_column(JSONB, comment="附加信息（延迟、平台字段等）")
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, comment="附加信息（延迟、平台字段等）")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
