@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 from uuid6 import uuid7
@@ -79,16 +79,20 @@ class MessageRepository(BaseRepository[Message]):
         conversation_id: UUID,
         limit: int = 50,
         before: datetime | None = None,
+        before_id: UUID | None = None,
         order_desc: bool = True,
     ) -> list[Message]:
-        """按会话拉取消息历史（支持游标分页）
+        """按会话拉取消息历史（keyset 分页）
 
         利用 idx_msg_conv_time (conversation_id, created_at) 复合索引。
 
         Args:
             conversation_id: 会话 ID
             limit: 返回数量上限
-            before: 游标，仅返回该时间点之前的消息（实现"加载更早历史"）
+            before: 游标（上一页最后一条的 created_at），实现"加载更早历史"
+            before_id: 配套游标（上一页最后一条的 id）。created_at 为事务时间、
+                同事务批量写入值相同，仅按时间过滤会整组漏掉同批消息；
+                (before, before_id) 联合构成稳定的 keyset 游标
             order_desc: True 倒序（最新优先），False 正序（最早优先）
 
         Returns:
@@ -96,12 +100,21 @@ class MessageRepository(BaseRepository[Message]):
         """
         stmt = select(Message).where(Message.conversation_id == conversation_id)
         if before is not None:
-            stmt = stmt.where(Message.created_at < before)
+            if before_id is not None:
+                # keyset 游标：严格更早，或同时间戳内按 UUIDv7 id 续排
+                stmt = stmt.where(
+                    or_(
+                        Message.created_at < before,
+                        and_(Message.created_at == before, Message.id < before_id),
+                    )
+                )
+            else:
+                stmt = stmt.where(Message.created_at < before)
 
         if order_desc:
-            stmt = stmt.order_by(Message.created_at.desc())
+            stmt = stmt.order_by(Message.created_at.desc(), Message.id.desc())
         else:
-            stmt = stmt.order_by(Message.created_at.asc())
+            stmt = stmt.order_by(Message.created_at.asc(), Message.id.asc())
 
         stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)

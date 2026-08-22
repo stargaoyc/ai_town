@@ -38,7 +38,8 @@ class ActionRepository(BaseRepository[ActionRecord]):
         stmt = (
             select(ActionRecord)
             .where(ActionRecord.character_id == character_id)
-            .order_by(ActionRecord.timestamp.desc())
+            # timestamp 为事务时间，同事务批量写入值相同；id (UUIDv7) 作 tiebreaker 保证分页稳定
+            .order_by(ActionRecord.timestamp.desc(), ActionRecord.id.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)

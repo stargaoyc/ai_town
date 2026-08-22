@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     embedding_model_url: str | None = None
     llm_timeout: int = 30
     llm_max_retries: int = 2
-    embedding_dim: int = 1536
+    # 与迁移 0005 的物理列 halfvec(2048) 对齐；改此值必须同步新迁移重建列与 HNSW 索引
+    embedding_dim: int = 2048
 
     # Observability
     otel_endpoint: str | None = None

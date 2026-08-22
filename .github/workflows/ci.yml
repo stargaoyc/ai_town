@@ -64,6 +64,11 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://aitown:aitown_dev@localhost:5432/aitown
           REDIS_URL: redis://localhost:6379/0
+          IT_PG_HOST: localhost
+          IT_PG_PORT: "5432"
+          IT_PG_USER: aitown
+          IT_PG_PASSWORD: aitown_dev
+          IT_REDIS_URL: redis://localhost:6379/15
 
   frontend:
     name: Frontend Lint & Build
