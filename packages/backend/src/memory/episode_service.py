@@ -13,7 +13,6 @@
 
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from structlog import get_logger
@@ -22,9 +21,7 @@ from src.config import settings
 from src.db.models import MemoryEpisode
 from src.db.repositories import MemoryRepository
 from src.llm import LLMClient
-
-if TYPE_CHECKING:
-    from src.llm.prompts import PromptTemplates
+from src.llm.prompts import PromptTemplates
 
 logger = get_logger(__name__)
 
