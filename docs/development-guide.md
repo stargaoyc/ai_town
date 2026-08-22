@@ -60,48 +60,25 @@ pnpm dev                          # 启动 Vite 开发服务器
 ```text
 packages/backend/src/
 ├── core/                  # 核心引擎
-│   ├── world_engine.py    # World Tick 循环
-│   ├── character_tick.py  # Character Tick 循环
-│   ├── action_system.py   # Action 注册与执行
-│   └── actions/           # 内置 Action 定义
-│       ├── move.py
-│       ├── life.py
-│       ├── work.py
-│       └── social.py
-├── agents/                # LangChain 角色实现
-├── memory/                # 记忆/反思/规划服务
-├── modules/               # 模块管理器
-├── tools/                 # 本地工具（进程内 async 函数）
-│   ├── shop.py            # 商店工具（list_items / buy_item / sell_item ...）
-│   ├── knowledge.py       # 小镇设定库查询
-│   ├── social.py          # 角色社交（送礼 / 约会 / 冲突）
-│   ├── world.py           # 只读世界查询（场景 / 角色 / 天气）
-│   ├── self_info.py       # 只读自省（关系 / 记忆搜索）
-│   └── registry.py        # ToolRegistry
-├── messaging/             # 消息服务
-│   ├── adapters/          # 平台适配器
-│   └── service.py
+│   ├── world/             # World Tick（engine.py + evolutions/ 演化器）
+│   ├── character/tick.py  # Character Tick 循环（CharacterTickEngine）
+│   ├── locks.py           # 分布式锁（token + compare-and-delete）
+│   ├── rehydration.py     # 启动时 PG→Redis 状态回灌
+│   └── state_codec.py     # Redis 状态编解码（单一真相源）
+├── actions/               # 内置 Action 定义（move/life/work/social）+ registry
+├── adapters/              # 平台适配器（OneBot / Lark）
 ├── api/                   # FastAPI 路由（按资源拆分，由 main.py 聚合注册）
-│   ├── characters.py      # 角色管理（含 /nearby 同场景角色查询）
-│   ├── world.py           # 世界状态
-│   ├── town.py            # 小镇/场景
-│   ├── actions.py         # Action 查询
-│   ├── messages.py        # 会话与消息
-│   ├── memory.py          # 记忆扩展（日记 / Person Memory）
-│   ├── notifications.py   # 通知中心
-│   ├── tools.py            # 工具命名空间管理（路径前缀 /api/v1/tools）
-│   ├── system.py          # 系统设置
-│   ├── admin.py           # 运维端点（Tick / 快照 / 日志 / 指标）
-│   └── exceptions.py      # 全局异常处理器（统一错误响应 + trace_id）
-├── db/                    # 数据访问层
-│   ├── session.py         # 异步会话工厂
-│   ├── base.py            # Declarative Base
-│   ├── models/            # SQLAlchemy ORM 模型
-│   ├── repositories/      # Repository 模式
-│   └── migrations/        # alembic 迁移
-├── observability/         # OTel/Langfuse 配置
-├── config.py              # 配置加载
-├── runtime.py             # 运行时依赖容器（消除业务模块对 main.py 的反向依赖）
+├── auth/                  # JWT / RBAC / API Key
+├── cost_control/          # 日预算 + 熔断器
+├── db/                    # models / repositories / session
+├── llm/                   # LLMClient + PromptTemplates
+├── memory/                # 记忆/反思/日记/Person Memory 服务
+├── modules/               # 模块管理器（town/schedule/movement/character）
+├── messaging/             # 消息服务 + WebSocket
+├── observability/         # 日志/指标/追踪/Langfuse
+├── scheduler/             # 分区预创建调度器
+├── security/              # 限流/Prompt 注入防护
+├── tools/                 # 本地工具（进程内 async 函数，ToolRegistry）
 └── main.py                # FastAPI 入口（lifespan + 路由聚合）
 ```
 

@@ -620,7 +620,7 @@ async def push_share(
 - **复用 send_message**：分享消息同样支持多段拆分与间隔发送；
 - **返回 bool**：成功返回 True，无连接/发送失败返回 False，调用方可据此决定是否记录失败。
 
-#### character_tick.py 完整链路
+#### character/tick.py 完整链路
 
 主动分享的完整链路从 `CharacterTickEngine._execute_tick` 开始：
 
@@ -1138,7 +1138,7 @@ safe_user_message = _prompt_guard.wrap_user_message(user_message)
 主动分享由 `CharacterTickEngine._execute_tick` 在 Action 执行完成后触发：
 
 ```python
-# src/core/character_tick.py
+# src/core/character/tick.py
 async def _execute_tick(self, character_id: UUID) -> None:
     # ... 五阶段闭环 ...
     # 6. 主动分享（若 LLM 决策产生分享意图）
@@ -1340,7 +1340,7 @@ internal_user_id = f"qq_{user_id}" if user_id is not None else "qq_unknown"
 **反向解析**（主动分享推送时）：
 
 ```python
-# src/core/character_tick.py
+# src/core/character/tick.py
 user_id_str = conv.user_id  # "qq_123456"
 if not user_id_str.startswith("qq_"):
     continue

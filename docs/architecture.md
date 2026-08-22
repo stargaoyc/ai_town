@@ -269,7 +269,7 @@ else:
 
 ### 3.2 Character Tick 循环
 
-Character Tick 是角色行为决策与执行的闭环，由 `CharacterTickEngine` 实现（`src/core/character_tick.py`）。它定期对所有活跃角色执行"感知→决策→执行→记忆→分享→反思"六阶段闭环。其中决策阶段对 `action="use_tool"` 走 ReAct 循环（执行工具 → 观察结果回灌 Prompt → 再次决策，最多 3 轮），详见 [Action 系统 - ReAct 工具调用循环](action-system.md#33-react-工具调用循环)。
+Character Tick 是角色行为决策与执行的闭环，由 `CharacterTickEngine` 实现（`src/core/character/tick.py`）。它定期对所有活跃角色执行"感知→决策→执行→记忆→分享→反思"六阶段闭环。其中决策阶段对 `action="use_tool"` 走 ReAct 循环（执行工具 → 观察结果回灌 Prompt → 再次决策，最多 3 轮），详见 [Action 系统 - ReAct 工具调用循环](action-system.md#33-react-工具调用循环)。
 
 #### 执行流程
 
@@ -1881,4 +1881,4 @@ shutdown 顺序（逆序）：
 | 数据模型 DDL          | [data-model.md](data-model.md)                       |
 | 部署与高可用          | [deployment.md](deployment.md)                       |
 | Docker 部署指南       | [docker-deployment.md](docker-deployment.md)         |
-| 项目不足审查与改进    | [gap-analysis.md](gap-analysis.md)                   |
+| 项目不足审查与改进    | [gap-analysis.md](archive/gap-analysis.md)                   |

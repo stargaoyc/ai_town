@@ -1,5 +1,7 @@
 # 项目不足审查与改进路线图
 
+> **[已归档 2026-08-22]** 本文是 2026-07 的历史审查记录，其中的问题清单与路径反映当时状态，不代表当前代码。现行问题跟踪见 [design-improvement-and-fixes.md](../design-improvement-and-fixes.md)。
+
 > 本文档对 `e:\projects\aitown`（二次元 AI 小镇陪伴智能体）项目进行全面不足审查，并结合参考项目 `e:\projects\yuiju`（TypeScript 实现的同类多智能体系统）的工程亮点，给出可执行的改进建议与路线图。
 >
 > - 审查基线：aitown `packages/backend` 后端代码与 `packages/frontend` 前端代码、`docs/` 文档体系、`docker/` 与 `docker-compose.yml` 部署编排

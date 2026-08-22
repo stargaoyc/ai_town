@@ -163,7 +163,7 @@ ONEBOT_GROUP_CHARACTER_MAP={"987654321":"01964000-0000-7000-8000-000000000002"}
 | ------------------------------------ | ------------------------------------------ |
 | [数据模型设计](docs/data-model.md)   | 全部 DDL、ER 图、索引策略                  |
 | [API设计文档](docs/api-spec.md)      | RESTful 端点、WebSocket/SSE、请求/响应示例 |
-| [配置参考](docs/config-reference.md) | 环境变量、config.yaml、模块配置            |
+| [配置参考](docs/config-reference.md) | 环境变量、运行时热更新配置、模块配置        |
 
 ### 工程实践
 
@@ -210,7 +210,6 @@ ai-town/
 │   │   └── nginx.conf          # SPA 回退 + API 反代 + WebSocket 反代
 ├── docs/                       # 项目文档
 ├── docker-compose.yml          # 完整生产部署编排
-├── config.yaml
 ├── .env.example
 └── README.md
 ```

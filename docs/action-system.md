@@ -311,9 +311,9 @@ class ActionRegistry:
 
 | 方式     | 说明                                             | 适用                |
 | -------- | ------------------------------------------------ | ------------------- |
-| 内置注册 | 启动时在 `core/actions/` 注册核心 Action         | 移动/生活/工作/社交 |
+| 内置注册 | 启动时在 `src/actions/` 注册核心 Action          | 移动/生活/工作/社交 |
 | 模块贡献 | 模块启用时贡献 Action（如本地工具对应的 Action） | 工具类 Action       |
-| 配置加载 | 从 `config.yaml` 加载自定义 Action               | 业务可配置          |
+| 代码注册 | 在 `src/actions/` 下新增 Action 并加入 `register_all` | 业务扩展            |
 
 ### 4.3 自定义 Action 示例
 

@@ -385,13 +385,13 @@ async def get_character(self, cid: UUID) -> Character:
 
 ```python
 # ❌ 流程断裂：Tick 逻辑分散在 5 个文件，无主流程入口
-# character_tick.py 只调 engine.run()
+# character/tick.py 只调 engine.run()
 # engine.py 只调 orchestrator.step()
 # orchestrator.py 只调 phase.execute()
 # phase.py 只调 service.do()
 # 谁也看不出完整流程
 
-# ✅ 主流程显式（参考 character_tick.py）
+# ✅ 主流程显式（参考 character/tick.py）
 async def tick_character(self, cid: UUID) -> None:
     state = await self._perceive(cid)
     decision = await self._decide(cid, state)

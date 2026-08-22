@@ -1,5 +1,7 @@
 # MCP 方案改进分析
 
+> **[已归档 2026-08-22]** 本文是历史分析文档，反映已删除的 MCP 架构。现行工具系统见 [../module-system.md](../module-system.md)。
+
 > **历史说明（2026-07-15）**：本文档为历史分析文档。MCP Server 架构已于 2026-07-15 全部转换为本地工具调用（`src/tools/`），`packages/mcp-servers/` 与 `src/mcp/` 已删除。如需了解当前工具系统设计，请参阅 [architecture.md](architecture.md) 与 [module-system.md](module-system.md)。本文档保留以记录迁移决策过程。
 
 > 本文档对 aitown 当前 MCP（Model Context Protocol）工具调用方案进行优缺点分析，对比 yuiju 的工具调用方式，提出标准化改进建议，并给出工具的 MCP/内联归属判断与迁移路径。

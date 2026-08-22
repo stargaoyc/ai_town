@@ -687,4 +687,4 @@ docker inspect --format='{{.State.Health.Status}}' aitown-backend
 | 可观测性设计       | [observability.md](observability.md)       |
 | 配置参考           | [config-reference.md](config-reference.md) |
 | 数据模型           | [data-model.md](data-model.md)             |
-| 项目不足与改进     | [gap-analysis.md](gap-analysis.md)         |
+| 项目不足与改进     | [gap-analysis.md](archive/gap-analysis.md)         |

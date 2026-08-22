@@ -1,6 +1,6 @@
 # 配置参考
 
-> 本文档列出 AI Town 的全部配置项：环境变量、`config.yaml`、模块配置、角色卡与 Prompt 配置。
+> 本文档列出 AI Town 的全部配置项：环境变量、运行时热更新配置、模块配置、角色卡与 Prompt 配置。
 
 ---
 
@@ -135,119 +135,14 @@ ONEBOT_GROUP_CHARACTER_MAP={"群号A":"角色UUID-A","群号B":"角色UUID-B"}
 
 ---
 
-## 二、config.yaml
-
-```yaml
-# config.yaml — 主配置文件
-
-app:
-  name: ai-town
-  env: development # development | staging | production
-  log_level: info # debug | info | warn | error
-
-database:
-  url: ${DATABASE_URL}
-  pool_size: 20
-  max_overflow: 10
-  echo: false
-
-redis:
-  url: ${REDIS_URL}
-
-llm:
-  api_key: ${OPENAI_API_KEY}
-  base_url: ${OPENAI_BASE_URL}
-  models:
-    chat: gpt-4o-mini
-    strong: gpt-4o
-    flash: gpt-3.5-turbo
-    embedding: text-embedding-3-small
-  timeout: 30
-  max_retries: 2
-
-world:
-  tick_seconds: 30
-  tick_minutes: 10
-  weather_interval: 60
-  snapshot_interval: 120
-
-character:
-  tick_seconds: 30
-  max_concurrent: 10
-  lock_ttl_seconds: 30
-  memory_top_k: 10
-  reflection_threshold: 20 # 每 N 条未反思记忆触发反思
-
-tools:
-  enabled_namespaces: [shop, knowledge, social, world, self_info] # 默认全部启用，运行时由 Redis hash `tools:enabled` 覆盖
-
-messaging:
-  qq:
-    ws_url: ${ONE_BOT_WS_URL}
-  lark:
-    app_id: ${LARK_APP_ID}
-    app_secret: ${LARK_APP_SECRET}
-  web:
-    ws_path: /ws
-
-observability:
-  otel:
-    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
-    service_name: ai-town-backend
-    traces_sampler_rate: 0.5
-  langfuse:
-    host: ${LANGFUSE_HOST}
-    public_key: ${LANGFUSE_PUBLIC_KEY}
-    secret_key: ${LANGFUSE_SECRET_KEY}
-  loki:
-    enabled: true
-    url: http://loki:3100 # Alloy 推送目标
-  logging:
-    level: info # debug | info | warn | error
-    format: json # structlog 输出格式
-
-auth:
-  jwt_secret: ${JWT_SECRET}
-  jwt_algorithm: HS256
-  jwt_expire_hours: 24
-
-modules:
-  # 见第三节：模块配置
-  enabled:
-    - shop
-    - knowledge
-    - social
-    - world
-    - self_info
-```
-
 ---
 
 ## 三、模块配置
 
-模块配置既可通过 `config.yaml` 静态声明，也可通过 PG `module_configs` 表动态管理。
+模块通过 PG `module_configs` 表动态管理，开关状态持久化在 Redis hash `tools:enabled`
+（详见 [模块与本地工具系统设计 §二](module-system.md#二本地工具调用层toolregistry)）。
 
-### 3.1 静态声明（config.yaml）
-
-```yaml
-modules:
-  enabled:
-    - shop
-    - knowledge
-  registered:
-    - name: shop
-      type: tools
-      config: {}
-      dependencies: []
-    - name: emotion-analyzer
-      type: local
-      config:
-        model: local-emotion-v1
-```
-
-> **说明**：`type: tools` 的模块对应 `src/tools/` 下进程内 async 函数工具。开关状态实际持久化在 Redis hash `tools:enabled`（详见 [模块与本地工具系统设计 §二](module-system.md#二本地工具调用层toolregistry)），`module_configs` 表的 `enabled` 字段仅作为元数据镜像。
-
-### 3.2 动态管理（PG `module_configs` 表）
+### 3.1 动态管理（PG `module_configs` 表）
 
 ```sql
 INSERT INTO module_configs (name, type, enabled, config, dependencies)
@@ -260,7 +155,7 @@ VALUES (
 );
 ```
 
-### 3.3 运行时开关
+### 3.2 运行时开关
 
 ```bash
 # 启用

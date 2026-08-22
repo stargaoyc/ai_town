@@ -50,7 +50,7 @@
 | 上下文 | 包路径 | 职责 | 对外接口 | 禁止 |
 |--------|--------|------|----------|------|
 | **世界引擎** | `core/world_engine.py` + `core/evolutions/` | 推进世界状态（时间/天气/场景/资源/事件） | `WorldEngine.start()/stop()` | 直接操作角色状态 |
-| **角色节拍** | `core/character_tick.py` | 单个角色的「感知→决策→执行→沉淀」闭环 | `CharacterTickEngine.tick_character()` | 跨角色协调 |
+| **角色节拍** | `core/character/tick.py` | 单个角色的「感知→决策→执行→沉淀」闭环 | `CharacterTickEngine.tick_character()` | 跨角色协调 |
 | **行为系统** | `actions/` | Action 定义、注册、候选过滤 | `ActionRegistry.get_candidates()` | 在 Action 里直接写 DB/Redis |
 | **消息服务** | `messaging/` | 用户与角色的对话处理 | `MessageService.handle_user_message()` | 在消息层做世界推进 |
 | **记忆系统** | `memory/` | Episode 沉淀、检索、反思 | `EpisodeService`/`RetrievalService`/`ReflectionService` | 在记忆层做行为决策 |
@@ -102,7 +102,7 @@
 |----------|------|------|
 | World Tick 主循环 | `core/world_engine.py` | `WorldEngine` 类 |
 | 世界演化组件 | `core/evolutions/` | `WeatherEvolution` |
-| 角色 Tick 主流程 | `core/character_tick.py` | `CharacterTickEngine` |
+| 角色 Tick 主流程 | `core/character/tick.py` | `CharacterTickEngine` |
 | Action 定义 | `actions/` 按分类分文件 | `actions/life.py`（生活类） |
 | Action 注册表 | `actions/registry.py` | `ActionRegistry` |
 | Action 基础结构 | `actions/base.py` | `Action`/`DecisionResult`/`ActionResult` |

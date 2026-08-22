@@ -559,4 +559,4 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 | 数据模型     | [data-model.md](data-model.md)               |
 | 部署         | [deployment.md](deployment.md)               |
 | Docker 部署  | [docker-deployment.md](docker-deployment.md) |
-| 项目不足审查 | [gap-analysis.md](gap-analysis.md)           |
+| 项目不足审查 | [gap-analysis.md](archive/gap-analysis.md)           |

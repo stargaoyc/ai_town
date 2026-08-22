@@ -624,7 +624,7 @@ aitown/
 │   │   ├── src/
 │   │   │   ├── core/            # 核心引擎
 │   │   │   │   ├── world_engine.py       # World Tick 主循环
-│   │   │   │   ├── character_tick.py     # Character Tick 五阶段闭环
+│   │   │   │   ├── character/tick.py     # Character Tick 五阶段闭环
 │   │   │   │   └── evolutions/           # 世界演化规则（时间/天气/资源/场景/事件）
 │   │   │   ├── actions/         # Action 系统
 │   │   │   │   ├── base.py              # Action 数据结构定义
@@ -1887,7 +1887,7 @@ uvicorn src.main:app --reload --port 8001
 14. **[deployment.md](deployment.md)**：部署与运维
 15. **[docker-deployment.md](docker-deployment.md)**：Docker 部署指南（完整编排、多阶段构建、Profile 按需启动）
 16. **[development-guide.md](development-guide.md)**：开发指南
-17. **[gap-analysis.md](gap-analysis.md)**：项目不足审查与改进路线图
+17. **[gap-analysis.md](archive/gap-analysis.md)**：项目不足审查与改进路线图
 18. **[roadmap.md](roadmap.md)**：开发路线图
 
 ### 11.2 如何修改角色行为
