@@ -1,0 +1,6 @@
+name: context_compress
+# 会话上下文压缩（超过阈值时将早期历史压缩为摘要）
+template: |
+  请将以下 {character_name} 与用户的对话历史压缩为一段简洁的摘要（200字以内），保留关键事件、角色情绪变化与用户偏好：
+
+  {history_text}

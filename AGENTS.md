@@ -14,10 +14,12 @@
 
 | 规范 | 文档 | 适用范围 |
 |------|------|----------|
-| 代码风格规范 | [docs/rules/implementation-style.md](docs/rules/implementation-style.md) | 所有 Python 代码 |
+| 代码风格规范 | [docs/rules/implementation-style.md](docs/rules/implementation-style.md) | 所有 Python 代码（后端） |
+| 前端编码规范 | [docs/rules/frontend-style.md](docs/rules/frontend-style.md) | 所有 TypeScript / TSX 代码（前端） |
 | 领域设计规范 | [docs/rules/domain-design-style.md](docs/rules/domain-design-style.md) | 业务代码组织 |
 | Prompt 规范 | [docs/rules/prompt-style.md](docs/rules/prompt-style.md) | 所有 LLM Prompt |
 | 重构规则 | [docs/rules/refactor-style.md](docs/rules/refactor-style.md) | 任何结构变更 |
+| 测试编写规范 | [docs/rules/implementation-style.md §五](docs/rules/implementation-style.md#五测试编写规范) | 所有 pytest 测试 |
 
 ### 核心原则速查
 
@@ -90,6 +92,17 @@
 | 在 LLM 调用处加 `try/except` 返回默认回复 | 应由 CircuitBreaker 处理 |
 
 > 详见 [docs/rules/implementation-style.md §三](docs/rules/implementation-style.md#三常见坏代码形态)。
+
+### 2.5 类型检查与豁免约定
+
+全库 `mypy --strict` 当前 **0 错误**（146 文件），新增代码必须保持清零：
+
+| 约定 | 说明 |
+|------|------|
+| 禁止新增 `# type: ignore` | 唯一例外：第三方库类型缺陷，且必须注明原因；优先用 `cast()` 显式断言 |
+| 豁免须登记 | 对特定模块/库的放宽一律写入 `pyproject.toml` 的 `[[tool.mypy.overrides]]` 并注释原因 |
+| 测试替身注入 | Fake 对象传入生产构造函数时用 `cast(Redis, FakeRedis())` 模式（见测试规范 §5.2） |
+| ruff 豁免同理 | 不新增全局 ignore；确需豁免用 per-file-ignores 并注释设计原因 |
 
 ---
 
@@ -194,7 +207,8 @@ API 层 → Service 层 → Core 层 → Infrastructure 层 → Cross-cutting �
 ```bash
 cd packages/backend
 uv run ruff check          # lint 检查
-uv run mypy                # 类型检查（strict 模式）
+uv run ruff format --check src/ tests/   # 格式检查（CI 同款）
+uv run mypy                # 类型检查（strict 模式，须保持 0 错误）
 uv run pytest              # 单元 + 集成测试
 ```
 
@@ -202,7 +216,7 @@ uv run pytest              # 单元 + 集成测试
 
 ```bash
 cd packages/frontend
-pnpm run lint              # oxlint 检查
+pnpm run lint              # oxlint + oxfmt 检查
 pnpm run typecheck         # TypeScript 类型检查
 ```
 
@@ -210,13 +224,36 @@ pnpm run typecheck         # TypeScript 类型检查
 
 ```bash
 # 后端
-cd packages/backend && uv run ruff check && uv run mypy && uv run pytest
+cd packages/backend && uv run ruff check && uv run ruff format --check src/ tests/ && uv run mypy && uv run pytest
 
 # 前端
 cd packages/frontend && pnpm run lint && pnpm run typecheck
 ```
 
 > 任何一项不通过，不得提交。修复后重新运行全部命令。
+
+### 5.4 Git 提交规范
+
+采用 **Conventional Commits** 风格（含 scope）：
+
+| 约定 | 说明 |
+|------|------|
+| 提交信息格式 | `<type>(<scope>): <摘要>`，如 `fix(ci): repair ruff format check` |
+| type 取值 | `fix` / `feat` / `refactor` / `doc` / `test` / `chore` / `ci` |
+| scope 取值 | 受影响的模块或包，如 `ci` / `backend` / `frontend` / `tick` / `messaging` / `docs`；全局性变更可省略 scope |
+| 语言 | 摘要用英文、小写开头、不加句号；正文可中文，逐条列出改动点 |
+| 破坏性变更 | 正文末尾加 `BREAKING CHANGE: <说明>` |
+| 提交粒度 | 一个逻辑变更一个提交；不混合无关文件 |
+| 禁止项 | 不提交 `.omo/`、`tutorial/`、临时脚本、密钥与凭据 |
+
+示例：
+
+```text
+fix(tick): guard move action against hallucinated target scenes
+
+- move 决策经 MovementSystem 校验，失败降级为 wait
+- duration 三分支：矩阵耗时 > allow_dynamic_duration > 默认值
+```
 
 ---
 
@@ -225,9 +262,11 @@ cd packages/frontend && pnpm run lint && pnpm run typecheck
 | 主题 | 文档 |
 |------|------|
 | 代码风格规范 | [docs/rules/implementation-style.md](docs/rules/implementation-style.md) |
+| 前端编码规范 | [docs/rules/frontend-style.md](docs/rules/frontend-style.md) |
 | 领域设计规范 | [docs/rules/domain-design-style.md](docs/rules/domain-design-style.md) |
 | Prompt 规范 | [docs/rules/prompt-style.md](docs/rules/prompt-style.md) |
 | 重构规则 | [docs/rules/refactor-style.md](docs/rules/refactor-style.md) |
+| 设计改进与修复 | [docs/design-improvement-and-fixes.md](docs/design-improvement-and-fixes.md) |
 | 架构总览 | [docs/architecture.md](docs/architecture.md) |
 | 角色设计 | [docs/character-design.md](docs/character-design.md) |
 | 小镇设计 | [docs/town-design.md](docs/town-design.md) |

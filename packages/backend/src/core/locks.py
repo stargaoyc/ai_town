@@ -13,9 +13,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from uuid import UUID
+from contextlib import asynccontextmanager, suppress
+from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
 from structlog import get_logger
@@ -25,6 +26,50 @@ logger = get_logger(__name__)
 # 锁前缀与默认 TTL
 _RESOURCE_LOCK_PREFIX = "char:resource:lock:"
 _DEFAULT_TTL = 30  # 秒
+
+# compare-and-delete：仅当 value 与持有者 token 一致时才删除，
+# 防止锁过期被他人获取后误删他人的锁
+_RELEASE_LOCK_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+else
+  return 0
+end
+"""
+
+# compare-and-expire：仅持有者可续租
+_RENEW_LOCK_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('expire', KEYS[1], ARGV[2])
+else
+  return 0
+end
+"""
+
+
+async def release_lock(redis: Redis, key: str, token: str) -> bool:
+    """安全释放锁（Lua compare-and-delete）
+
+    Args:
+        redis: Redis 客户端
+        key: 锁键
+        token: 获取锁时写入的唯一令牌
+
+    Returns:
+        是否由本持有者成功释放；False 表示锁已易主或不存在
+    """
+    result = await redis.eval(_RELEASE_LOCK_LUA, 1, key, token)
+    return int(result) == 1
+
+
+async def renew_lock(redis: Redis, key: str, token: str, ttl: int) -> bool:
+    """安全续租锁（Lua compare-and-expire）
+
+    Returns:
+        是否续租成功；False 表示锁已易主或不存在（持有者应立即停止受锁保护的工作）
+    """
+    result = await redis.eval(_RENEW_LOCK_LUA, 1, key, token, ttl)
+    return int(result) == 1
 
 
 @asynccontextmanager
@@ -58,15 +103,19 @@ async def acquire_resource_locks(
     # 去重（同一角色只锁一次）
     unique_ids = list(dict.fromkeys(sorted_ids))
 
-    acquired_keys: list[str] = []
+    # key -> 持有者 token（释放时 compare-and-delete 校验）
+    acquired: dict[str, str] = {}
     all_acquired = False
+    renew_stop = asyncio.Event()
+    watchdog = asyncio.create_task(lock_watchdog(redis, renew_stop, acquired, ttl))
 
     try:
         for cid in unique_ids:
             lock_key = f"{_RESOURCE_LOCK_PREFIX}{cid}"
-            success = await redis.set(lock_key, "locked", ex=ttl, nx=True)
+            token = uuid4().hex
+            success = await redis.set(lock_key, token, ex=ttl, nx=True)
             if success:
-                acquired_keys.append(lock_key)
+                acquired[lock_key] = token
             else:
                 logger.debug(
                     "resource_lock_acquire_failed",
@@ -87,9 +136,24 @@ async def acquire_resource_locks(
         yield all_acquired
 
     finally:
-        # 释放所有已获取的锁
-        for lock_key in acquired_keys:
+        renew_stop.set()
+        with suppress(asyncio.CancelledError):
+            await watchdog
+        for lock_key, token in acquired.items():
             try:
-                await redis.delete(lock_key)
+                await release_lock(redis, lock_key, token)
             except Exception:
                 logger.warning("resource_lock_release_failed", lock_key=lock_key)
+
+
+async def lock_watchdog(redis: Redis, renew_stop: asyncio.Event, acquired: dict[str, str], ttl: int) -> None:
+    """锁看门狗：受锁保护的操作可能超过 TTL（含多次 LLM 调用），定期续租防止锁过期易主"""
+    interval = ttl / 3
+    while not renew_stop.is_set():
+        try:
+            await asyncio.wait_for(renew_stop.wait(), timeout=interval)
+        except TimeoutError:
+            for lock_key, token in list(acquired.items()):
+                renewed = await renew_lock(redis, lock_key, token, ttl)
+                if not renewed:
+                    logger.warning("resource_lock_renew_failed", lock_key=lock_key)

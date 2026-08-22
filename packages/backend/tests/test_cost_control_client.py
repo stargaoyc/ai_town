@@ -10,6 +10,7 @@
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -90,13 +91,18 @@ class FakeChatResponse:
 
 
 class FakeStructuredLLM:
-    def __init__(self, schema: type[BaseModel]) -> None:
+    def __init__(self, schema: type[BaseModel], include_raw: bool = False) -> None:
         self.schema = schema
+        self.include_raw = include_raw
         self.calls = 0
 
-    async def ainvoke(self, prompt: str) -> BaseModel:
+    async def ainvoke(self, prompt: str) -> Any:
         self.calls += 1
-        return self.schema(action="move", reason="test")
+        parsed = self.schema(action="move", reason="test")
+        if self.include_raw:
+            raw = SimpleNamespace(response_metadata={"token_usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+            return {"raw": raw, "parsed": parsed, "parsing_error": None}
+        return parsed
 
 
 class FakeChatLLM:
@@ -116,8 +122,8 @@ class FakeChatLLM:
         assert self.response is not None
         return self.response
 
-    def with_structured_output(self, schema: type[BaseModel]) -> FakeStructuredLLM:
-        return FakeStructuredLLM(schema)
+    def with_structured_output(self, schema: type[BaseModel], **kwargs: Any) -> FakeStructuredLLM:
+        return FakeStructuredLLM(schema, include_raw=bool(kwargs.get("include_raw")))
 
 
 _DECISION_SCHEMA: dict[str, Any] = {
@@ -267,3 +273,32 @@ async def test_structured_output_success_records_usage() -> None:
     usage = await redis.hgetall(_today_key())
     assert usage["count"] == "1"
     assert int(usage["tokens"]) > 0
+
+
+async def test_chat_with_usage_returns_real_tokens() -> None:
+    fake_llm = FakeChatLLM(
+        response=FakeChatResponse(
+            "hi",
+            metadata={"token_usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        )
+    )
+    client = _make_client(fake_llm)
+
+    content, usage = await client.chat_with_usage("hello")
+
+    assert content == "hi"
+    assert usage.prompt_tokens == 10
+    assert usage.completion_tokens == 5
+    assert usage.total_tokens == 15
+    assert usage.cost > 0
+
+
+async def test_structured_output_with_usage_returns_real_tokens() -> None:
+    fake_llm = FakeChatLLM()
+    client = _make_client(fake_llm)
+
+    result, usage = await client.structured_output_with_usage("decide", _DECISION_SCHEMA)
+
+    assert result == {"action": "move", "reason": "test"}
+    assert usage.total_tokens == 15
+    assert usage.cost > 0

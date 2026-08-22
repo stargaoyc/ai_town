@@ -34,15 +34,17 @@ class DiaryService:
         "year": 365,
     }
 
-    def __init__(self, session_factory: Any, llm_client: Any = None):
+    def __init__(self, session_factory: Any, llm_client: Any = None, prompts: Any = None):
         """
         Args:
             session_factory: 异步会话工厂（async context manager），
                              如 db.session 或 db.session_factory
             llm_client: LLM 客户端实例（可选，默认从 runtime 获取）
+            prompts: Prompt 模板管理器（可选，默认从 runtime 获取）
         """
         self.session_factory = session_factory
         self._llm = llm_client
+        self._prompts = prompts
 
     def _get_target_time(self, target_date: datetime | None = None) -> datetime:
         """获取目标日期时间
@@ -107,16 +109,17 @@ class DiaryService:
 
         # 构造 Prompt
         period_cn = {"day": "今天", "week": "这一周", "month": "这个月", "year": "这一年"}[period]
-        prompt = (
-            f"你是角色「{character_name}」，请根据以下记忆记录，写一篇{period_cn}的日记。\n\n"
-            f"记忆记录：\n{memory_summary}\n\n"
-            f"要求：\n"
-            f"1. 以第一人称写，体现角色的性格和情感\n"
-            f"2. 不要罗列事实，而是叙事性地总结\n"
-            f"3. 包含角色的感受和思考\n"
-            f"4. 字数 200-500 字\n"
-            f"5. 不要暴露你是 AI\n\n"
-            f'请输出 JSON: {{"title": "日记标题", "content": "日记正文", "mood": "情绪"}}'
+        from src.runtime import get_prompts
+
+        prompts = self._prompts or get_prompts()
+        if not prompts:
+            logger.warning("diary_prompts_unavailable", character_id=str(character_id))
+            return None
+        prompt = prompts.render(
+            "diary",
+            character_name=character_name,
+            period_cn=period_cn,
+            memory_summary=memory_summary,
         )
 
         try:

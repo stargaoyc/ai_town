@@ -13,6 +13,7 @@
 
 import re
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from structlog import get_logger
@@ -22,15 +23,24 @@ from src.db.models import MemoryEpisode
 from src.db.repositories import MemoryRepository
 from src.llm import LLMClient
 
+if TYPE_CHECKING:
+    from src.llm.prompts import PromptTemplates
+
 logger = get_logger(__name__)
 
 
 class EpisodeService:
     """记忆片段服务"""
 
-    def __init__(self, llm: LLMClient, repo: MemoryRepository):
+    def __init__(
+        self,
+        llm: LLMClient,
+        repo: MemoryRepository,
+        prompts: PromptTemplates | None = None,
+    ):
         self.llm = llm
         self.repo = repo
+        self._prompts = prompts
 
     async def score_importance_with_llm(
         self,
@@ -60,21 +70,20 @@ class EpisodeService:
         Returns:
             重要性评分 1-10，失败时返回 5（默认值）
         """
-        prompt = (
-            f"请对以下角色记忆事件的重要性进行评分（1-10 分）。\n\n"
-            f"角色: {character_name}\n"
-            f"位置: {location or '未知'}\n"
-            f"动作: {action_id or '未知'}\n"
-            f"理由: {reason or '无'}\n"
-            f"情绪: {mood or '平静'}\n"
-            f"记忆内容: {content}\n\n"
-            f"评分标准：\n"
-            f"- 1-3 分: 日常琐事（吃饭、休息、等待）\n"
-            f"- 4-5 分: 普通行为（移动、购物、工作）\n"
-            f"- 6-7 分: 有意义的事件（社交、学习、探索）\n"
-            f"- 8-9 分: 重要事件（达成目标、深度互动、冒险）\n"
-            f"- 10 分: 里程碑事件（人生转折、重大成就）\n\n"
-            f"只输出一个 1-10 的整数，不要其他任何内容。"
+        from src.runtime import get_prompts
+
+        prompts = self._prompts or get_prompts()
+        if not prompts:
+            logger.warning("memory_score_prompts_unavailable", fallback=5)
+            return 5
+        prompt = prompts.render(
+            "memory_score",
+            character_name=character_name,
+            location=location or "未知",
+            action_id=action_id or "未知",
+            reason=reason or "无",
+            mood=mood or "平静",
+            content=content,
         )
 
         try:

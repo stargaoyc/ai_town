@@ -1,14 +1,14 @@
 """通知中心 API 路由"""
 
 import json
-from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from structlog import get_logger
 
 from src.auth import get_current_user
-from src.runtime import get_redis
+from src.runtime import create_notification as create_notification_record
+from src.runtime import get_redis, notification_key
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 logger = get_logger(__name__)
@@ -16,38 +16,6 @@ logger = get_logger(__name__)
 # 依赖类型别名（规避 B008：不在函数默认参数中调用 Depends/Body）
 CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
 BodyDict = Annotated[dict[str, Any], Body(...)]
-
-
-def _notif_key(user_id: str) -> str:
-    """Redis 通知列表键"""
-    return f"notifications:{user_id}"
-
-
-async def _create_notification(
-    user_id: str,
-    notif_type: str,
-    title: str,
-    content: str,
-) -> dict[str, Any]:
-    """创建通知并写入 Redis（内部函数，可被其他模块调用）"""
-    from uuid6 import uuid7
-
-    redis = get_redis()
-    if redis is None:
-        raise RuntimeError("Redis not initialized")
-
-    notif = {
-        "id": str(uuid7()),
-        "type": notif_type,
-        "title": title,
-        "content": content,
-        "created_at": datetime.now(UTC).isoformat(),
-        "read": False,
-    }
-    await redis.lpush(_notif_key(user_id), json.dumps(notif))
-    # 保留最近 200 条
-    await redis.ltrim(_notif_key(user_id), 0, 199)
-    return notif
 
 
 @router.get("")
@@ -70,7 +38,7 @@ async def list_notifications(
     redis = get_redis()
     if redis is None:
         raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, limit - 1)
+    raw_list = await redis.lrange(notification_key(user_id), 0, limit - 1)
 
     notifications = []
     for raw in raw_list:
@@ -107,7 +75,7 @@ async def create_notification(
     title = payload.get("title", "通知")
     content = payload.get("content", "")
 
-    notif = await _create_notification(user_id, notif_type, title, content)
+    notif = await create_notification_record(user_id=user_id, notif_type=notif_type, title=title, content=content)
     return {"data": notif}
 
 
@@ -121,13 +89,13 @@ async def mark_notification_read(
     redis = get_redis()
     if redis is None:
         raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
+    raw_list = await redis.lrange(notification_key(user_id), 0, -1)
     for i, raw in enumerate(raw_list):
         try:
             notif = json.loads(raw)
             if notif.get("id") == notif_id:
                 notif["read"] = True
-                await redis.lset(_notif_key(user_id), i, json.dumps(notif))
+                await redis.lset(notification_key(user_id), i, json.dumps(notif))
                 return {"success": True, "id": notif_id}
         except (json.JSONDecodeError, TypeError):
             continue
@@ -144,14 +112,14 @@ async def mark_all_notifications_read(
     redis = get_redis()
     if redis is None:
         raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
+    raw_list = await redis.lrange(notification_key(user_id), 0, -1)
     updated = 0
     for i, raw in enumerate(raw_list):
         try:
             notif = json.loads(raw)
             if not notif.get("read"):
                 notif["read"] = True
-                await redis.lset(_notif_key(user_id), i, json.dumps(notif))
+                await redis.lset(notification_key(user_id), i, json.dumps(notif))
                 updated += 1
         except (json.JSONDecodeError, TypeError):
             continue
@@ -169,13 +137,13 @@ async def delete_notification(
     redis = get_redis()
     if redis is None:
         raise HTTPException(500, "Redis not available")
-    raw_list = await redis.lrange(_notif_key(user_id), 0, -1)
+    raw_list = await redis.lrange(notification_key(user_id), 0, -1)
     for raw in raw_list:
         try:
             notif = json.loads(raw)
             if notif.get("id") == notif_id:
                 # LREM 按 value 删除（需要精确匹配原始 JSON 字符串）
-                await redis.lrem(_notif_key(user_id), 1, raw.decode() if isinstance(raw, bytes) else raw)
+                await redis.lrem(notification_key(user_id), 1, raw.decode() if isinstance(raw, bytes) else raw)
                 return {"success": True, "id": notif_id}
         except (json.JSONDecodeError, TypeError):
             continue
@@ -192,5 +160,5 @@ async def clear_all_notifications(
     redis = get_redis()
     if redis is None:
         raise HTTPException(500, "Redis not available")
-    await redis.delete(_notif_key(user_id))
+    await redis.delete(notification_key(user_id))
     return {"success": True}

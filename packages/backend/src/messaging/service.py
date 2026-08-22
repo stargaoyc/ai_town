@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 import time
 from datetime import UTC, datetime
@@ -52,8 +53,17 @@ COMPRESSED_HISTORY_LIMIT = 10  # 压缩后保留最近 10 条原文
 # 默认错误回复（LLM 失败时返回，避免用户会话阻塞）
 DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后再试）"
 
-# 群聊智能回复：非 @ 消息的回复概率上限（避免刷屏）
-GROUP_REPLY_PROBABILITY_CAP = 0.7
+# 群聊智能回复各分支的回复概率（互斥分支非叠加，最终回复率为各触发路径的组合上界）
+GROUP_REPLY_PROBABILITY_CAP = 0.7  # 疑问句启发式回复概率
+GROUP_REPLY_EMOTION_PROBABILITY = 0.5  # 情绪句启发式回复概率
+GROUP_REPLY_LLM_NO_FALLBACK = 0.15  # LLM 判定不回复后的活跃度兜底
+GROUP_REPLY_LLM_ERROR_FALLBACK = 0.3  # LLM 调用失败时的 fail-open 兜底
+
+
+def _probability_roll(p: float) -> bool:
+    """统一概率闸门：所有随机回复分支必须经过此处，保证概率语义单一可审计"""
+    return random.random() < p
+
 
 # 群聊智能回复：常见问候语关键词（命中则直接回复）
 GREETING_KEYWORDS = frozenset(
@@ -170,8 +180,6 @@ class MessageService:
         if not text:
             text = raw_text
 
-        import random
-
         # 1. 关键词命中
         # 1a. 消息包含角色名 → 直接回复
         if character_name and character_name in text:
@@ -186,13 +194,13 @@ class MessageService:
         # 2. 启发式规则（概率回复）
         # 2a. 疑问句（包含问号或疑问词结尾）
         if "?" in text or "？" in text or text.endswith("吗") or text.endswith("呢"):
-            if random.random() < GROUP_REPLY_PROBABILITY_CAP:
+            if _probability_roll(GROUP_REPLY_PROBABILITY_CAP):
                 return True, "question_heuristic"
             return False, "question_skip_probability"
 
         # 2b. 情绪强烈（包含感叹号或 QQ 表情）
         if "！" in text or "!" in text or "[CQ:face" in raw_text:
-            if random.random() < 0.5:
+            if _probability_roll(GROUP_REPLY_EMOTION_PROBABILITY):
                 return True, "emotion_heuristic"
             return False, "emotion_skip_probability"
 
@@ -208,22 +216,12 @@ class MessageService:
             else:
                 personality_text = str(personality)
 
-            judge_prompt = (
-                f"你是一个群聊助手，判断角色「{character_name}」是否应该回复以下群消息。\n\n"
-                f"角色性格：{personality_text}\n"
-                f"角色背景：{character_data.backstory or '（无）'}\n\n"
-                f"群消息内容：{text}\n\n"
-                f"判断标准（满足任一即应回复）：\n"
-                f"1. 消息与角色兴趣/背景相关\n"
-                f"2. 消息在讨论角色关心的话题\n"
-                f"3. 消息是通用问候且角色性格外向\n"
-                f"4. 消息内容有趣，角色自然会想回应\n"
-                f"5. 消息是日常闲聊，角色性格外向时应积极参与\n\n"
-                f"不回复的标准：\n"
-                f"1. 消息与角色完全无关且无趣\n"
-                f"2. 消息是他人之间的私密对话\n"
-                f"3. 消息是纯技术讨论且角色无相关背景\n\n"
-                f'请只输出 JSON：{{"should_reply": true/false, "reason": "简短原因"}}'
+            judge_prompt = self.prompts.render(
+                "group_reply",
+                character_name=character_name,
+                personality=personality_text,
+                backstory=character_data.backstory or "（无）",
+                message=text,
             )
 
             result = await self.llm.structured_output(
@@ -246,8 +244,8 @@ class MessageService:
             if should:
                 return True, f"llm:{reason}"
 
-            # 4. 概率兜底：LLM 说不回复时，仍有 15% 概率主动回复（增加活跃度）
-            if random.random() < 0.15:
+            # 4. 概率兜底：LLM 说不回复时，仍有小概率主动回复（增加活跃度）
+            if _probability_roll(GROUP_REPLY_LLM_NO_FALLBACK):
                 return True, f"random_fallback:{reason}"
 
             return False, f"llm_no:{reason}"
@@ -258,8 +256,8 @@ class MessageService:
                 character_id=str(character_id),
                 error=str(e),
             )
-            # LLM 判断失败时 30% 概率回复（fail-open，更积极）
-            if random.random() < 0.3:
+            # LLM 判断失败时按 fail-open 概率回复（更积极）
+            if _probability_roll(GROUP_REPLY_LLM_ERROR_FALLBACK):
                 return True, f"llm_error_fallback:{type(e).__name__}"
             return False, f"llm_judge_error:{type(e).__name__}"
 
@@ -433,6 +431,7 @@ class MessageService:
             pm_service = PersonMemoryService(
                 session_factory=db.session,  # 使用独立的 session factory
                 llm_client=self.llm,
+                prompts=self.prompts,
             )
             # 异步执行，不等待（fire-and-forget）
             asyncio.create_task(
@@ -563,21 +562,14 @@ class MessageService:
                 user_message=safe_user_message,
             )
 
-            response = await self.llm.chat(prompt, model="chat", system_prompt=system_prompt)
+            response, usage = await self.llm.chat_with_usage(prompt, model="chat", system_prompt=system_prompt)
 
             # chat.yaml 要求 LLM 输出 JSON：{"response", "emotion", "action"}
             # 这里容错解析：优先提取 JSON 中的 response 字段；解析失败则直接使用原文
             reply_text = self._extract_chat_response(response)
 
-            # ⚠️ Phase 3.5 将接入 Langfuse 精确统计 token/cost
-            # 当前使用粗略估算（中文约 1.5 字/token，英文约 4 字符/token）
-            estimated_tokens = max(
-                len(prompt) // 3,
-                len(response) // 3,
-            )
-            estimated_cost = estimated_tokens * 0.000001  # 假设 $1/M tokens
-
-            return reply_text, estimated_tokens, estimated_cost, None
+            # 持久化真实 token 用量（A-7：预算/持久化/指标单轨，杜绝估算值）
+            return reply_text, usage.total_tokens, usage.cost, None
 
         except Exception as e:
             logger.error(
@@ -704,9 +696,10 @@ class MessageService:
         )
 
         try:
-            compress_prompt = (
-                f"请将以下 {character.name} 与用户的对话历史压缩为一段简洁的摘要（200字以内），"
-                f"保留关键事件、角色情绪变化与用户偏好：\n\n{history_text}"
+            compress_prompt = self.prompts.render(
+                "context_compress",
+                character_name=character.name,
+                history_text=history_text,
             )
             summary = await self.llm.chat(compress_prompt, model="chat")
 

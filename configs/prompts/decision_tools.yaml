@@ -1,0 +1,8 @@
+name: decision_tools
+# 决策 Prompt 的工具说明追加段（渲染后拼接到 decision 模板之后）
+template: |
+
+  [可用工具]
+  你可以在行动中使用以下工具获取信息或执行操作：
+  {tools_text}
+  如需使用工具，在 action 字段填写 "use_tool"，在 params 中填写 tool_name（如 "shop.buy_item"）和 tool_args（参数字典）。标记为 [会改变状态] 的工具会直接修改你的金钱/库存/关系等状态。

@@ -33,27 +33,30 @@ class RuntimeConfig(BaseModel):
 
     这些配置项可通过 PUT /api/v1/admin/config 热更新，无需重启。
     其他配置项（如 jwt_secret、openai_api_key）必须重启才能变更。
+
+    字段默认值统一为 None（未覆盖）：Settings 是唯一默认值真相源，
+    本模型只记录「管理员显式设置的覆盖值」，避免两套默认值漂移。
     """
 
-    share_cooldown_seconds: int = Field(default=300, description="分享冷却时间（秒）")
-    share_daily_limit: int = Field(default=5, description="每日分享上限")
-    share_probability_action: float = Field(default=0.15, description="Action 分享概率")
-    share_probability_mood: float = Field(default=0.10, description="情绪分享概率")
-    share_probability_location: float = Field(default=0.08, description="位置变化分享概率")
-    share_probability_routine: float = Field(default=0.20, description="日常行为分享概率")
-    memory_llm_scoring_enabled: bool = Field(default=False, description="LLM 记忆评分")
-    world_tick_seconds: int = Field(default=30, description="世界 Tick 间隔（秒）")
-    character_tick_seconds: int = Field(default=60, description="角色 Tick 间隔（秒）")
-    character_max_concurrent: int = Field(default=3, description="角色并发上限")
-    llm_daily_budget_usd: float = Field(default=5.0, description="LLM 日预算（美元）")
-    log_level: str = Field(default="info", description="日志级别")
+    share_cooldown_seconds: int | None = Field(default=None, description="分享冷却时间（秒）")
+    share_daily_limit: int | None = Field(default=None, description="每日分享上限")
+    share_probability_action: float | None = Field(default=None, description="Action 分享概率")
+    share_probability_mood: float | None = Field(default=None, description="情绪分享概率")
+    share_probability_location: float | None = Field(default=None, description="位置变化分享概率")
+    share_probability_routine: float | None = Field(default=None, description="日常行为分享概率")
+    memory_llm_scoring_enabled: bool | None = Field(default=None, description="LLM 记忆评分")
+    world_tick_seconds: int | None = Field(default=None, description="世界 Tick 间隔（秒）")
+    character_tick_seconds: int | None = Field(default=None, description="角色 Tick 间隔（秒）")
+    character_max_concurrent: int | None = Field(default=None, description="角色并发上限")
+    llm_daily_budget_usd: float | None = Field(default=None, description="LLM 日预算（美元）")
+    log_level: str | None = Field(default=None, description="日志级别")
 
     @model_validator(mode="after")
     def validate_ranges(self) -> RuntimeConfig:
-        """校验配置项取值范围"""
-        if self.share_cooldown_seconds < 0:
+        """校验配置项取值范围（None 表示未覆盖，跳过校验）"""
+        if self.share_cooldown_seconds is not None and self.share_cooldown_seconds < 0:
             raise ValueError("share_cooldown_seconds 不能为负数")
-        if self.share_daily_limit < 0:
+        if self.share_daily_limit is not None and self.share_daily_limit < 0:
             raise ValueError("share_daily_limit 不能为负数")
         for prob_key in (
             "share_probability_action",
@@ -62,28 +65,32 @@ class RuntimeConfig(BaseModel):
             "share_probability_routine",
         ):
             val = getattr(self, prob_key)
-            if not 0 <= val <= 1:
+            if val is not None and not 0 <= val <= 1:
                 raise ValueError(f"{prob_key} 必须在 0-1 之间")
-        if self.world_tick_seconds < 5:
+        if self.world_tick_seconds is not None and self.world_tick_seconds < 5:
             raise ValueError("world_tick_seconds 不能小于 5 秒")
-        if self.character_tick_seconds < 5:
+        if self.character_tick_seconds is not None and self.character_tick_seconds < 5:
             raise ValueError("character_tick_seconds 不能小于 5 秒")
-        if self.character_max_concurrent < 1:
+        if self.character_max_concurrent is not None and self.character_max_concurrent < 1:
             raise ValueError("character_max_concurrent 不能小于 1")
-        if self.llm_daily_budget_usd < 0:
+        if self.llm_daily_budget_usd is not None and self.llm_daily_budget_usd < 0:
             raise ValueError("llm_daily_budget_usd 不能为负数")
-        if self.log_level not in ("debug", "info", "warning", "error"):
+        if self.log_level is not None and self.log_level not in ("debug", "info", "warning", "error"):
             raise ValueError("log_level 必须是 debug/info/warning/error")
         return self
 
     def to_overrides_dict(self) -> dict[str, Any]:
-        """转换为 Redis 存储格式（仅包含被覆盖的值）"""
-        return self.model_dump()
+        """转换为 Redis 存储格式（仅包含被覆盖的值，None 表示未覆盖不落盘）"""
+        return {k: v for k, v in self.model_dump().items() if v is not None}
 
     def apply_to_settings(self, settings_obj: Settings) -> None:
-        """将配置值同步到 settings 对象（向后兼容，业务代码仍读 settings.xxx）"""
+        """将覆盖值同步到 settings 对象（向后兼容，业务代码仍读 settings.xxx）
+
+        仅同步显式覆盖的字段；None（未覆盖）保持 settings 自身默认值不动。
+        """
         for key, value in self.model_dump().items():
-            setattr(settings_obj, key, value)
+            if value is not None:
+                setattr(settings_obj, key, value)
 
 
 # 全局单例
@@ -99,10 +106,10 @@ def get_runtime_config() -> RuntimeConfig:
 
 
 async def load_runtime_config(redis: Redis) -> RuntimeConfig:
-    """从 Redis 加载运行时配置并校验
+    """从 Redis 加载运行时覆盖值并校验
 
-    启动时调用。读取 Redis 中的覆盖值，通过 Pydantic 校验后创建单例。
-    校验失败的值会被忽略并记录警告。
+    启动时调用。Redis 中只存管理员显式设置的覆盖值（None/缺失 = 未覆盖），
+    未覆盖的字段保持 settings 自身默认值——Settings 是唯一默认值真相源。
 
     Args:
         redis: Redis 客户端
@@ -112,33 +119,29 @@ async def load_runtime_config(redis: Redis) -> RuntimeConfig:
     """
     global _instance
 
-    # 从 settings 读取默认值作为基础
-    defaults: dict[str, Any] = {}
-    for key in RuntimeConfig.model_fields:
-        defaults[key] = getattr(settings, key, RuntimeConfig.model_fields[key].default)
-
     # 从 Redis 读取覆盖值
+    overrides: dict[str, Any] = {}
     override_keys: list[str] = []
     try:
         raw = await redis.get(_CONFIG_OVERRIDES_KEY)
         if raw:
-            overrides = json.loads(raw)
+            data = json.loads(raw)
             # 仅取已知字段
             for key in RuntimeConfig.model_fields:
-                if key in overrides:
-                    defaults[key] = overrides[key]
+                if key in data and data[key] is not None:
+                    overrides[key] = data[key]
                     override_keys.append(key)
     except Exception as e:
         logger.warning("runtime_config_load_failed", error=str(e))
 
     # 通过 Pydantic 校验
     try:
-        _instance = RuntimeConfig.model_validate(defaults)
+        _instance = RuntimeConfig.model_validate(overrides)
         # 同步到 settings 对象（向后兼容）
         _instance.apply_to_settings(settings)
         logger.info(
             "runtime_config_loaded",
-            total_keys=len(defaults),
+            total_keys=len(RuntimeConfig.model_fields),
             override_keys=override_keys,
         )
     except Exception as e:
@@ -201,12 +204,15 @@ async def reset_runtime_config(
 ) -> Any:
     """重置单个配置项为默认值
 
+    重置语义：移除 Redis 覆盖（字段回到 None），并把 settings 上被之前
+    覆盖污染的属性恢复为 Settings 的原始默认值。
+
     Args:
         redis: Redis 客户端
         key: 配置项键名
 
     Returns:
-        重置后的默认值
+        重置后的默认值（来自 Settings，唯一默认值真相源）
 
     Raises:
         KeyError: 未知配置项
@@ -217,21 +223,21 @@ async def reset_runtime_config(
     config = get_runtime_config()
     merged = config.model_dump()
 
-    # 从 Settings 默认值中读取（Settings 是 pydantic-settings，从 .env 读取必填字段）
-    default_val = getattr(Settings(), key, RuntimeConfig.model_fields[key].default)  # type: ignore[call-arg]
-    merged[key] = default_val
+    # 从 Settings 新实例读取原始默认值（Settings 是 pydantic-settings，从 .env 读取必填字段）
+    default_val = getattr(Settings(), key)  # type: ignore[call-arg]
+    merged[key] = None
 
-    # 校验
+    # 校验（其余字段保持不变）
     new_config = RuntimeConfig.model_validate(merged)
 
-    # 写入 Redis
+    # 写入 Redis（None 字段不落盘）
     overrides = new_config.to_overrides_dict()
     await redis.set(_CONFIG_OVERRIDES_KEY, json.dumps(overrides))
 
-    # 更新全局单例 + 同步到 settings
+    # 更新全局单例 + 恢复 settings 属性为原始默认值
     global _instance
     _instance = new_config
-    new_config.apply_to_settings(settings)
+    setattr(settings, key, default_val)
 
     logger.info("runtime_config_reset", key=key, value=default_val)
     return default_val

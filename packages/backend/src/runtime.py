@@ -220,7 +220,7 @@ def get_backend_port() -> int:
 # === 业务工具函数（依赖运行时单例）===
 
 
-def _notif_key(user_id: str) -> str:
+def notification_key(user_id: str) -> str:
     """Redis 通知列表键"""
     return f"notifications:{user_id}"
 
@@ -252,7 +252,7 @@ async def create_notification(
         "created_at": datetime.now(UTC).isoformat(),
         "read": False,
     }
-    await redis.lpush(_notif_key(user_id), json.dumps(notif))
+    await redis.lpush(notification_key(user_id), json.dumps(notif))
     # 保留最近 200 条
-    await redis.ltrim(_notif_key(user_id), 0, 199)
+    await redis.ltrim(notification_key(user_id), 0, 199)
     return notif

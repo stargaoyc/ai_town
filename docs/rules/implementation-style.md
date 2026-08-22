@@ -480,6 +480,73 @@ async def reset_character_state(self, cid: UUID) -> dict:
 
 ---
 
+## 五、测试编写规范
+
+> 测试与修复绑定：每个 bug 修复 / 行为变更必须附带至少一个回归测试，
+> 测试文件 docstring 注明对应的修复条目（如 `docs/design-improvement-and-fixes.md` 的编号）。
+
+### 5.1 基本约定
+
+| 项 | 规范 |
+|----|------|
+| 位置与命名 | `tests/test_<被测模块>.py`，与 `src/` 结构对应 |
+| 异步测试 | 项目配置 `asyncio_mode = "auto"`——`async def test_xxx()` 直接写，**不加** `@pytest.mark.asyncio` |
+| 返回注解 | 所有测试函数与 fixture 标注 `-> None`；有返回值的 fixture 标注真实类型 |
+| yield fixture | 返回类型标 `Iterator[None]`（或产出的真实类型），不是 `None` |
+| 断言 | 断言**可观察行为**（返回值、Redis 写入、异常类型），不断言私有调用序列 |
+
+### 5.2 Fake 替身模式
+
+不连真实 DB/Redis。替身按需实现最小接口，构造注入处用 `cast` 显式断言：
+
+```python
+class FakeRedis:
+    def __init__(self) -> None:
+        self.hset_calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        self.hset_calls.append((key, mapping or {}))
+
+
+engine = CharacterTickEngine(
+    redis=cast(Redis, FakeRedis()),   # cast 显式声明「测试替身」，不用 type: ignore
+    registry=ActionRegistry(),
+    llm=cast(LLMClient, None),
+)
+```
+
+- 替身记录调用（如 `hset_calls`）供断言，而不是只当哑对象。
+- 需要多个操作的替身（pipeline、hgetall 等）参考 `tests/test_cost_control_client.py`。
+- `unittest.mock.AsyncMock` 仅用于第三方客户端 mock；自家代码优先手写 Fake。
+
+### 5.3 单例与全局状态隔离
+
+模块级单例没有 unset API，用 autouse fixture 在每个测试前后重置：
+
+```python
+@pytest.fixture(autouse=True)
+def _reset_singletons():
+    import src.cost_control.budget_manager as bm
+
+    bm._budget_manager = None   # 直接重置模块级全局，保证测试互不影响
+    yield
+```
+
+替换 `db.session` 时 monkeypatch 单例对象的属性（所有导入方共享同一对象）：
+
+```python
+monkeypatch.setattr(tick_module.db, "session", lambda: FakeSessionCtx(fake_session))
+```
+
+### 5.4 禁止事项
+
+- **禁止删除或跳过失败测试来凑绿**；失败先修实现，确认是测试过时则改测试并说明原因。
+- 禁止在测试里 sleep 真实时间做时序断言（用注入时钟或 `asyncio.sleep(0)` 让出控制权）。
+- 禁止测试依赖执行顺序（前一个测试写的全局状态被后一个隐式依赖）。
+- 禁止为覆盖率高而写「只调用不断言」的空壳测试。
+
+---
+
 ## 相关文档
 
 | 主题 | 文档 |

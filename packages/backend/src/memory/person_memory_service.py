@@ -24,15 +24,17 @@ class PersonMemoryService:
     记忆有热度机制：交互越频繁热度越高，长时间不交互热度衰减。
     """
 
-    def __init__(self, session_factory: Any, llm_client: Any = None):
+    def __init__(self, session_factory: Any, llm_client: Any = None, prompts: Any = None):
         """
         Args:
             session_factory: 异步会话工厂（async context manager），
                              如 db.session 或 db.session_factory
             llm_client: LLM 客户端实例（可选，默认从 runtime 获取）
+            prompts: Prompt 模板管理器（可选，默认从 runtime 获取）
         """
         self.session_factory = session_factory
         self._llm = llm_client
+        self._prompts = prompts
 
     async def get_memory(self, character_id: UUID, user_id: str) -> dict[str, Any] | None:
         """获取角色对某用户的记忆
@@ -88,15 +90,19 @@ class PersonMemoryService:
         existing_content = existing.get("content", "") if existing else "（初次交流）"
 
         # 构造 Prompt 让 LLM 更新记忆
-        prompt = (
-            f"你是角色「{character_name}」的记忆系统。请根据以下对话更新你对用户 {user_id} 的记忆。\n\n"
-            f"现有记忆：\n{existing_content}\n\n"
-            f"最新对话：\n用户: {user_message}\n{character_name}: {character_reply}\n\n"
-            f"请更新你对这个用户的认知，包含：\n"
-            f"1. 用户的偏好和兴趣\n"
-            f"2. 关系进展\n"
-            f"3. 值得记住的细节\n\n"
-            f"请输出更新后的记忆内容（自然语言，200 字以内）："
+        from src.runtime import get_prompts
+
+        prompts = self._prompts or get_prompts()
+        if not prompts:
+            logger.warning("person_memory_prompts_unavailable", character_id=str(character_id))
+            return None
+        prompt = prompts.render(
+            "person_memory",
+            character_name=character_name,
+            user_id=user_id,
+            existing_content=existing_content,
+            user_message=user_message,
+            character_reply=character_reply,
         )
 
         try:

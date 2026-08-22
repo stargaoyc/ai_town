@@ -23,11 +23,13 @@ import json
 import time
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.config import settings
+from src.core.locks import release_lock, renew_lock
 from src.core.world.evolutions import default_evolutions
 from src.db.models import WorldEvent, WorldSnapshot
 from src.db.repositories import WorldEventRepository, WorldSnapshotRepository
@@ -63,6 +65,7 @@ class WorldEngine:
         self.evolutions = default_evolutions()
         self.tick_id = 0
         self.is_leader = False
+        self._leader_token: str | None = None  # Leader 锁持有者令牌（compare-and-delete 校验用）
         self._stop_event = asyncio.Event()
         self._leader_task: asyncio.Task[None] | None = None
         self._tick_task: asyncio.Task[None] | None = None
@@ -120,9 +123,10 @@ class WorldEngine:
             except asyncio.CancelledError:
                 pass
 
-        # 释放锁
-        if self.is_leader:
-            await self.redis.delete(self.LOCK_KEY)
+        # 释放锁（compare-and-delete，仅当仍是本实例持有时才删除）
+        if self.is_leader and self._leader_token:
+            await release_lock(self.redis, self.LOCK_KEY, self._leader_token)
+            self.is_leader = False
             logger.info("world_lock_released")
 
     async def _leader_loop(self) -> None:
@@ -132,24 +136,26 @@ class WorldEngine:
         """
         while not self._stop_event.is_set():
             try:
-                # 尝试获取锁
+                # 尝试获取锁（写入唯一 token，续租/释放时校验持有者）
+                leader_token = uuid4().hex
                 acquired = await self.redis.set(
                     self.LOCK_KEY,
-                    f"leader:{datetime.now().isoformat()}",
+                    leader_token,
                     ex=self.LOCK_TTL,
                     nx=True,  # 仅当不存在时设置
                 )
 
                 if acquired:
                     self.is_leader = True
+                    self._leader_token = leader_token
                     logger.info("world_leader_acquired", tick_id=self.tick_id)
 
                     # 续租循环
                     while not self._stop_event.is_set() and self.is_leader:
                         await asyncio.sleep(self.LOCK_RENEW_INTERVAL)
 
-                        # 续租
-                        renewed = await self.redis.expire(self.LOCK_KEY, self.LOCK_TTL)
+                        # 安全续租：compare-and-expire，锁易主后不再续租他人的锁
+                        renewed = await renew_lock(self.redis, self.LOCK_KEY, leader_token, self.LOCK_TTL)
                         if not renewed:
                             logger.warning("world_leader_lost", tick_id=self.tick_id)
                             self.is_leader = False

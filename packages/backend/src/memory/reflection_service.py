@@ -3,6 +3,7 @@
 触发条件：未反思记忆数 >= 反思阈值（默认 20）
 """
 
+from typing import Any
 from uuid import UUID
 
 from structlog import get_logger
@@ -19,10 +20,17 @@ class ReflectionService:
 
     REFLECTION_THRESHOLD = 20  # 每 N 条未反思记忆触发反思
 
-    def __init__(self, llm: LLMClient, mem_repo: MemoryRepository, ref_repo: ReflectionRepository):
+    def __init__(
+        self,
+        llm: LLMClient,
+        mem_repo: MemoryRepository,
+        ref_repo: ReflectionRepository,
+        prompts: Any | None = None,
+    ):
         self.llm = llm
         self.mem_repo = mem_repo
         self.ref_repo = ref_repo
+        self._prompts = prompts
 
     async def check_and_reflect(self, character_id: UUID) -> Reflection | None:
         """检查是否需要反思，如需要则执行
@@ -71,16 +79,13 @@ class ReflectionService:
         # 构建反思 Prompt
         memories_text = "\n".join([f"[{e.timestamp}] {e.content}" for e in episodes])
 
-        prompt = f"""[角色记忆]
-{memories_text}
+        from src.runtime import get_prompts
 
-[任务]
-请基于以上记忆，归纳出 3 条关于该角色的高层认知。
-每条以 JSON 输出: {{ "summary": "...", "detail": "..." }}
-
-输出格式：
-{{ "reflections": [{{...}}, {{...}}, {{...}}] }}
-"""
+        prompts = self._prompts or get_prompts()
+        if not prompts:
+            logger.warning("reflection_prompts_unavailable", character_id=str(character_id))
+            return None
+        prompt = prompts.render("reflection", memories_text=memories_text)
 
         # 调用 LLM（使用 strong 模型）
         result = await self.llm.structured_output(

@@ -7,9 +7,10 @@
 """
 
 import json
+import types
 from collections import defaultdict
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args, get_origin
 from uuid import UUID
 
 import yaml
@@ -850,6 +851,16 @@ async def get_detailed_metrics(user: Admin) -> dict[str, Any]:
 #
 # 详见 src/config_runtime.py
 
+
+def _unwrap_optional(annotation: Any) -> Any:
+    """解包 Optional[X] 注解为 X（RuntimeConfig 字段均为 X | None 形式）"""
+    if get_origin(annotation) is types.UnionType:
+        args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return annotation
+
+
 # 配置项中文说明（供前端展示）
 _CONFIG_LABELS = {
     "share_cooldown_seconds": "分享冷却时间（秒）",
@@ -879,24 +890,19 @@ async def get_runtime_config(user: Admin) -> dict[str, Any]:
 
     result = []
     for key, field in RuntimeConfig.model_fields.items():
-        default_val = getattr(defaults, key, field.default)
-        current_val = getattr(config, key)
+        default_val = getattr(defaults, key)
+        override_val = getattr(config, key)
+        # 实际生效值读 settings（load/update 时已把覆盖值同步过去）
+        current_val = getattr(settings, key)
+        base = _unwrap_optional(field.annotation)
         result.append(
             {
                 "key": key,
                 "label": _CONFIG_LABELS.get(key, key),
-                "type": (
-                    "bool"
-                    if field.annotation is bool
-                    else "int"
-                    if field.annotation is int
-                    else "float"
-                    if field.annotation is float
-                    else "str"
-                ),
+                "type": ("bool" if base is bool else "int" if base is int else "float" if base is float else "str"),
                 "default": default_val,
                 "current": current_val,
-                "overridden": current_val != default_val,
+                "overridden": override_val is not None,
             }
         )
 

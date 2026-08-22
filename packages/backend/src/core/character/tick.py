@@ -14,15 +14,17 @@
 
 import asyncio
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.actions import Action, ActionRegistry, DecisionResult
 from src.config import settings
+from src.core.locks import lock_watchdog, release_lock
 from src.core.state_codec import decode_state_value, encode_state_mapping
 from src.cost_control import CircuitOpen
 from src.db.models import ActionRecord, Character
@@ -36,7 +38,6 @@ from src.db.repositories import (
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
-from src.llm.prompts import SAFETY_SYSTEM_PROMPT
 from src.memory import EpisodeService, ReflectionService, RetrievalService
 
 logger = get_logger(__name__)
@@ -46,6 +47,7 @@ class CharacterTickEngine:
     """角色 Tick 引擎 - 管理所有角色的行为闭环"""
 
     SEMAPHORE: asyncio.Semaphore | None = None  # 并发控制信号量
+    SEMAPHORE_LIMIT: int = 0  # 当前信号量容量（用于检测 character_max_concurrent 热更新）
     LOCK_PREFIX = "char:tick:lock:"  # 角色锁前缀
     LOCK_TTL = 30  # 锁 TTL（秒）
 
@@ -69,9 +71,7 @@ class CharacterTickEngine:
         self.llm = llm
         self.prompts = prompts
 
-        # 初始化并发信号量（类级别共享）
-        if CharacterTickEngine.SEMAPHORE is None:
-            CharacterTickEngine.SEMAPHORE = asyncio.Semaphore(settings.character_max_concurrent)
+        self._ensure_semaphore()
 
     async def tick_character(self, character_id: UUID) -> None:
         """执行单个角色的 Tick
@@ -86,14 +86,20 @@ class CharacterTickEngine:
             character_id: 角色 ID
         """
         lock_key = f"{self.LOCK_PREFIX}{character_id}"
+        lock_token = uuid4().hex
 
-        # 尝试获取锁
-        acquired = await self.redis.set(lock_key, "tick", ex=self.LOCK_TTL, nx=True)
+        # 尝试获取锁（写入唯一 token，释放时 compare-and-delete 防止误删他人锁）
+        acquired = await self.redis.set(lock_key, lock_token, ex=self.LOCK_TTL, nx=True)
         if not acquired:
             logger.debug("character_tick_skipped", character_id=str(character_id))
             return
 
+        # 看门狗：单次 Tick 含多次 LLM 调用，耗时可能超过 LOCK_TTL，定期续租防止锁过期易主
+        renew_stop = asyncio.Event()
+        watchdog = asyncio.create_task(lock_watchdog(self.redis, renew_stop, {lock_key: lock_token}, self.LOCK_TTL))
+
         try:
+            self._ensure_semaphore()
             semaphore = CharacterTickEngine.SEMAPHORE
             assert semaphore is not None
             async with semaphore:
@@ -102,7 +108,28 @@ class CharacterTickEngine:
             # 熔断器开启时 LLM 调用必然失败，重试无意义，跳过本角色本周期
             logger.warning("character_tick_skipped_circuit_open", character_id=str(character_id))
         finally:
-            await self.redis.delete(lock_key)
+            renew_stop.set()
+            with suppress(asyncio.CancelledError):
+                await watchdog
+            try:
+                await release_lock(self.redis, lock_key, lock_token)
+            except Exception:
+                logger.warning("character_tick_lock_release_failed", character_id=str(character_id))
+
+    @classmethod
+    def _ensure_semaphore(cls) -> None:
+        """确保信号量容量与 character_max_concurrent 配置一致（热更新生效点）
+
+        重建瞬间旧信号量仍被持有中的协程引用，短暂双信号量无害：
+        旧引用随协程结束释放，新请求全部走新信号量。
+        """
+        if cls.SEMAPHORE is None or cls.SEMAPHORE_LIMIT != settings.character_max_concurrent:
+            cls.SEMAPHORE = asyncio.Semaphore(settings.character_max_concurrent)
+            cls.SEMAPHORE_LIMIT = settings.character_max_concurrent
+            logger.info(
+                "character_tick_semaphore_rebuilt",
+                max_concurrent=settings.character_max_concurrent,
+            )
 
     async def _execute_tick(self, character_id: UUID) -> None:
         """五阶段闭环核心逻辑
@@ -455,14 +482,7 @@ class CharacterTickEngine:
         )
 
         # 追加工具信息到 Prompt
-        prompt += (
-            f"\n\n[可用工具]\n"
-            f"你可以在行动中使用以下工具获取信息或执行操作：\n"
-            f"{tools_text}\n"
-            f'如需使用工具，在 action 字段填写 "use_tool"，'
-            f'在 params 中填写 tool_name（如 "shop.buy_item"）和 tool_args（参数字典）。'
-            f"标记为 [会改变状态] 的工具会直接修改你的金钱/库存/关系等状态。"
-        )
+        prompt += self.prompts.render("decision_tools", tools_text=tools_text)
 
         # ReAct 模式：如果有前序工具调用结果，加入 Prompt 让 LLM 基于结果推理
         if tool_observations:
@@ -473,12 +493,7 @@ class CharacterTickEngine:
                 obs_lines.append(
                     f"{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) [{success_tag}]\n   结果: {result_str}"
                 )
-            prompt += (
-                f"\n\n[工具调用观察（ReAct）]\n"
-                f"你刚才调用了以下工具，请基于结果决定下一步行动：\n"
-                f"{chr(10).join(obs_lines)}\n"
-                f"你可以继续调用其他工具，或选择一个 Action 执行。"
-            )
+            prompt += self.prompts.render("decision_react", observations=chr(10).join(obs_lines))
 
         # 定义决策结果 schema
         schema = {
@@ -589,7 +604,7 @@ class CharacterTickEngine:
             try:
                 async with db.session() as session:
                     mem_repo = MemoryRepository(session)
-                    episode_service = EpisodeService(self.llm, mem_repo)
+                    episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
                     await episode_service.create_episode(
                         character_id,
                         f"[工具调用] {tool_name}({tool_args}) → {str(tool_result)[:500]}",
@@ -718,6 +733,17 @@ class CharacterTickEngine:
                     error=str(e),
                 )
 
+    @staticmethod
+    def _current_world_hour(context: dict[str, Any]) -> int | None:
+        """从世界状态解析当前虚拟小时；解析失败返回 None（移动校验跳过开放时间检查）"""
+        raw = context.get("world", {}).get("world_time")
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(str(raw)).hour
+        except (ValueError, TypeError):
+            return None
+
     async def _execute_action(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """执行 Action - 事务化
 
@@ -761,8 +787,63 @@ class CharacterTickEngine:
                     ACTION_EXECUTION_TOTAL.labels(action_id="chat_with", status="failed").inc()
                     return
 
-        # 计算状态变更
-        duration = decision.duration or action_def.duration_minutes
+        # move 决策先经 MovementSystem 校验（目标存在且连通、场景开放），失败降级为 wait。
+        # LLM 幻觉的不存在场景在此被拦截，不再直接写入位置
+        move_total_minutes: int | None = None
+        if decision.action == "move":
+            from src.runtime import get_movement_system
+
+            movement_system = get_movement_system()
+            if movement_system is None:
+                logger.warning(
+                    "move_rejected_fallback_to_wait",
+                    character_id=str(character_id),
+                    reason="movement_system_not_initialized",
+                )
+                decision = decision.model_copy(update={"action": "wait", "params": {}})
+                action_def = self.registry.get(decision.action)
+                if action_def is None:
+                    logger.error("fallback_wait_action_not_found", character_id=str(character_id))
+                    from src.observability.metrics import ACTION_EXECUTION_TOTAL
+
+                    ACTION_EXECUTION_TOTAL.labels(action_id="move", status="failed").inc()
+                    return
+            else:
+                target = str(decision.params.get("target_scene") or "")
+                current_location = str(context["state"].get("location") or "")
+                move_result = await movement_system.calculate_move(
+                    current_location,
+                    target,
+                    hour=self._current_world_hour(context),
+                )
+                if not move_result.success:
+                    logger.warning(
+                        "move_rejected_fallback_to_wait",
+                        character_id=str(character_id),
+                        from_scene=current_location,
+                        to_scene=target,
+                        reason=move_result.reason,
+                    )
+                    decision = decision.model_copy(update={"action": "wait", "params": {}})
+                    action_def = self.registry.get(decision.action)
+                    if action_def is None:
+                        logger.error("fallback_wait_action_not_found", character_id=str(character_id))
+                        from src.observability.metrics import ACTION_EXECUTION_TOTAL
+
+                        ACTION_EXECUTION_TOTAL.labels(action_id="move", status="failed").inc()
+                        return
+                else:
+                    move_total_minutes = move_result.total_minutes
+
+        # 计算状态变更：
+        # - move 使用移动矩阵的真实耗时
+        # - LLM 动态时长仅在 Action 声明 allow_dynamic_duration 时生效，防止任意改时长
+        if move_total_minutes is not None:
+            duration = move_total_minutes
+        elif action_def.allow_dynamic_duration and decision.duration:
+            duration = decision.duration
+        else:
+            duration = action_def.duration_minutes
         new_state = context["state"].copy()
 
         # 应用资源变更（使用 apply_cost_fields 辅助函数）
@@ -771,9 +852,11 @@ class CharacterTickEngine:
         changes = apply_cost_fields(new_state, action_def)
         new_state.update(changes)
 
-        # 更新位置（如果是移动 Action）
-        if decision.action == "move" and decision.params.get("target_scene"):
-            new_state["location"] = decision.params["target_scene"]
+        # executor 计算动作特有状态变更（如 move 的位置更新），返回值优先覆盖默认成本字段
+        if action_def.executor is not None:
+            executor_changes = action_def.executor(new_state, decision.params)
+            if executor_changes:
+                new_state.update(executor_changes)
 
         # 被动恢复：仅在"休息类"动作下恢复社交能量（休息/睡觉/读书等独处活动）
         # phone_battery 仅通过 charge_phone 恢复（已在 action cost 中定义）
@@ -986,29 +1069,22 @@ class CharacterTickEngine:
         # 不暴露工程概念，用自然语言描述场景
         state = context["state"]
         world = context["world"]
-        prompt = (
-            f"场景：{state.get('location', '某处')}，"
-            f"虚拟时间：{world.get('world_time', '未知')}，天气：{world.get('weather', '未知')}\n"
-            f"发起方：{character.name}（性格：{_personality_text(character)}），"
-            f"当前情绪：{state.get('mood', 'calm')}\n"
-            f"对方：{target_char.name}（性格：{_personality_text(target_char)}）\n"
-            f"双方关系：{relationship_desc}\n"
-            f"发起方意图：{decision.reason}\n\n"
-            f"请生成两人之间简短自然的对话，各说一两句话，符合双方性格和关系亲密程度。\n"
-            f"陌生人：礼貌客气，可能聊天气或场景；熟人/朋友：可以聊日常；密友/挚友：可以聊心事。\n"
-            f"严格约束：\n"
-            f"- 不要暴露 Action/system/LLM 等工程概念\n"
-            f"- 不要用括号描写动作\n"
-            f"- 不要让角色播报数值（如体力 80/100）\n"
-            f"- 时间/天气必须与上述场景信息一致\n"
-            f"- 总长度 60-200 字\n"
-            f"输出格式：\n"
-            f"{character.name}: <台词>\n"
-            f"{target_char.name}: <台词>"
+        prompt = self.prompts.render(
+            "chat_with",
+            location=state.get("location", "某处"),
+            world_time=world.get("world_time", "未知"),
+            weather=world.get("weather", "未知"),
+            initiator_name=character.name,
+            initiator_personality=_personality_text(character),
+            mood=state.get("mood", "calm"),
+            target_name=target_char.name,
+            target_personality=_personality_text(target_char),
+            relationship=relationship_desc,
+            intent=decision.reason,
         )
 
         try:
-            dialogue = await self.llm.chat(prompt, model="chat", system_prompt=SAFETY_SYSTEM_PROMPT)
+            dialogue = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
             dialogue = dialogue.strip()
             if len(dialogue) < 5:
                 return None
@@ -1122,8 +1198,8 @@ class CharacterTickEngine:
             ref_repo = ReflectionRepository(session)
 
             # 创建服务实例
-            episode_service = EpisodeService(self.llm, mem_repo)
-            reflection_service = ReflectionService(self.llm, mem_repo, ref_repo)
+            episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
+            reflection_service = ReflectionService(self.llm, mem_repo, ref_repo, prompts=self.prompts)
 
             # 写入记忆片段
             # 根据动作类型动态计算重要性（1-10）
@@ -1325,19 +1401,30 @@ class CharacterTickEngine:
                 pushed=qq_pushed,
             )
 
-    async def tick_all_active(self) -> None:
-        """执行所有活跃角色的 Tick
+    async def tick_all_active(
+        self,
+        characters: list[Character] | None = None,
+    ) -> list[tuple[Character, BaseException | None]]:
+        """并发执行所有活跃角色的 Tick
 
-        从数据库获取所有活跃角色，并发执行 Tick
+        Args:
+            characters: 可选，外部已查询的活跃角色列表；None 时自行查询。
+                主循环传入以复用查询结果并获取逐角色执行结果。
+
+        Returns:
+            (character, exception) 列表；exception 为 None 表示该角色 Tick 成功
         """
-        async with db.session() as session:
-            char_repo = CharacterRepository(session)
-            characters = await char_repo.get_active_characters()
+        if characters is None:
+            async with db.session() as session:
+                char_repo = CharacterRepository(session)
+                characters = await char_repo.get_active_characters()
 
         logger.info("tick_all_start", count=len(characters))
 
-        # 并发执行所有角色的 Tick
-        tasks = [self.tick_character(char.id) for char in characters]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(
+            *(self.tick_character(char.id) for char in characters),
+            return_exceptions=True,
+        )
 
         logger.info("tick_all_end", count=len(characters))
+        return list(zip(characters, results, strict=True))

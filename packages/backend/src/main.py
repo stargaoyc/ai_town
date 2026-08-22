@@ -85,21 +85,6 @@ except ImportError:
 
 logger = get_logger(__name__)
 
-# === 全局实例 ===
-redis: Redis | None = None
-world_engine: WorldEngine | None = None
-character_engine: CharacterTickEngine | None = None
-registry: ActionRegistry | None = None
-llm: LLMClient | None = None
-prompts: PromptTemplates | None = None
-embedding_worker: EmbeddingWorker | None = None
-partition_scheduler: PartitionScheduler | None = None
-rate_limiter: RateLimiter | None = None
-scene_loader: SceneLoader | None = None
-schedule_system: ScheduleSystem | None = None
-duration_calculator: DurationCalculator | None = None
-movement_system: MovementSystem | None = None
-
 # WebSocket 连接管理器（单例）- 用于 Web 客户端实时聊天
 ws_manager = WebSocketManager()
 
@@ -130,9 +115,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     #   - Character Tick Engine（角色推进，降级后世界仍运行）
     #   - Phase 2 模块（场景/作息/移动，降级后角色行为受限）
     #   - OneBot 适配器（QQ 接入，降级后仅 Web 可用）
-    global redis, world_engine, character_engine, registry, llm, prompts
-    global scene_loader, schedule_system, duration_calculator, movement_system
-    global embedding_worker, partition_scheduler, rate_limiter
 
     logger.info("ai_town_backend_starting")
 
@@ -449,6 +431,9 @@ async def _character_tick_loop() -> None:
         try:
             await asyncio.sleep(settings.character_tick_seconds * backoff_multiplier)
 
+            # 每轮从运行时容器获取最新实例（支持引擎重启后自动恢复）
+            character_engine = runtime.get_character_engine()
+            redis = runtime.get_redis()
             if not character_engine or not redis:
                 continue
 
@@ -468,35 +453,37 @@ async def _character_tick_loop() -> None:
 
             logger.info("character_tick_batch_start", count=len(characters), backoff=backoff_multiplier)
 
-            # 对每个角色执行 Tick
+            # 并发执行所有角色的 Tick（Semaphore 限流在引擎内部）
+            outcomes = await character_engine.tick_all_active(characters)
+
             success_count = 0
             rate_limited = False
-            for char in characters:
-                try:
-                    await character_engine.tick_character(char.id)
+            for char, exc in outcomes:
+                if exc is None:
                     success_count += 1
-                except Exception as e:
-                    error_str = str(e)
-                    # 记录 Character Tick 错误指标
-                    from src.observability.metrics import CHARACTER_TICK_ERRORS
+                    continue
 
-                    CHARACTER_TICK_ERRORS.labels(character_id=str(char.id)).inc()
-                    # 检测 LLM 限流 (429)，立即停止当前批次并退避
-                    if "429" in error_str or "RateLimitError" in error_str:
-                        logger.warning(
-                            "character_tick_rate_limited",
-                            character_id=str(char.id),
-                            character_name=char.name,
-                            backoff_multiplier=backoff_multiplier,
-                        )
-                        rate_limited = True
-                        break
+                error_str = str(exc)
+                # 记录 Character Tick 错误指标
+                from src.observability.metrics import CHARACTER_TICK_ERRORS
+
+                CHARACTER_TICK_ERRORS.labels(character_id=str(char.id)).inc()
+                # 检测 LLM 限流 (429)，本批次结束后退避
+                if "429" in error_str or "RateLimitError" in error_str:
+                    logger.warning(
+                        "character_tick_rate_limited",
+                        character_id=str(char.id),
+                        character_name=char.name,
+                        backoff_multiplier=backoff_multiplier,
+                    )
+                    rate_limited = True
+                else:
                     logger.error(
                         "character_tick_failed",
                         character_id=str(char.id),
                         character_name=char.name,
                         error=error_str,
-                        exc_info=True,
+                        exc_info=exc,
                     )
 
             # 限流退避：逐次增加等待时间，成功后逐步恢复
@@ -541,6 +528,7 @@ async def _diary_scheduler_loop() -> None:
         try:
             await asyncio.sleep(interval)
 
+            redis = runtime.get_redis()
             if not redis:
                 continue
 

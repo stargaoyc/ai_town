@@ -1,0 +1,8 @@
+name: decision_react
+# 决策 Prompt 的 ReAct 观察追加段（有工具调用结果时渲染拼接）
+template: |
+
+  [工具调用观察（ReAct）]
+  你刚才调用了以下工具，请基于结果决定下一步行动：
+  {observations}
+  你可以继续调用其他工具，或选择一个 Action 执行。

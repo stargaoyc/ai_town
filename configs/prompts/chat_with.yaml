@@ -1,0 +1,20 @@
+name: chat_with
+# 角色间对话生成（Tick 链路 chat_with Action）
+template: |
+  场景：{location}，虚拟时间：{world_time}，天气：{weather}
+  发起方：{initiator_name}（性格：{initiator_personality}），当前情绪：{mood}
+  对方：{target_name}（性格：{target_personality}）
+  双方关系：{relationship}
+  发起方意图：{intent}
+
+  请生成两人之间简短自然的对话，各说一两句话，符合双方性格和关系亲密程度。
+  陌生人：礼貌客气，可能聊天气或场景；熟人/朋友：可以聊日常；密友/挚友：可以聊心事。
+  严格约束：
+  - 不要暴露 Action/system/LLM 等工程概念
+  - 不要用括号描写动作
+  - 不要让角色播报数值（如体力 80/100）
+  - 时间/天气必须与上述场景信息一致
+  - 总长度 60-200 字
+  输出格式：
+  {initiator_name}: <台词>
+  {target_name}: <台词>

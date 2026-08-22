@@ -501,6 +501,24 @@ class OneBotAdapter:
             logger.info("onebot_empty_message_skipped", user_id=user_id, group_id=group_id)
             return
 
+        # 消息去重：OneBot 实现可能重发同一事件，SETNX + TTL 防止重复回复与重复写库
+        message_id = str(event.get("message_id") or "")
+        if message_id:
+            from src.runtime import get_redis
+
+            redis_client = get_redis()
+            if redis_client is not None:
+                dedup_key = f"onebot:msg:{message_id}"
+                first_seen = await redis_client.set(dedup_key, "1", ex=600, nx=True)
+                if not first_seen:
+                    logger.info(
+                        "onebot_duplicate_message_skipped",
+                        message_id=message_id,
+                        user_id=user_id,
+                        group_id=group_id,
+                    )
+                    return
+
         # 群聊接入：智能回复决策
         if is_group:
             at_only = _get_at_only()

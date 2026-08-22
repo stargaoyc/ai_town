@@ -12,6 +12,7 @@
 
 import asyncio
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -36,6 +37,32 @@ logger = get_logger(__name__)
 _VIDEO_POLL_INTERVAL = 5
 # 视频生成最大轮询次数
 _VIDEO_MAX_POLLS = 120
+
+# 单价表（USD / token）：agnes-2.0-flash 约 $0.5/M input, $1.5/M output。
+# 全库唯一的费用计算入口，禁止调用方各自硬编码单价
+PRICE_INPUT_PER_TOKEN = 0.0000005
+PRICE_OUTPUT_PER_TOKEN = 0.0000015
+
+
+def estimate_cost(prompt_tokens: int, completion_tokens: int) -> float:
+    """按统一单价表计算单次调用费用（USD）"""
+    return prompt_tokens * PRICE_INPUT_PER_TOKEN + completion_tokens * PRICE_OUTPUT_PER_TOKEN
+
+
+@dataclass(frozen=True)
+class LLMUsage:
+    """单次 LLM 调用的真实用量（来自 response_metadata，非估算）
+
+    预算扣减、消息持久化、指标上报一律使用本结构，杜绝估算值双轨。
+    """
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost: float
+
+
+EMPTY_USAGE = LLMUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0, cost=0.0)
 
 
 class LLMClient:
@@ -170,6 +197,13 @@ class LLMClient:
         Returns:
             模型回复内容
         """
+        content, _ = await self.chat_with_usage(prompt, model=model, system_prompt=system_prompt)
+        return content
+
+    async def chat_with_usage(
+        self, prompt: str, model: str = "chat", system_prompt: str | None = None
+    ) -> tuple[str, LLMUsage]:
+        """对话并返回真实 token 用量（需要持久化/计费的场景使用本方法）"""
         if model != "chat":
             logger.warning("chat_model_redirect_to_chat", original_model=model)
 
@@ -190,7 +224,7 @@ class LLMClient:
             logger.debug("chat_completed", model="chat", response_length=len(content))
             elapsed = time.perf_counter() - start_perf
 
-            # 提取 token 用量（LangChain response_metadata）
+            # 提取真实 token 用量（LangChain response_metadata）
             from src.observability.metrics import (
                 LLM_CALL_DURATION,
                 LLM_CALL_TOTAL,
@@ -205,8 +239,13 @@ class LLMClient:
             prompt_tokens = int(token_usage.get("prompt_tokens", 0))
             completion_tokens = int(token_usage.get("completion_tokens", 0))
             total_tokens = prompt_tokens + completion_tokens
-            # 粗略费用估算：agnes-2.0-flash 约 $0.5/M input, $1.5/M output
-            estimated_cost = prompt_tokens * 0.0000005 + completion_tokens * 0.0000015
+            estimated_cost = estimate_cost(prompt_tokens, completion_tokens)
+            usage = LLMUsage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost=estimated_cost,
+            )
             if total_tokens > 0:
                 LLM_TOKENS_USED.labels(model=model, type="prompt").inc(prompt_tokens)
                 LLM_TOKENS_USED.labels(model=model, type="completion").inc(completion_tokens)
@@ -222,7 +261,7 @@ class LLMClient:
                 latency_ms=int(elapsed * 1000),
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
-            return content if isinstance(content, str) else str(content)
+            return content if isinstance(content, str) else str(content), usage
         except Exception:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -521,16 +560,30 @@ class LLMClient:
         Returns:
             符合 schema 的结构化输出
         """
+        result, _ = await self.structured_output_with_usage(prompt, schema, model=model)
+        return result
+
+    async def structured_output_with_usage(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        model: str = "chat",
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        """结构化输出并返回真实 token 用量（include_raw 透出 response_metadata）"""
         if model != "chat":
             logger.warning("structured_output_model_redirect_to_chat", original_model=model)
 
         pydantic_model = self._schema_to_pydantic(schema)
-        structured_llm = self.chat_llm.with_structured_output(pydantic_model)
+        structured_llm = self.chat_llm.with_structured_output(pydantic_model, include_raw=True)
 
         start_perf = time.perf_counter()
         await self._check_cost_control()
         try:
-            result = await structured_llm.ainvoke(prompt)
+            bundle = await structured_llm.ainvoke(prompt)
+            result = bundle.get("parsed")
+            if result is None:
+                parsing_error = bundle.get("parsing_error")
+                raise RuntimeError(f"structured_output_parse_failed: {parsing_error}")
             logger.debug("structured_output_completed", result_type=type(result).__name__)
             elapsed = time.perf_counter() - start_perf
             from src.observability.metrics import (
@@ -542,14 +595,22 @@ class LLMClient:
 
             LLM_CALL_TOTAL.labels(model=model, status="success").inc()
             LLM_CALL_DURATION.labels(model=model).observe(elapsed)
-            # structured_output 的 result 是 Pydantic 模型，无 response_metadata
-            # 使用粗略估算：prompt 长度 / 3 ≈ prompt_tokens
-            est_prompt_tokens = max(len(str(prompt)) // 3, 1)
-            est_completion_tokens = max(len(str(result)) // 3, 1)
-            total_tokens = est_prompt_tokens + est_completion_tokens
-            LLM_TOKENS_USED.labels(model=model, type="prompt").inc(est_prompt_tokens)
-            LLM_TOKENS_USED.labels(model=model, type="completion").inc(est_completion_tokens)
-            estimated_cost = est_prompt_tokens * 0.0000005 + est_completion_tokens * 0.0000015
+            # include_raw=True 时从原始 AIMessage 取真实 token 用量
+            raw_message = bundle.get("raw")
+            meta = getattr(raw_message, "response_metadata", None) or {}
+            token_usage = meta.get("token_usage") or meta.get("usage") or {}
+            prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+            completion_tokens = int(token_usage.get("completion_tokens", 0))
+            total_tokens = prompt_tokens + completion_tokens
+            estimated_cost = estimate_cost(prompt_tokens, completion_tokens)
+            usage = LLMUsage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost=estimated_cost,
+            )
+            LLM_TOKENS_USED.labels(model=model, type="prompt").inc(prompt_tokens)
+            LLM_TOKENS_USED.labels(model=model, type="completion").inc(completion_tokens)
             LLM_COST_TOTAL.inc(estimated_cost)
             from src.observability.langfuse_tracing import trace_llm_call
 
@@ -563,8 +624,8 @@ class LLMClient:
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
             if isinstance(result, BaseModel):
-                return result.model_dump()
-            return result
+                return result.model_dump(), usage
+            return result, usage
         except Exception:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL

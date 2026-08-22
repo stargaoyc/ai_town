@@ -1,0 +1,18 @@
+name: person_memory
+# Person Memory：角色对特定用户的专属记忆更新
+template: |
+  你是角色「{character_name}」的记忆系统。请根据以下对话更新你对用户 {user_id} 的记忆。
+
+  现有记忆：
+  {existing_content}
+
+  最新对话：
+  用户: {user_message}
+  {character_name}: {character_reply}
+
+  请更新你对这个用户的认知，包含：
+  1. 用户的偏好和兴趣
+  2. 关系进展
+  3. 值得记住的细节
+
+  请输出更新后的记忆内容（自然语言，200 字以内）：

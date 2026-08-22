@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -37,7 +38,6 @@ from src.db.repositories import (
     MessageRepository,
 )
 from src.llm import LLMClient, PromptTemplates
-from src.llm.prompts import SAFETY_SYSTEM_PROMPT
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -370,23 +370,17 @@ class ProactiveSharingService:
             except Exception:
                 pass
 
-        prompt = (
-            f"你是 {character.name}，性格特点：{personality_text}。\n"
-            f"{world_section}"
-            f"你刚刚的经历：{action_desc}。\n"
-            f"你现在的情绪：{mood_desc}。\n"
-            f"请以 {character.name} 的身份，用自然口语向关心你的朋友分享此刻的心情，"
-            f"50-100 字，不要提及'系统'或'AI'，要符合角色性格。\n"
-            f"严格约束：不得编造与上述虚拟时间/天气不符的信息。\n"
-            f"严格以世界状态中的事实为准，过往对话中的信息可能有误，两者冲突时以世界状态为准。"
-            f"不要每句话都带emoji，可以使用颜文字如 (｡･ω･｡) (*≧▽≦)。\n"
-            f"直接输出分享内容，不要加引号或前缀。\n"
-            f"要人性化，避免暴露你是 AI 模型。"
-            f"\n\n"
+        prompt = self.prompts.render(
+            "share_event",
+            character_name=character.name,
+            personality=personality_text,
+            world_section=world_section,
+            action_desc=action_desc,
+            mood_desc=mood_desc,
         )
 
         try:
-            content = await self.llm.chat(prompt, model="chat", system_prompt=SAFETY_SYSTEM_PROMPT)
+            content = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
             # 清理可能的引号包裹
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
@@ -420,17 +414,17 @@ class ProactiveSharingService:
 
         routine_desc = routine_prompts.get(routine_type, "想跟朋友聊聊天")
 
-        prompt = (
-            f"你是 {character.name}，性格特点：{personality_text}。\n"
-            f"当前情绪：{state.mood or 'calm'}，位置：{state.location or '家中'}。\n"
-            f"场景：{routine_desc}。\n"
-            f"请以 {character.name} 的身份，用自然口语说一句话，"
-            f"30-80 字，不要提及'系统'或'AI'。\n"
-            f"直接输出内容，不要加引号或前缀。"
+        prompt = self.prompts.render(
+            "share_routine",
+            character_name=character.name,
+            personality=personality_text,
+            mood=state.mood or "calm",
+            location=state.location or "家中",
+            routine_desc=routine_desc,
         )
 
         try:
-            content = await self.llm.chat(prompt, model="chat", system_prompt=SAFETY_SYSTEM_PROMPT)
+            content = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
                 return None
@@ -473,11 +467,11 @@ class ProactiveSharingService:
 
         share_id = str(uuid4())  # 同一次分享的唯一 ID，所有投递共享
         now = datetime.now(UTC)
-        delivered = 0
 
+        seen_users: set[str] = set()
         for conv in conversations:
             try:
-                # 写入消息（标记为主动分享，带 share_id 便于去重）
+                # 写入消息（每个活跃会话一条，标记 share_id 便于去重展示）
                 await self.message_repo.add(
                     conversation_id=conv.id,
                     sender="character",
@@ -491,45 +485,11 @@ class ProactiveSharingService:
                     },
                 )
 
-                # WebSocket 实时推送
-                if self.ws_manager is not None:
-                    try:
-                        await self.ws_manager.send_to_user(
-                            user_id=conv.user_id,
-                            character_id=character_id,
-                            message={
-                                "type": "share",
-                                "content": content,
-                                "character_name": character.name,
-                                "character_id": str(character_id),
-                                "timestamp": now.isoformat(),
-                            },
-                        )
-                    except Exception as ws_err:
-                        logger.debug(
-                            "ws_push_failed",
-                            user_id=conv.user_id,
-                            error=str(ws_err),
-                        )
-
-                # 创建通知中心记录
-                try:
-                    from src.runtime import create_notification
-
-                    await create_notification(
-                        user_id=conv.user_id,
-                        notif_type="share",
-                        title=f"{character.name} 向你分享了动态",
-                        content=content[:200],
-                    )
-                except Exception as notif_err:
-                    logger.debug(
-                        "notification_create_failed",
-                        user_id=conv.user_id,
-                        error=str(notif_err),
-                    )
-
-                delivered += 1
+                # 同一用户的多个会话只推送/通知一次（扇出聚合）
+                if conv.user_id not in seen_users:
+                    seen_users.add(conv.user_id)
+                    asyncio.create_task(self._push_ws_share(conv.user_id, character, content, now))
+                    asyncio.create_task(self._push_share_notification(conv.user_id, character.name, content))
             except Exception as e:
                 logger.error(
                     "share_delivery_failed",
@@ -540,4 +500,47 @@ class ProactiveSharingService:
                 )
 
         await self.session.commit()
-        return delivered
+        return len(seen_users)
+
+    async def _push_ws_share(
+        self,
+        user_id: str,
+        character: Character,
+        content: str,
+        now: datetime,
+    ) -> None:
+        """后台推送 WebSocket 分享消息
+
+        连接表 key 均为 str：character_id 必须显式转 str，UUID 类型会导致
+        key 永不相等、Web 端推送静默失败。
+        """
+        if self.ws_manager is None:
+            return
+        try:
+            await self.ws_manager.send_to_user(
+                user_id=user_id,
+                character_id=str(character.id),
+                message={
+                    "type": "share",
+                    "content": content,
+                    "character_name": character.name,
+                    "character_id": str(character.id),
+                    "timestamp": now.isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.debug("ws_push_failed", user_id=user_id, error=str(e))
+
+    async def _push_share_notification(self, user_id: str, character_name: str, content: str) -> None:
+        """后台创建通知中心记录"""
+        try:
+            from src.runtime import create_notification
+
+            await create_notification(
+                user_id=user_id,
+                notif_type="share",
+                title=f"{character_name} 向你分享了动态",
+                content=content[:200],
+            )
+        except Exception as e:
+            logger.debug("notification_create_failed", user_id=user_id, error=str(e))
