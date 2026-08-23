@@ -28,6 +28,19 @@ def _truncate(text: str, max_length: int = _MAX_TEXT_LENGTH) -> str:
     return text[:max_length] + "...[truncated]"
 
 
+def _otel_trace_id() -> str | None:
+    """读取当前 OTel span 的 trace id（十六进制），用于 Langfuse ↔ Jaeger 互查"""
+    try:
+        from opentelemetry.trace import get_current_span
+
+        ctx = get_current_span().get_span_context()
+        if ctx.is_valid:
+            return format(ctx.trace_id, "032x")
+    except Exception:
+        pass
+    return None
+
+
 def trace_llm_call(
     *,
     character_id: str | None = None,
@@ -58,6 +71,9 @@ def trace_llm_call(
         }
         if character_id:
             metadata["character_id"] = character_id
+        otel_trace_id = _otel_trace_id()
+        if otel_trace_id:
+            metadata["otel_trace_id"] = otel_trace_id
 
         trace = client.trace(
             name="llm_call",
@@ -93,9 +109,13 @@ def trace_character_tick(
         return
 
     try:
+        metadata: dict[str, Any] = {"character_id": character_id}
+        otel_trace_id = _otel_trace_id()
+        if otel_trace_id:
+            metadata["otel_trace_id"] = otel_trace_id
         trace = client.trace(
             name="character_tick",
-            metadata={"character_id": character_id},
+            metadata=metadata,
         )
         trace.span(
             name="tick_execution",
