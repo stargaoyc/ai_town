@@ -54,6 +54,8 @@ class WorldEngine:
     LOCK_KEY = "world:tick:leader"
     LOCK_TTL = 30  # 锁 TTL（秒）
     LOCK_RENEW_INTERVAL = 10  # 续租间隔（秒）
+    # 事件去重基线的持久化 key（重启后恢复，避免重复写入未变化的事件）
+    BASELINE_KEY = "world:events:baseline"
 
     def __init__(self, redis: Redis):
         """初始化 World Engine
@@ -91,6 +93,20 @@ class WorldEngine:
                 logger.info("world_engine_starting_no_previous_tick")
         except Exception as e:
             logger.warning("world_engine_tick_id_restore_failed", error=str(e))
+
+        # 恢复事件去重基线（重启后首轮不重复写入未变化的事件）
+        try:
+            baseline = await self.redis.hgetall(self.BASELINE_KEY)
+            if baseline:
+                self._last_persisted_state = {
+                    "time": str(baseline.get("time", "")),
+                    "weather": str(baseline.get("weather", "")),
+                    "_scenes_json": str(baseline.get("_scenes_json", "")),
+                    "_resources_json": str(baseline.get("_resources_json", "")),
+                }
+                logger.info("world_events_baseline_restored")
+        except Exception as e:
+            logger.warning("world_events_baseline_restore_failed", error=str(e))
 
         # 演化器初始化钩子（P-8：setup 此前从未被调用，演化器靠 evolve 内
         # fallback 碰巧工作）。单个 setup 失败不阻断启动——evolve 的 fallback 仍在
@@ -453,13 +469,25 @@ class WorldEngine:
                     await repo.add_batch(events)
                     # session 会自动 commit（session 上下文管理器）
 
-            # 更新去重基线
+            # 更新去重基线（内存缓存 + Redis 持久化，重启后恢复）
             self._last_persisted_state = {
                 "time": world_time_str,
                 "weather": weather,
                 "_scenes_json": scenes_json,
                 "_resources_json": resources_json,
             }
+            try:
+                await self.redis.hset(
+                    self.BASELINE_KEY,
+                    mapping={
+                        "time": world_time_str,
+                        "weather": weather,
+                        "_scenes_json": scenes_json,
+                        "_resources_json": resources_json,
+                    },
+                )
+            except Exception as e:
+                logger.warning("world_events_baseline_persist_failed", error=str(e))
 
             logger.info("world_events_saved", tick_id=self.tick_id, count=len(events))
 

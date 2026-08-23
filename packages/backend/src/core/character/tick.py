@@ -49,7 +49,7 @@ from src.observability.metrics import (
     CHARACTER_TICK_DURATION,
     CHARACTER_TICK_TOTAL,
 )
-from src.runtime import get_movement_system, get_proactive_share_handler
+from src.runtime import get_movement_system, get_proactive_share_handler, get_scene_loader
 from src.tools import ToolRegistry
 
 logger = get_logger(__name__)
@@ -311,13 +311,15 @@ class CharacterTickEngine:
                 error=str(e),
             )
 
-        # 加载角色全部关系映射（target_id -> strength），供工具调用注入 current_relation_strength
+        # 加载角色全部出向关系（一次查询，供工具注入与同场景角色感知复用）
         relations_map: dict[str, int] = {}
+        relation_types: dict[str, str] = {}
         try:
             async with db.session() as session:
                 rel_repo = RelationRepository(session)
                 rels = await rel_repo.get_relations(character_id)
                 relations_map = {str(r.target_id): r.strength for r in rels}
+                relation_types = {str(r.target_id): r.relationship_type for r in rels}
         except Exception as e:
             logger.warning(
                 "relations_load_failed_continue",
@@ -340,20 +342,12 @@ class CharacterTickEngine:
 
                 # 查询关系（批量读取，避免 N+1）
 
+                # 关系信息直接复用上方一次性加载的出向关系，避免逐角色查询（N+1）
+
                 for other_char, other_state in others:
-                    # 关系查询使用独立 session（RelationGraph 内部走 repo）
-                    rel_snapshot = None
-                    try:
-                        async with db.session() as rel_session:
-                            graph = RelationGraph(rel_session, self.redis)
-                            rel_snapshot = await graph.get_relation(character_id, other_char.id)
-                    except Exception as rel_err:
-                        logger.debug(
-                            "relation_query_failed_continue",
-                            character_id=str(character_id),
-                            target_id=str(other_char.id),
-                            error=str(rel_err),
-                        )
+                    oid = str(other_char.id)
+                    rel_type = relation_types.get(oid, "stranger")
+                    rel_strength = relations_map.get(oid, 0)
 
                     personality = (other_char.traits or {}).get("personality", [])
                     if isinstance(personality, list):
@@ -363,12 +357,12 @@ class CharacterTickEngine:
 
                     nearby_characters.append(
                         {
-                            "id": str(other_char.id),
+                            "id": oid,
                             "name": other_char.name,
                             "personality": personality_text,
                             "mood": other_state.mood,
-                            "relationship_type": rel_snapshot.relationship_type if rel_snapshot else "stranger",
-                            "strength": rel_snapshot.strength if rel_snapshot else 0,
+                            "relationship_type": rel_type,
+                            "strength": rel_strength,
                             "current_action": (other_state.current_action or {}).get("action_name")
                             if other_state.current_action
                             else None,
@@ -462,6 +456,16 @@ class CharacterTickEngine:
         else:
             nearby_text = "（当前场景没有其他角色）"
 
+        # 构建当前场景描述（容量/开放时段/可做活动），供 LLM 校验行为合理性
+        scenes_text = "（场景信息不可用）"
+        scene_loader = get_scene_loader()
+        if scene_loader is not None:
+            scene = scene_loader.get_scene(str(state.get("location") or ""))
+            if scene is not None:
+                open_hours = f"{scene.open_hours[0]}:00-{scene.open_hours[1]}:00"
+                activities_text = "、".join(scene.activities) if scene.activities else "无"
+                scenes_text = f"{scene.name}（容量{scene.capacity}人，开放{open_hours}，可做：{activities_text}）"
+
         # 渲染决策 Prompt
         prompt = self.prompts.render(
             "decision",
@@ -474,7 +478,7 @@ class CharacterTickEngine:
             mood=state.get("mood", "平静"),
             world_time=world.get("world_time", datetime.now(UTC).isoformat()),
             weather=world.get("weather", "sunny"),
-            scenes="",  # 简化
+            scenes=scenes_text,
             memories=memories_text,
             plans=plans_text,
             candidates=candidates_text,
