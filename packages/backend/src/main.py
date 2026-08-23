@@ -19,16 +19,13 @@ API 路由：
 """
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
-from starlette.types import ASGIApp, Receive, Scope, Send
 from structlog import get_logger
 
 from src import runtime
@@ -45,6 +42,7 @@ from src.api.system import router as system_router
 from src.api.tools import router as tools_router
 from src.api.town import router as town_router
 from src.api.world import router as world_router
+from src.auth.middleware import AuthMiddleware
 from src.config import settings
 from src.core import WorldEngine
 from src.cost_control.budget_manager import set_budget_manager
@@ -52,11 +50,10 @@ from src.cost_control.circuit_breaker import set_circuit_breaker
 from src.db.repositories import (
     CharacterRepository,
 )
-from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
-from src.memory.diary_service import DiaryService
 from src.memory.embedding_worker import EmbeddingWorker
 from src.messaging import WebSocketManager
+from src.messaging.proactive_sharing import run_tick_proactive_share
 from src.messaging.websocket import router as ws_router
 from src.modules import (
     DurationCalculator,
@@ -72,6 +69,7 @@ from src.observability import (
 )
 from src.observability.sanitizer import sanitize_url
 from src.scheduler import PartitionScheduler
+from src.scheduler.loops import character_tick_loop, diary_scheduler_loop, reconciliation_loop
 from src.security.rate_limiter import RateLimiter
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
@@ -217,6 +215,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         prompts = PromptTemplates()
         runtime.set_llm(llm)
         runtime.set_prompts(prompts)
+        # 装配层注册主动分享处理器，core 层经 runtime 回调解耦对 messaging 的依赖
+        runtime.set_proactive_share_handler(run_tick_proactive_share)
         logger.info("llm_initialized", model=settings.model_chat)
     except Exception as e:
         logger.error("llm_initialization_failed", error=str(e), exc_info=True)
@@ -285,7 +285,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 prompts=prompts,
             )
             # 启动后台任务：定期对所有活跃角色执行 Tick
-            character_tick_task = asyncio.create_task(_character_tick_loop())
+            character_tick_task = asyncio.create_task(character_tick_loop())
             runtime.set_character_engine(character_engine)
             logger.info("character_engine_started")
         except Exception as e:
@@ -305,7 +305,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 5.5 启动日记自动生成调度器（后台任务）
     diary_scheduler_task: asyncio.Task[None] | None = None
     try:
-        diary_scheduler_task = asyncio.create_task(_diary_scheduler_loop())
+        diary_scheduler_task = asyncio.create_task(diary_scheduler_loop())
         logger.info("diary_scheduler_started")
     except Exception as e:
         logger.error("diary_scheduler_start_failed", error=str(e), exc_info=True)
@@ -313,7 +313,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 5.6 启动 Redis vs PG 状态对账循环（后台任务）
     reconcile_task: asyncio.Task[None] | None = None
     try:
-        reconcile_task = asyncio.create_task(_reconciliation_loop())
+        reconcile_task = asyncio.create_task(reconciliation_loop())
         logger.info("reconciliation_loop_started")
     except Exception as e:
         logger.error("reconciliation_loop_start_failed", error=str(e), exc_info=True)
@@ -445,237 +445,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("redis_connection_closed")
 
 
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    """判断异常是否为 LLM 供应商限流（429）
-
-    覆盖两条路径：
-    - openai SDK 的 APIStatusError（含 RateLimitError）携带 status_code
-    - 其他异常回退到类型名匹配 RateLimitError（LangChain 包装层）
-    """
-    from openai import APIStatusError
-
-    if isinstance(exc, APIStatusError):
-        return exc.status_code == 429
-    return type(exc).__name__ == "RateLimitError"
-
-
-async def _character_tick_loop() -> None:
-    """Character Tick 后台循环
-
-    定期对所有活跃角色执行 Tick，推进角色状态。
-    遇到 LLM 限流 (429) 时自动退避，避免抢占消息处理的 API 配额。
-    """
-    logger.info("character_tick_loop_started", interval=settings.character_tick_seconds)
-
-    backoff_multiplier = 1  # 限流退避倍数
-    max_backoff = 10  # 最大退避倍数
-
-    while True:
-        try:
-            await asyncio.sleep(settings.character_tick_seconds * backoff_multiplier)
-
-            # 每轮从运行时容器获取最新实例（支持引擎重启后自动恢复）
-            character_engine = runtime.get_character_engine()
-            redis = runtime.get_redis()
-            if not character_engine or not redis:
-                continue
-
-            # 获取所有活跃角色
-            async with db.session() as session:
-                repo = CharacterRepository(session)
-                characters = await repo.get_active_characters()
-
-            if not characters:
-                logger.debug("no_active_characters")
-                continue
-
-            # 更新活跃角色数 Gauge
-            from src.observability.metrics import ACTIVE_CHARACTERS
-
-            ACTIVE_CHARACTERS.set(len(characters))
-
-            logger.info("character_tick_batch_start", count=len(characters), backoff=backoff_multiplier)
-
-            # 并发执行所有角色的 Tick（Semaphore 限流在引擎内部）
-            outcomes = await character_engine.tick_all_active(characters)
-
-            success_count = 0
-            rate_limited = False
-            for char, exc in outcomes:
-                if exc is None:
-                    success_count += 1
-                    continue
-
-                error_str = str(exc)
-                # 记录 Character Tick 错误指标
-                from src.observability.metrics import CHARACTER_TICK_ERRORS
-
-                CHARACTER_TICK_ERRORS.labels(character_id=str(char.id)).inc()
-                # 检测 LLM 限流 (429)，本批次结束后退避。
-                # P-6：按异常类型/状态码判定，不用字符串匹配——错误文本中
-                # 碰巧含 "429"（QQ 号、消息内容）会误判并中止整个批次
-                if _is_rate_limit_error(exc):
-                    logger.warning(
-                        "character_tick_rate_limited",
-                        character_id=str(char.id),
-                        character_name=char.name,
-                        backoff_multiplier=backoff_multiplier,
-                    )
-                    rate_limited = True
-                else:
-                    logger.error(
-                        "character_tick_failed",
-                        character_id=str(char.id),
-                        character_name=char.name,
-                        error=error_str,
-                        exc_info=exc,
-                    )
-
-            # 限流退避：逐次增加等待时间，成功后逐步恢复
-            if rate_limited:
-                backoff_multiplier = min(backoff_multiplier * 2, max_backoff)
-                logger.warning("character_tick_backoff", multiplier=backoff_multiplier)
-            elif success_count > 0:
-                backoff_multiplier = 1  # 全部或部分成功，恢复正常间隔
-
-            logger.info(
-                "character_tick_batch_complete",
-                total=len(characters),
-                success=success_count,
-                failed=len(characters) - success_count,
-                rate_limited=rate_limited,
-            )
-
-        except asyncio.CancelledError:
-            logger.info("character_tick_loop_cancelled")
-            raise
-        except Exception as e:
-            logger.error("character_tick_loop_error", error=str(e), exc_info=True)
-            # 继续循环，不中断
-
-
-async def _diary_scheduler_loop() -> None:
-    """日记自动生成后台循环
-
-    每 1800 秒（30 分钟现实时间）检查一次世界时间，根据时段决定生成哪种周期的日记：
-    - 每日：世界时间 22:00-06:00（一天结束时）
-    - 每周：每 7 个世界日
-    - 每月：每 30 个世界日
-    - 每年：每 365 个世界日
-
-    生成是幂等的：DiaryService 会跳过当前周期已存在日记的角色。
-    循环内部捕获所有异常，保证不会崩溃退出。
-    """
-    interval = 1800
-    logger.info("diary_scheduler_loop_started", interval=interval)
-
-    while True:
-        try:
-            await asyncio.sleep(interval)
-
-            redis = runtime.get_redis()
-            if not redis:
-                continue
-
-            # 读取世界状态（world:state 主哈希中的 world_time 字段为 ISO 格式时间）
-            world_state = await redis.hgetall("world:state")
-            if not world_state:
-                continue
-
-            world_time_raw = str(world_state.get("world_time", ""))
-            if not world_time_raw:
-                continue
-
-            # 兼容 world_time 被 JSON 双重序列化的情况
-            try:
-                parsed = json.loads(world_time_raw)
-                if isinstance(parsed, str):
-                    world_time_raw = parsed
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-            try:
-                world_time = datetime.fromisoformat(world_time_raw)
-            except ValueError:
-                logger.warning("diary_scheduler_invalid_world_time", raw=world_time_raw)
-                continue
-
-            hour = world_time.hour
-            day_of_year = world_time.timetuple().tm_yday
-
-            # 根据世界时间确定需要生成的周期
-            periods_to_generate: list[str] = []
-            if hour >= 22 or hour < 6:
-                periods_to_generate.append("day")
-            if day_of_year % 7 == 0:
-                periods_to_generate.append("week")
-            if day_of_year % 30 == 0:
-                periods_to_generate.append("month")
-            if day_of_year % 365 == 0:
-                periods_to_generate.append("year")
-
-            if not periods_to_generate:
-                continue
-
-            logger.info(
-                "diary_scheduler_trigger",
-                periods=periods_to_generate,
-                world_hour=hour,
-                world_day_of_year=day_of_year,
-            )
-
-            service = DiaryService(session_factory=db.session)
-            for period in periods_to_generate:
-                try:
-                    summary = await service.generate_diaries_for_all_characters(period)
-                    logger.info("diary_scheduler_period_done", period=period, summary=summary)
-                except Exception as e:
-                    logger.error(
-                        "diary_scheduler_period_failed",
-                        period=period,
-                        error=str(e),
-                        exc_info=True,
-                    )
-
-        except asyncio.CancelledError:
-            logger.info("diary_scheduler_loop_cancelled")
-            raise
-        except Exception as e:
-            logger.error("diary_scheduler_loop_error", error=str(e), exc_info=True)
-            # 继续循环，不中断
-
-
-async def _reconciliation_loop() -> None:
-    """Redis vs PG 状态对账后台循环（roadmap #24）
-
-    每 600 秒（10 分钟）diff 一次两库状态并自动修复漂移：
-    - Redis 键缺失 → 从 PG 回灌
-    - 字段值漂移 → 以 Redis 为准修正 PG
-
-    循环内部捕获所有异常，保证不会崩溃退出。
-    """
-    from src.core.reconcile import run_reconciliation
-
-    interval = 600
-    logger.info("reconciliation_loop_started_detail", interval=interval)
-
-    while True:
-        try:
-            await asyncio.sleep(interval)
-
-            redis = runtime.get_redis()
-            if not redis:
-                continue
-
-            await run_reconciliation(redis, db.session)
-        except asyncio.CancelledError:
-            logger.info("reconciliation_loop_cancelled")
-            raise
-        except Exception as e:
-            logger.error("reconciliation_loop_error", error=str(e), exc_info=True)
-            # 继续循环，不中断
-
-
 # === FastAPI 应用实例 ===
 app = FastAPI(
     title="AI Town Backend",
@@ -697,101 +466,6 @@ if _cors_origins:
     )
 else:
     logger.warning("cors_origins_not_configured", hint="设置 CORS_ORIGINS 为前端域名列表以启用跨域")
-
-
-# 鉴权中间件（ASGI 层面，兼容 WebSocket）
-class AuthMiddleware:
-    """ASGI 鉴权中间件：仅 /api/ 路径需要鉴权，WebSocket 和其他路径豁免
-
-    鉴权策略：
-    - 非 /api/ 路径（/health, /metrics, /docs 等）→ 豁免
-    - /api/v1/auth/login → 豁免（登录接口）
-    - GET /api/v1/ 只读公开端点 → 豁免（Dashboard 无需登录可查看）
-    - 其他 /api/ 请求（POST/PUT/DELETE）→ 需要 JWT 或 API Key
-    """
-
-    # 公开只读 GET 路径前缀（无需登录即可查看）
-    # P0-8：移除 messages/conversations/admin 前缀——聊天记录、管理日志、运行时配置
-    # 含用户隐私与运维敏感信息，必须登录后按归属校验访问
-    PUBLIC_GET_PREFIXES = (
-        "/api/v1/world",
-        "/api/v1/characters",
-        "/api/v1/actions",
-        "/api/v1/town/scenes",
-        "/api/v1/memories",
-        "/api/v1/modules",
-    )
-
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            # WebSocket / lifespan 直接透传
-            await self.app(scope, receive, send)
-            return
-
-        path = scope.get("path", "")
-        method = scope.get("method", "GET")
-
-        # 豁免：非 /api/ 路径、登录接口
-        if not path.startswith("/api/") or path == "/api/v1/auth/login":
-            await self.app(scope, receive, send)
-            return
-
-        # 豁免：GET 只读公开端点（Dashboard 无需登录可查看）
-        if method == "GET":
-            for prefix in self.PUBLIC_GET_PREFIXES:
-                if path.startswith(prefix):
-                    await self.app(scope, receive, send)
-                    return
-
-        # 从 headers 中提取 Authorization
-        headers = dict(scope.get("headers", []))
-        auth_header = headers.get(b"authorization", b"").decode()
-        api_key_header = headers.get(b"x-api-key", b"").decode()
-
-        # 验证 JWT 或 API Key
-        from src.auth import decode_token
-        from src.auth.middleware import _validate_api_key
-
-        authenticated = False
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            try:
-                decode_token(token)
-                authenticated = True
-            except Exception:
-                pass
-        elif api_key_header and _validate_api_key(api_key_header):
-            authenticated = True
-
-        if not authenticated:
-            # 返回 401
-            await _send_401(send)
-            return
-
-        await self.app(scope, receive, send)
-
-
-async def _send_401(send: Send) -> None:
-    body = b'{"detail":"Not authenticated"}'
-    await send(
-        {
-            "type": "http.response.start",
-            "status": 401,
-            "headers": [
-                [b"content-type", b"application/json"],
-                [b"content-length", str(len(body)).encode()],
-            ],
-        }
-    )
-    await send(
-        {
-            "type": "http.response.body",
-            "body": body,
-        }
-    )
 
 
 app.add_middleware(AuthMiddleware)

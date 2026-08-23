@@ -33,10 +33,12 @@ from structlog import get_logger
 from src.config import settings
 from src.db.models import ActionRecord, Character, CharacterState
 from src.db.repositories import (
+    ActionRepository,
     CharacterRepository,
     ConversationRepository,
     MessageRepository,
 )
+from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 
 if TYPE_CHECKING:
@@ -544,3 +546,118 @@ class ProactiveSharingService:
             )
         except Exception as e:
             logger.debug("notification_create_failed", user_id=user_id, error=str(e))
+
+
+async def run_tick_proactive_share(character_id: UUID) -> None:
+    """Character Tick 的主动分享入口
+
+    由 main.py 装配层注册到 runtime，core 层经 runtime 回调解耦对 messaging 的依赖。
+    逻辑自 CharacterTickEngine._maybe_proactive_share / _push_share_to_qq 平移。
+    """
+    from src.runtime import get_llm, get_prompts, get_redis, get_ws_manager
+
+    redis = get_redis()
+    llm = get_llm()
+    prompts = get_prompts()
+    if redis is None or llm is None or prompts is None:
+        logger.debug("proactive_share_runtime_unavailable", character_id=str(character_id))
+        return
+
+    action_record = None
+    try:
+        async with db.session() as session:
+            action_repo = ActionRepository(session)
+            recent_actions = await action_repo.get_by_character(character_id, limit=1)
+            if recent_actions:
+                action_record = recent_actions[0]
+    except Exception as e:
+        logger.warning("proactive_share_load_action_failed", character_id=str(character_id), error=str(e))
+
+    async with db.session() as session:
+        sharing_svc = ProactiveSharingService(
+            session=session,
+            llm=llm,
+            prompts=prompts,
+            ws_manager=get_ws_manager(),
+            redis=redis,
+        )
+        result = await sharing_svc.evaluate_and_share(
+            character_id=character_id,
+            action=action_record,
+            state=None,
+        )
+
+    if not result.get("shared"):
+        logger.debug(
+            "proactive_share_skipped",
+            character_id=str(character_id),
+            reason=result.get("reason"),
+        )
+        return
+
+    content = result.get("content", "")
+    recipients = result.get("recipients", 0)
+    logger.info(
+        "proactive_share_delivered",
+        character_id=str(character_id),
+        recipients=recipients,
+        content_length=len(content),
+    )
+
+    if content and recipients > 0:
+        await _push_share_to_qq(character_id, content)
+
+
+async def _push_share_to_qq(character_id: UUID, content: str) -> None:
+    """将主动分享推送到 QQ 平台有活跃会话的用户"""
+    from src.runtime import get_onebot_adapter
+
+    try:
+        onebot_adapter = get_onebot_adapter()
+    except (ImportError, AttributeError):
+        logger.debug("onebot_adapter_not_available_for_share")
+        return
+
+    if onebot_adapter is None:
+        return
+
+    try:
+        async with db.session() as session:
+            conv_repo = ConversationRepository(session)
+            conversations = await conv_repo.list_by_character(
+                character_id=character_id,
+                limit=100,
+            )
+    except Exception as e:
+        logger.warning("qq_share_list_conversations_failed", character_id=str(character_id), error=str(e))
+        return
+
+    qq_pushed = 0
+    for conv in conversations:
+        if conv.platform != "qq":
+            continue
+        user_id_str = conv.user_id or ""
+        if not user_id_str.startswith("qq_"):
+            continue
+        qq_number = user_id_str[3:]
+        if not qq_number or not qq_number.isdigit():
+            continue
+
+        try:
+            ok = await onebot_adapter.push_share(
+                user_id=int(qq_number),
+                group_id=None,
+                message=content,
+            )
+            if ok:
+                qq_pushed += 1
+        except Exception as e:
+            logger.warning(
+                "qq_share_push_failed",
+                character_id=str(character_id),
+                qq_number=qq_number,
+                error=str(e),
+            )
+
+    if qq_pushed > 0:
+        logger.info("proactive_share_qq_pushed", character_id=str(character_id), pushed=qq_pushed)

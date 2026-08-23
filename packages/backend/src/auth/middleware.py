@@ -25,6 +25,7 @@ import secrets
 from typing import Any
 
 from fastapi import HTTPException, Request
+from starlette.types import ASGIApp, Receive, Scope, Send
 from structlog import get_logger
 
 from src.auth.api_keys import api_key_manager
@@ -112,3 +113,92 @@ def _validate_api_key(key: str) -> dict[str, Any] | None:
 
 # auth_dependency 的别名
 get_current_user = auth_dependency
+
+
+class AuthMiddleware:
+    """ASGI 鉴权中间件：仅 /api/ 路径需要鉴权，WebSocket 和其他路径豁免
+
+    鉴权策略：
+    - 非 /api/ 路径（/health, /metrics, /docs 等）→ 豁免
+    - /api/v1/auth/login → 豁免（登录接口）
+    - GET /api/v1/ 只读公开端点 → 豁免（Dashboard 无需登录可查看）
+    - 其他 /api/ 请求（POST/PUT/DELETE）→ 需要 JWT 或 API Key
+    """
+
+    # 公开只读 GET 路径前缀（无需登录即可查看）
+    # P0-8：移除 messages/conversations/admin 前缀——聊天记录、管理日志、运行时配置
+    # 含用户隐私与运维敏感信息，必须登录后按归属校验访问
+    PUBLIC_GET_PREFIXES = (
+        "/api/v1/world",
+        "/api/v1/characters",
+        "/api/v1/actions",
+        "/api/v1/town/scenes",
+        "/api/v1/memories",
+        "/api/v1/modules",
+    )
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            # WebSocket / lifespan 直接透传
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "GET")
+
+        # 豁免：非 /api/ 路径、登录接口
+        if not path.startswith("/api/") or path == "/api/v1/auth/login":
+            await self.app(scope, receive, send)
+            return
+
+        # 豁免：GET 只读公开端点（Dashboard 无需登录可查看）
+        if method == "GET":
+            for prefix in self.PUBLIC_GET_PREFIXES:
+                if path.startswith(prefix):
+                    await self.app(scope, receive, send)
+                    return
+
+        # 从 headers 中提取 Authorization
+        headers = dict(scope.get("headers", []))
+        auth_header = headers.get(b"authorization", b"").decode()
+        api_key_header = headers.get(b"x-api-key", b"").decode()
+
+        authenticated = False
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                decode_token(token)
+                authenticated = True
+            except Exception:
+                pass
+        elif api_key_header and _validate_api_key(api_key_header):
+            authenticated = True
+
+        if not authenticated:
+            await _send_401(send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+async def _send_401(send: Send) -> None:
+    body = b'{"detail":"Not authenticated"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 401,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode()],
+            ],
+        }
+    )
+    await send(
+        {
+            "type": "http.response.body",
+            "body": body,
+        }
+    )

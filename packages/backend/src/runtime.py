@@ -12,6 +12,9 @@ main.py 的 lifespan 初始化后通过 set_* 方法写入，其他模块通过 
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+    from uuid import UUID
+
     from redis.asyncio import Redis
 
     from src.actions import ActionRegistry
@@ -49,6 +52,9 @@ _movement_system: "MovementSystem | None" = None
 
 # 后端端口（由 main.py 设置）
 _backend_port: int = 8001
+
+# 主动分享处理器（由 main.py 装配层注册，core 层经此解耦对 messaging 的直接依赖）
+_proactive_share_handler: "Callable[[UUID], Awaitable[None]] | None" = None
 
 
 # === Setter 方法（仅 main.py lifespan 调用）===
@@ -127,6 +133,11 @@ def set_duration_calculator(value: "DurationCalculator | None") -> None:
 def set_movement_system(value: "MovementSystem | None") -> None:
     global _movement_system
     _movement_system = value
+
+
+def set_proactive_share_handler(handler: "Callable[[UUID], Awaitable[None]] | None") -> None:
+    global _proactive_share_handler
+    _proactive_share_handler = handler
 
 
 def set_backend_port(port: int) -> None:
@@ -210,6 +221,11 @@ def get_duration_calculator() -> "DurationCalculator | None":
 def get_movement_system() -> "MovementSystem | None":
     """获取移动系统实例"""
     return _movement_system
+
+
+def get_proactive_share_handler() -> "Callable[[UUID], Awaitable[None]] | None":
+    """获取主动分享处理器（未注册时返回 None，调用方静默跳过）"""
+    return _proactive_share_handler
 
 
 def get_backend_port() -> int:
