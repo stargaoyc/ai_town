@@ -570,57 +570,32 @@ Authorization: Bearer <jwt>
 
 ### 3.1 WebSocket 端点
 
-| 端点                     | 说明             | 推送内容                       |
-| ------------------------ | ---------------- | ------------------------------ |
-| `/ws/dashboard`          | 仪表盘实时数据   | 全局角色状态、世界状态、事件流 |
-| `/ws/characters/{id}`    | 特定角色状态推送 | 该角色的状态变更、行为事件     |
-| `/ws/modules`            | 模块状态变更推送 | 模块启用/禁用/健康状态         |
-| `/ws/conversations/{id}` | 会话实时消息     | 新消息推送                     |
+| 端点                       | 鉴权             | 说明             | 推送内容                                     |
+| -------------------------- | ---------------- | ---------------- | -------------------------------------------- |
+| `/ws/dashboard?token=JWT`  | JWT（必需）      | 仪表盘实时推送   | 世界状态快照 + 通知未读数（每 5 秒一帧）     |
+| `/ws/chat/{character_id}?user_id=&token=` | JWT（必需） | Web 实时聊天 | `connected` / `reply` / `error` 帧           |
+| `/ws/onebot/v12`           | access-token     | OneBot v12 反向 WS | QQ 事件（仅限 OneBot 实现连入）            |
 
-#### WebSocket 消息格式
+`/ws/dashboard` 帧格式：
 
 ```json
 {
-  "type": "character.state_update",
-  "data": {
-    "character_id": "7f9c...e3",
-    "location": "cafe",
-    "current_action": "work_parttime",
-    "energy": 65,
-    "mood": "happy"
+  "type": "dashboard",
+  "world": {
+    "tick_id": 1234,
+    "world_time": "2026-08-23T10:30:00+00:00",
+    "weather": "sunny",
+    "temperature": 26
   },
-  "timestamp": 1783345480000
+  "notifications_unread": 3
 }
 ```
 
-#### 客户端订阅示例
+前端通过 `useDashboardSocket` hook 订阅：收到帧后直接更新 react-query 缓存，
+HTTP 轮询仅作为断连兜底（30s）。聊天与通知的详细协议见 [消息服务设计](messaging-service.md)。
 
-```javascript
-const ws = new WebSocket("ws://localhost:8000/ws/dashboard");
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.type === "character.state_update") {
-    store.updateCharacter(msg.data);
-  }
-};
-```
-
-### 3.2 SSE 端点
-
-| 端点          | 说明                           |
-| ------------- | ------------------------------ |
-| `/sse/traces` | 链路追踪实时流（用于调试面板） |
-
-```http
-GET /sse/traces
-Accept: text/event-stream
-
-event: trace
-data: {"trace_id":"abc","span":"character.tick","character_id":"...","duration_ms":1200}
-
-event: trace
-data: {"trace_id":"def","span":"llm.generate","model":"gpt-4o","tokens":450}
-```
+> 其余推送端点（按角色/按会话）尚未实现，实时性由 `/ws/dashboard` 推送 +
+> react-query 失效机制覆盖。
 
 ---
 

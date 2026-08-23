@@ -272,23 +272,22 @@ alembic current               # 查看当前版本
 ### 6.1 新增 Action
 
 ```python
-# core/actions/my_action.py
-from core.action_system import Action, ActionCategory, ActionRegistry
+# src/actions/life.py（新增到既有分类文件，或新建文件）
+from src.actions.base import Action, ActionCategory
 
-def register(registry: ActionRegistry):
-    registry.register(Action(
-        id="my_action",
-        name="我的行为",
+
+def _my_action() -> Action:
+    return Action(
+        id="meditate",
+        name="冥想",
         category=ActionCategory.LIFE,
-        precondition=lambda s: s.energy < 50,
-        executor=lambda s, p: s.replace(energy=s.energy + 20),
+        precondition=lambda s: s.get("stamina", 0) < 50,
         duration_minutes=10,
-        energy_cost=+20,
-        social_impact=0,
-    ))
+        energy_cost=20,  # 正数 = 恢复体力
+    )
 ```
 
-在 `core/actions/__init__.py` 中调用 `register`。
+在 `src/actions/__init__.py` 的 `register_all()` 中加入 `registry.register(_my_action())`。完整字段说明见 `src/actions/base.py`。
 
 ### 6.2 新增本地工具
 

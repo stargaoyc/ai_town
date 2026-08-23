@@ -141,7 +141,7 @@ AI Town 由三个相互独立但协同的核心循环驱动：World Tick（世�
 
 ### 3.1 World Tick 循环
 
-World Tick 是世界状态推进的主循环，由 `WorldEngine` 类实现（`src/core/world_engine.py`）。它确保虚拟世界的时间流逝、天气变化、场景状态、资源消耗和事件触发，**与用户是否在线无关**。
+World Tick 是世界状态推进的主循环，由 `WorldEngine` 类实现（`src/core/world/engine.py`）。它确保虚拟世界的时间流逝、天气变化、场景状态、资源消耗和事件触发，**与用户是否在线无关**。
 
 #### 执行流程
 

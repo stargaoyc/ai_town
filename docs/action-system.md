@@ -318,24 +318,19 @@ class ActionRegistry:
 ### 4.3 自定义 Action 示例
 
 ```python
-# core/actions/move.py
-from core.action_system import Action, ActionCategory
+# src/actions/move.py —— move 的目标场景经 params["target_scene"] 传入，
+# 执行层会用 MovementSystem 校验场景存在且可达（LLM 幻觉目标会被拒绝并回退 wait）
+from src.actions.base import Action, ActionCategory
 
-def register_move_actions(registry: ActionRegistry):
-    registry.register(Action(
-        id="move_home_to_school",
-        name="去学校",
+registry.register(
+    Action(
+        id="move",
+        name="移动",
         category=ActionCategory.MOVE,
-        precondition=lambda s: (
-            s.location == "home"
-            and is_workday(s.world_time)
-            and 8 * 60 <= minute_of_day(s.world_time) <= 9 * 60
-        ),
-        executor=lambda s, p: s.replace(location="school"),
-        duration_minutes=15,
-        energy_cost=-5,
-        social_impact=0,
-    ))
+        duration_minutes=10,            # 实际耗时由移动矩阵（world:state:matrix）决定
+        energy_cost=-5,                 # 负数 = 消耗体力
+    )
+)
 ```
 
 ---

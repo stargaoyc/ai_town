@@ -186,7 +186,6 @@ ai-town/
 │   ├── backend/                # Python 后端 (FastAPI + LangChain)
 │   │   ├── src/
 │   │   │   ├── core/           # 世界引擎 / Action 系统
-│   │   │   ├── agents/         # 角色实现
 │   │   │   ├── memory/         # 记忆系统（含 LLM 评分、反思、Embedding Worker）
 │   │   │   ├── modules/        # 模块管理器
 │   │   │   ├── tools/          # 本地工具注册表

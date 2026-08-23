@@ -168,11 +168,6 @@ services:
     depends_on: [backend]
     ports: ["80:80"]
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    volumes: ["./otel-collector.yaml:/etc/otelcol/config.yaml"]
-    ports: ["4318:4318"]
-
   jaeger:
     image: jaegertracing/all-in-one:1.60
     environment:

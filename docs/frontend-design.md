@@ -392,44 +392,19 @@ packages/frontend/
 
 ### 5.1 状态分层
 
-| 层         | 工具                | 职责                                     |
-| ---------- | ------------------- | ---------------------------------------- |
-| 服务端状态 | TanStack Query      | 角色列表、模块列表、消息历史等可缓存数据 |
-| 实时状态   | Zustand + WebSocket | 角色实时位置/精力、世界天气、模块健康    |
-| UI 状态    | Zustand             | 侧边栏折叠、当前选中角色、模态框开关     |
+| 层         | 工具                       | 职责                                     |
+| ---------- | -------------------------- | ---------------------------------------- |
+| 服务端状态 | TanStack Query             | 角色列表、消息历史等可缓存数据；轮询仅作断连兜底 |
+| 实时推送   | `useDashboardSocket` + Query 失效 | `/ws/dashboard` 帧直接写入/失效 Query 缓存 |
+| UI 状态    | Zustand（auth-store 等）   | 登录态、当前选中角色、模态框开关         |
 
-### 5.2 WebSocket Hook
+### 5.2 Dashboard 实时订阅（已实现：`src/hooks/useDashboardSocket.ts`）
 
-```typescript
-// hooks/use-websocket.ts
-import { useEffect } from "react";
-import { useWebSocketStore } from "@/stores/websocket-store";
-import { useCharacterStore } from "@/stores/character-store";
-import { useWorldStore } from "@/stores/world-store";
+登录后于根布局挂载，订阅 `/ws/dashboard?token=JWT`：
 
-export function useDashboardSocket() {
-  const ws = useWebSocketStore((s) => s.ws);
-  const upsertCharacter = useCharacterStore((s) => s.upsert);
-  const setWorld = useWorldStore((s) => s.set);
-
-  useEffect(() => {
-    if (!ws) return;
-    const handler = (event: MessageEvent) => {
-      const msg = JSON.parse(event.data);
-      switch (msg.type) {
-        case "character.state_update":
-          upsertCharacter(msg.data);
-          break;
-        case "world.state_update":
-          setWorld(msg.data);
-          break;
-      }
-    };
-    ws.addEventListener("message", handler);
-    return () => ws.removeEventListener("message", handler);
-  }, [ws, upsertCharacter, setWorld]);
-}
-```
+- 收到 `dashboard` 帧 → 世界字段直接写入 `["world"]` Query 缓存，`invalidateQueries(["health"])`
+- 通知未读数变化 → `invalidateQueries(["notifications"])`
+- 断线指数退避重连（上限 10 次）；未登录不建立连接
 
 ### 5.3 TanStack Query Hooks（Zod 校验）
 
