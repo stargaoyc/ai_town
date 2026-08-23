@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # Memory LLM Scoring
     memory_llm_scoring_enabled: bool = False
 
+    # Memory Retention（记忆生命周期治理，审查 §七-P1：HASH 分区无法按时间 drop，
+    # 必须应用层定期清理低价值老记忆，否则每角色年增百万行 + GB 级向量）
+    memory_retention_enabled: bool = True
+    memory_retention_low_importance_days: int = 90  # importance<=3 保留天数
+    memory_retention_mid_importance_days: int = 180  # importance 4-6 保留天数；importance>=7 永久保留
+
     # World Engine
     world_tick_seconds: int = 30
     world_tick_minutes: float = 10.0

@@ -72,6 +72,7 @@ from src.scheduler import PartitionScheduler
 from src.scheduler.loops import (
     character_tick_loop,
     diary_scheduler_loop,
+    memory_retention_loop,
     person_memory_heat_decay_loop,
     reconciliation_loop,
 )
@@ -323,6 +324,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("person_memory_heat_decay_start_failed", error=str(e), exc_info=True)
 
+    # 5.58 启动记忆生命周期治理循环（后台任务）
+    retention_task: asyncio.Task[None] | None = None
+    try:
+        retention_task = asyncio.create_task(memory_retention_loop())
+        logger.info("memory_retention_started")
+    except Exception as e:
+        logger.error("memory_retention_start_failed", error=str(e), exc_info=True)
+
     # 5.6 启动 Redis vs PG 状态对账循环（后台任务）
     reconcile_task: asyncio.Task[None] | None = None
     try:
@@ -436,6 +445,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         diary_scheduler_task.cancel()
         try:
             await diary_scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消记忆生命周期治理循环
+    if retention_task:
+        retention_task.cancel()
+        try:
+            await retention_task
         except asyncio.CancelledError:
             pass
 

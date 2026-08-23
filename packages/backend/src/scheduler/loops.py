@@ -12,12 +12,12 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from structlog import get_logger
 
 from src import runtime
 from src.config import settings
-from src.db.models import PersonMemory
+from src.db.models import MemoryEpisode, PersonMemory
 from src.db.repositories import CharacterRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService
@@ -299,3 +299,66 @@ async def person_memory_heat_decay_loop() -> None:
             raise
         except Exception as e:
             logger.error("person_memory_heat_decay_loop_error", error=str(e), exc_info=True)
+
+
+async def memory_retention_loop() -> None:
+    """记忆生命周期治理后台循环（审查 §七-P1）
+
+    每 24 小时执行一次，按重要性分级清理老记忆：
+    - importance <= 3：超过 low_importance_days（默认 90 天）删除
+    - importance 4-6：超过 mid_importance_days（默认 180 天）删除
+    - importance >= 7：永久保留
+
+    memory_episodes 为 HASH 分区表，无法像 RANGE 分区那样按时间 drop，
+    膨胀治理只能在应用层定期删除。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
+    """
+    from src.config import settings as _settings
+
+    interval = 24 * 3600
+    logger.info("memory_retention_loop_started", interval=interval, enabled=_settings.memory_retention_enabled)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+
+            if not _settings.memory_retention_enabled:
+                continue
+
+            now = datetime.now(UTC)
+            async with db.session() as session:
+                low_cutoff = now - timedelta(days=_settings.memory_retention_low_importance_days)
+                mid_cutoff = now - timedelta(days=_settings.memory_retention_mid_importance_days)
+
+                low_stmt = (
+                    delete(MemoryEpisode)
+                    .where(
+                        MemoryEpisode.importance <= 3,
+                        MemoryEpisode.timestamp < low_cutoff,
+                    )
+                    .returning(MemoryEpisode.id)
+                )
+                low_deleted = list((await session.execute(low_stmt)).scalars())
+
+                mid_stmt = (
+                    delete(MemoryEpisode)
+                    .where(
+                        MemoryEpisode.importance >= 4,
+                        MemoryEpisode.importance <= 6,
+                        MemoryEpisode.timestamp < mid_cutoff,
+                    )
+                    .returning(MemoryEpisode.id)
+                )
+                mid_deleted = list((await session.execute(mid_stmt)).scalars())
+                await session.commit()
+
+            logger.info(
+                "memory_retention_completed",
+                deleted_low=len(low_deleted),
+                deleted_mid=len(mid_deleted),
+            )
+
+        except asyncio.CancelledError:
+            logger.info("memory_retention_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("memory_retention_loop_error", error=str(e), exc_info=True)

@@ -81,10 +81,19 @@ class CharacterRepository(BaseRepository[Character]):
         return row[0], row[1]
 
     async def update_state(self, character_id: UUID, **fields: Any) -> None:
-        """更新角色实时状态字段（任意合法列名通过关键字参数传入）"""
+        """更新角色实时状态字段（任意合法列名通过关键字参数传入）
+
+        每次写入自动递增 version：version 列声明为乐观锁版本号但从未自增，
+        前端与对账链路无法感知状态新鲜度（审查 §七-P1）。
+        """
         if not fields:
             return
-        stmt = update(CharacterState).where(CharacterState.character_id == character_id).values(**fields)
+        fields.pop("version", None)
+        stmt = (
+            update(CharacterState)
+            .where(CharacterState.character_id == character_id)
+            .values(version=CharacterState.version + 1, **fields)
+        )
         await self.session.execute(stmt)
         await self.session.flush()
         logger.info(

@@ -42,7 +42,6 @@
 | 主数据库   | PostgreSQL 18 + pgvector + pg_uuidv7 + JSONB + 分区表                |
 | 缓存/实时  | Redis 8.0                                                            |
 | 消息队列   | Redis Streams                                                        |
-| 连接池     | PgBouncer                                                            |
 | 工具调用   | 本地工具注册表（ToolRegistry，进程内 async 函数，ReAct 循环）        |
 | 可观测性   | OpenTelemetry + Langfuse + Prometheus + Grafana + Jaeger + Loki      |
 

@@ -52,4 +52,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health', timeout=3)" || exit 1
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# 启动前执行数据库迁移（alembic upgrade head），保证容器一键启动即可用；
+# 多副本部署时迁移需改为独立 Job/Init 容器，避免并发 upgrade
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1"]
