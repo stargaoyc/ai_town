@@ -1,4 +1,10 @@
+import type { paths } from "@/types/api-generated";
+
 const BASE_URL = "/api/v1";
+
+// 后端 OpenAPI 契约类型（pnpm gen:api 生成）。新端点落地后运行
+// `pnpm gen:api` 刷新，逐步用 SchemaPath 替换手写 interface。
+export type SchemaPath<P extends keyof paths> = paths[P];
 
 function getToken(): string | null {
   return localStorage.getItem("token");

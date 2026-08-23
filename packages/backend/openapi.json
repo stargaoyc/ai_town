@@ -1,0 +1,3036 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI Town Backend",
+    "description": "二次元 AI 小镇陪伴智能体 - World Engine + LLM",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "List Notifications",
+        "description": "获取通知列表\n\nArgs:\n    limit: 返回数量（最大 200）\n    unread_only: 仅返回未读通知\n\nReturns:\n    通知列表（按时间倒序，最新的在前）",
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Unread Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Notifications Api V1 Notifications Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Create Notification",
+        "description": "手动创建通知（前端\"模拟通知\"按钮调用）\n\nBody:\n    type: 通知类型 (share/system/character/qq)\n    title: 标题\n    content: 内容",
+        "operationId": "create_notification_api_v1_notifications_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Notification Api V1 Notifications Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Clear All Notifications",
+        "description": "清除所有通知",
+        "operationId": "clear_all_notifications_api_v1_notifications_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear All Notifications Api V1 Notifications Delete"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notif_id}/read": {
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark Notification Read",
+        "description": "标记单条通知为已读",
+        "operationId": "mark_notification_read_api_v1_notifications__notif_id__read_put",
+        "parameters": [
+          {
+            "name": "notif_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Notif Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mark Notification Read Api V1 Notifications  Notif Id  Read Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark All Notifications Read",
+        "description": "标记所有通知为已读",
+        "operationId": "mark_all_notifications_read_api_v1_notifications_read_all_put",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Mark All Notifications Read Api V1 Notifications Read All Put"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notif_id}": {
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Delete Notification",
+        "description": "删除单条通知",
+        "operationId": "delete_notification_api_v1_notifications__notif_id__delete",
+        "parameters": [
+          {
+            "name": "notif_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Notif Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Notification Api V1 Notifications  Notif Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/servers": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "List Tool Servers",
+        "description": "列出所有工具命名空间\n\nReturns:\n    命名空间列表（含描述、工具清单、启用状态）",
+        "operationId": "list_tool_servers_api_v1_tools_servers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Tool Servers Api V1 Tools Servers Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/servers/health": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Check Tool Servers Health",
+        "description": "检查所有工具命名空间的健康状态\n\n本地工具为进程内调用，始终在线。",
+        "operationId": "check_tool_servers_health_api_v1_tools_servers_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Check Tool Servers Health Api V1 Tools Servers Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/servers/{server_name}": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Get Tool Server Detail",
+        "description": "获取单个命名空间详情\n\nArgs:\n    server_name: 命名空间名称（如 \"shop\"）",
+        "operationId": "get_tool_server_detail_api_v1_tools_servers__server_name__get",
+        "parameters": [
+          {
+            "name": "server_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Tool Server Detail Api V1 Tools Servers  Server Name  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/tools": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "List All Tools",
+        "description": "列出所有已启用工具\n\nReturns:\n    所有可用工具的扁平列表（仅含已启用工具）",
+        "operationId": "list_all_tools_api_v1_tools_tools_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List All Tools Api V1 Tools Tools Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/servers/{server_name}/enabled": {
+      "put": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Toggle Tool Server",
+        "description": "启用/禁用整个命名空间的所有工具\n\n状态持久化到 Redis hash `tools:enabled`，Character Tick 决策时\n会读取该状态过滤可用工具列表。\n\nArgs:\n    server_name: 命名空间名称\n    payload: {\"enabled\": true|false}\n\nReturns:\n    更新后的启用状态",
+        "operationId": "toggle_tool_server_api_v1_tools_servers__server_name__enabled_put",
+        "parameters": [
+          {
+            "name": "server_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Toggle Tool Server Api V1 Tools Servers  Server Name  Enabled Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tools/tools/{tool_name}/invoke": {
+      "post": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Invoke Tool",
+        "description": "调用本地工具（测试用）\n\nArgs:\n    tool_name: 工具全名（如 \"shop.buy_item\"）或简短名（如 \"buy_item\"）\n    server_name: 可选命名空间（用于消歧）\n    args: 工具参数（JSON body）\n\nReturns:\n    工具执行结果",
+        "operationId": "invoke_tool_api_v1_tools_tools__tool_name__invoke_post",
+        "parameters": [
+          {
+            "name": "tool_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tool Name"
+            }
+          },
+          {
+            "name": "server_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Server Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Args"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Invoke Tool Api V1 Tools Tools  Tool Name  Invoke Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/diaries": {
+      "get": {
+        "tags": [
+          "memory-extension"
+        ],
+        "summary": "List Diaries",
+        "description": "获取角色日记列表\n\nArgs:\n    character_id: 角色 UUID\n    period: 周期过滤（day/week/month/year）\n    limit: 返回数量上限",
+        "operationId": "list_diaries_api_v1_characters__character_id__diaries_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "day",
+                    "week",
+                    "month",
+                    "year"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Diaries Api V1 Characters  Character Id  Diaries Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/diaries/generate": {
+      "post": {
+        "tags": [
+          "memory-extension"
+        ],
+        "summary": "Generate Diary",
+        "description": "为角色生成指定周期的日记\n\n需 admin/operator 权限。",
+        "operationId": "generate_diary_api_v1_characters__character_id__diaries_generate_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ],
+              "type": "string",
+              "default": "day",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "character_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Character Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Generate Diary Api V1 Characters  Character Id  Diaries Generate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/person-memory": {
+      "get": {
+        "tags": [
+          "memory-extension"
+        ],
+        "summary": "Get Person Memory",
+        "description": "获取角色对某用户的记忆",
+        "operationId": "get_person_memory_api_v1_characters__character_id__person_memory_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "用户标识",
+              "title": "User Id"
+            },
+            "description": "用户标识"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Person Memory Api V1 Characters  Character Id  Person Memory Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/person-memory/list": {
+      "get": {
+        "tags": [
+          "memory-extension"
+        ],
+        "summary": "List Person Memories",
+        "description": "获取角色对所有用户的记忆列表（按热度倒序）",
+        "operationId": "list_person_memories_api_v1_characters__character_id__person_memory_list_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Person Memories Api V1 Characters  Character Id  Person Memory List Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/memories/{character_id}": {
+      "get": {
+        "tags": [
+          "memory-extension"
+        ],
+        "summary": "Get Memories",
+        "description": "获取角色记忆\n\nArgs:\n    character_id: 角色 UUID\n    limit: 返回数量限制（默认 20）\n\nReturns:\n    角色最近的记忆片段",
+        "operationId": "get_memories_api_v1_memories__character_id__get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Memories Api V1 Memories  Character Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health",
+        "description": "健康检查\n\n返回服务状态、各模块运行状态、World Tick ID。\n必须模块失败时 status 为 \"degraded\"。",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Login",
+        "description": "登录接口 - 账号密码换取 JWT Token\n\n请求体: {\"username\": \"admin\", \"password\": \"admin123\"}\n返回: {\"token\": \"jwt_token\", \"user_id\": \"admin\", \"expires_in\": 86400}",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Login Api V1 Auth Login Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "List Modules",
+        "description": "列出所有系统模块及其运行状态\n\nReturns:\n    模块列表（含类型、状态、依赖）",
+        "operationId": "list_modules_api_v1_modules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Modules Api V1 Modules Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/duration/calculate": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Calculate Duration",
+        "description": "计算动态耗时\n\nArgs:\n    base_duration: 基础耗时（分钟）\n    weather: 天气\n    is_outdoor: 是否户外\n    crowdedness: 拥挤度 0-1\n    stamina: 体力 0-100\n    mood: 情绪",
+        "operationId": "calculate_duration_api_v1_duration_calculate_get",
+        "parameters": [
+          {
+            "name": "base_duration",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Base Duration"
+            }
+          },
+          {
+            "name": "weather",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "sunny",
+              "title": "Weather"
+            }
+          },
+          {
+            "name": "is_outdoor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Is Outdoor"
+            }
+          },
+          {
+            "name": "crowdedness",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0.0,
+              "title": "Crowdedness"
+            }
+          },
+          {
+            "name": "stamina",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Stamina"
+            }
+          },
+          {
+            "name": "mood",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "calm",
+              "title": "Mood"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Calculate Duration Api V1 Duration Calculate Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "List Characters",
+        "description": "获取角色列表\n\nArgs:\n    limit: 返回数量限制（默认 20）\n    active_only: 是否只返回活跃角色（默认 False）\n\nReturns:\n    角色列表",
+        "operationId": "list_characters_api_v1_characters_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Active Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Characters Api V1 Characters Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character",
+        "description": "获取角色详情\n\nArgs:\n    character_id: 角色 UUID\n\nReturns:\n    角色档案 + 实时状态",
+        "operationId": "get_character_api_v1_characters__character_id__get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Character Api V1 Characters  Character Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/reflections": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Reflections",
+        "description": "获取角色反思记录\n\nArgs:\n    character_id: 角色 UUID\n    limit: 返回数量限制（默认 10）\n\nReturns:\n    角色最近的反思记录（按创建时间倒序）",
+        "operationId": "get_reflections_api_v1_characters__character_id__reflections_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Reflections Api V1 Characters  Character Id  Reflections Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/plans": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Plans",
+        "description": "获取角色进行中的计划\n\nArgs:\n    character_id: 角色 UUID\n\nReturns:\n    角色所有 active 状态的计划（按优先级降序）",
+        "operationId": "get_plans_api_v1_characters__character_id__plans_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Plans Api V1 Characters  Character Id  Plans Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/actions": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Action History",
+        "description": "获取角色行为历史\n\nArgs:\n    character_id: 角色 UUID\n    limit: 返回数量限制（默认 50）\n\nReturns:\n    角色行为时间线（按时间倒序）",
+        "operationId": "get_action_history_api_v1_characters__character_id__actions_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Action History Api V1 Characters  Character Id  Actions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/move": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Move Character",
+        "description": "角色移动到指定场景\n\nArgs:\n    character_id: 角色 ID\n    to_scene: 目标场景 ID\n    hour: 当前小时（用于开放判断），默认从世界状态获取",
+        "operationId": "move_character_api_v1_characters__character_id__move_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "to_scene",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "To Scene"
+            }
+          },
+          {
+            "name": "hour",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hour"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Move Character Api V1 Characters  Character Id  Move Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/schedule": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character Schedule",
+        "description": "获取角色作息状态\n\nArgs:\n    character_id: 角色 ID\n    hour: 查询的小时（默认当前小时）",
+        "operationId": "get_character_schedule_api_v1_characters__character_id__schedule_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "hour",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hour"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Character Schedule Api V1 Characters  Character Id  Schedule Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/relations": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character Relations",
+        "description": "获取角色的所有关系",
+        "operationId": "get_character_relations_api_v1_characters__character_id__relations_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Character Relations Api V1 Characters  Character Id  Relations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/nearby": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character Nearby",
+        "description": "获取与该角色同场景的其他角色（多智能体交互可见性）\n\n用于前端展示「当前场景中还有谁」，让用户感知到角色间的社交可能性。\n返回数据含角色档案、当前动作、与查询角色的关系强度。\n\nArgs:\n    character_id: 角色 UUID\n\nReturns:\n    {\n        \"data\": [\n            {\n                \"id\": \"...\",\n                \"name\": \"...\",\n                \"personality\": \"...\",\n                \"mood\": \"...\",\n                \"current_action_name\": \"...\",\n                \"relationship_type\": \"...\",\n                \"strength\": 50,\n                \"location\": \"cafe\"\n            }\n        ],\n        \"total\": N,\n        \"location\": \"cafe\"\n    }",
+        "operationId": "get_character_nearby_api_v1_characters__character_id__nearby_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Character Nearby Api V1 Characters  Character Id  Nearby Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/relations/{target_id}/interact": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Record Interaction",
+        "description": "记录角色间互动（更新关系）",
+        "operationId": "record_interaction_api_v1_characters__character_id__relations__target_id__interact_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target Id"
+            }
+          },
+          {
+            "name": "strength_delta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Strength Delta"
+            }
+          },
+          {
+            "name": "notes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Record Interaction Api V1 Characters  Character Id  Relations  Target Id  Interact Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/state-history": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character State History",
+        "description": "获取角色状态历史记录（用于状态图表）\n\nArgs:\n    character_id: 角色 ID\n    limit: 返回记录数（默认 50）\n\nReturns:\n    状态历史列表（按时间正序，便于前端绘制曲线）",
+        "operationId": "get_character_state_history_api_v1_characters__character_id__state_history_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Character State History Api V1 Characters  Character Id  State History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/characters/{character_id}/messages": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character Messages",
+        "description": "获取角色的所有消息历史（跨会话）\n\nArgs:\n    character_id: 角色 ID\n    limit: 返回数量上限\n\nReturns:\n    消息列表（按时间正序）",
+        "operationId": "get_character_messages_api_v1_characters__character_id__messages_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Character Messages Api V1 Characters  Character Id  Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/world": {
+      "get": {
+        "tags": [
+          "world"
+        ],
+        "summary": "Get World State",
+        "description": "获取世界状态\n\nReturns:\n    世界当前状态（与前端 WorldState 接口对齐）",
+        "operationId": "get_world_state_api_v1_world_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get World State Api V1 World Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/world/events/{tick_id}": {
+      "get": {
+        "tags": [
+          "world"
+        ],
+        "summary": "Get World Events",
+        "description": "获取指定 Tick 的世界事件\n\nArgs:\n    tick_id: Tick ID\n\nReturns:\n    该 Tick 的所有世界事件（差分记录）",
+        "operationId": "get_world_events_api_v1_world_events__tick_id__get",
+        "parameters": [
+          {
+            "name": "tick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tick Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get World Events Api V1 World Events  Tick Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/world/events": {
+      "get": {
+        "tags": [
+          "world"
+        ],
+        "summary": "Get World Events Range",
+        "description": "查询 Tick 区间内的所有世界事件（用于事件时间线）\n\nArgs:\n    start_tick: 起始 Tick（默认 0）\n    end_tick: 结束 Tick（默认 0 表示当前 tick_id）\n    event_type: 事件类型过滤（可选）\n    limit: 返回数量上限\n\nReturns:\n    世界事件列表（按 tick_id, created_at 排序）",
+        "operationId": "get_world_events_range_api_v1_world_events_get",
+        "parameters": [
+          {
+            "name": "start_tick",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Start Tick"
+            }
+          },
+          {
+            "name": "end_tick",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "End Tick"
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get World Events Range Api V1 World Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/actions": {
+      "get": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "List Actions",
+        "description": "获取所有 Action\n\nReturns:\n    所有已注册的 Action 列表",
+        "operationId": "list_actions_api_v1_actions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Actions Api V1 Actions Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/actions/{action_id}": {
+      "get": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Get Action",
+        "description": "获取单个 Action 详情\n\nArgs:\n    action_id: Action ID\n\nReturns:\n    Action 详情",
+        "operationId": "get_action_api_v1_actions__action_id__get",
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Action Api V1 Actions  Action Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/town/scenes": {
+      "get": {
+        "tags": [
+          "town"
+        ],
+        "summary": "List Scenes",
+        "description": "获取所有场景列表",
+        "operationId": "list_scenes_api_v1_town_scenes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Scenes Api V1 Town Scenes Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/town/scenes/{scene_id}": {
+      "get": {
+        "tags": [
+          "town"
+        ],
+        "summary": "Get Scene Detail",
+        "description": "获取场景详情（含实时状态）",
+        "operationId": "get_scene_detail_api_v1_town_scenes__scene_id__get",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Scene Detail Api V1 Town Scenes  Scene Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/messages/send": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Send Message",
+        "description": "发送消息给角色并获取回复\n\nArgs:\n    character_id: 角色 UUID\n    user_id: 用户标识\n    platform: 来源平台（web/qq/lark/internal）\n    content: 用户消息内容\n\nReturns:\n    角色回复内容与元数据（token/cost/conversation_id）",
+        "operationId": "send_message_api_v1_messages_send_post",
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "web",
+              "title": "Platform"
+            }
+          },
+          {
+            "name": "content",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Content"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_send_message_api_v1_messages_send_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Send Message Api V1 Messages Send Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/messages/history": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Get Message History",
+        "description": "获取会话消息历史（支持游标分页）\n\nArgs:\n    conversation_id: 会话 UUID\n    limit: 返回数量上限（默认 50）\n    before: 游标时间（ISO 8601），仅返回该时间点之前的消息\n\nReturns:\n    消息列表（按时间倒序）",
+        "operationId": "get_message_history_api_v1_messages_history_get",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Message History Api V1 Messages History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List Conversations",
+        "description": "查询会话列表（仅返回当前用户的会话）\n\nArgs:\n    current_user: 当前认证用户（JWT/API Key）\n    character_id: 可选，按角色过滤\n    user_id: 可选，按用户过滤；与当前用户不一致时拒绝\n    limit: 返回数量上限\n\nReturns:\n    会话列表（按 last_message_at 倒序）",
+        "operationId": "list_conversations_api_v1_conversations_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Conversations Api V1 Conversations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/messages/stats": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Get Message Stats",
+        "description": "获取消息统计（token/cost 累计，供成本监控）\n\nArgs:\n    character_id: 可选，按角色过滤\n    start_date: 可选，起始日期（ISO 8601）\n    end_date: 可选，结束日期（ISO 8601）\n\nReturns:\n    累计消息数、token 数与 cost（USD），含按角色/按日期分组",
+        "operationId": "get_message_stats_api_v1_messages_stats_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Message Stats Api V1 Messages Stats Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tick": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Force Tick",
+        "description": "强制触发 Tick（管理接口）\n\nArgs:\n    character_id: 可选，指定角色 ID。如果为空则对所有活跃角色执行 Tick\n\nReturns:\n    执行结果",
+        "operationId": "force_tick_api_v1_admin_tick_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Force Tick Api V1 Admin Tick Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/world/tick": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Force World Tick",
+        "description": "强制触发 World Tick（管理接口）\n\nReturns:\n    执行结果",
+        "operationId": "force_world_tick_api_v1_admin_world_tick_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Force World Tick Api V1 Admin World Tick Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/world/reset-time": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reset World Time",
+        "description": "重置世界虚拟时间（管理接口）\n\n清除 Redis 中的旧时间状态，让时间演化器在下次 Tick 时重新初始化。\n用于修复初始时间设置错误或需要重置世界时间的场景。\n\nArgs:\n    new_time: 可选，ISO 格式的新初始时间（如 \"2026-07-13T08:00:00\"）。\n              留空则使用当前现实日期的 08:00 或环境变量配置。\n\nReturns:\n    重置结果",
+        "operationId": "reset_world_time_api_v1_admin_world_reset_time_post",
+        "parameters": [
+          {
+            "name": "new_time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "New Time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reset World Time Api V1 Admin World Reset Time Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/status": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Status",
+        "description": "获取系统状态（管理接口）\n\nReturns:\n    各组件运行状态",
+        "operationId": "get_admin_status_api_v1_admin_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Admin Status Api V1 Admin Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/characters/import": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Import Character Card",
+        "description": "导入角色卡 YAML 文件\n\n通过 JSON body 提供 yaml 字段（值为 YAML 字符串）。\n同名角色将更新档案与初始状态，保留历史数据（记忆/行为/关系）。\n\nArgs:\n    payload: JSON body，包含 yaml 字段\n\nReturns:\n    创建或更新的角色信息",
+        "operationId": "import_character_card_api_v1_admin_characters_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Import Character Card Api V1 Admin Characters Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/characters/import-batch": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Import Characters Batch",
+        "description": "批量导入角色卡（多角色 YAML，用 --- 分隔）\n\nArgs:\n    payload: JSON body，包含 yaml 字段（多角色 YAML 文本）\n\nReturns:\n    导入结果统计",
+        "operationId": "import_characters_batch_api_v1_admin_characters_import_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Import Characters Batch Api V1 Admin Characters Import Batch Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/characters/{character_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete Character",
+        "description": "删除角色及其所有相关数据（管理接口，仅 admin）\n\n删除范围（依赖 PG ON DELETE CASCADE 自动级联）：\n- characters / character_states / character_state_history\n- action_records / memory_episodes / reflections / reflection_sources\n- plans / person_memories / conversations→messages / relations / character_diaries\n- Redis 状态键 char:{id}:state\n\nArgs:\n    character_id: 角色 ID\n\nReturns:\n    删除结果\n\nRaises:\n    404: 角色不存在",
+        "operationId": "delete_character_api_v1_admin_characters__character_id__delete",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Character Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Character Api V1 Admin Characters  Character Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/onebot/messages": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Onebot Messages",
+        "description": "获取 QQ 消息记录（用于 QQ 消息监控）\n\n查询 platform=qq 的会话中的最近消息，包含发送者和内容。\n\nReturns:\n    消息列表（按时间倒序）",
+        "operationId": "get_onebot_messages_api_v1_admin_onebot_messages_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Onebot Messages Api V1 Admin Onebot Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/proactive-shares": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Proactive Shares",
+        "description": "获取主动分享历史记录\n\n仅查询 extra_data.share_type='proactive' 的消息，\n按 share_id 去重（同一次分享投递给多个用户只显示一条）。\n\nReturns:\n    分享记录列表",
+        "operationId": "get_proactive_shares_api_v1_admin_proactive_shares_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Proactive Shares Api V1 Admin Proactive Shares Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/vector-search": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Vector Search",
+        "description": "向量检索测试 - 调试 pgvector 检索\n\nArgs:\n    character_id: 角色 ID\n    query: 查询文本\n    top_k: 返回结果数\n\nReturns:\n    检索结果列表（含相似度分数）",
+        "operationId": "vector_search_api_v1_admin_vector_search_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "top_k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Top K"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Vector Search Api V1 Admin Vector Search Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/world/snapshots": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get World Snapshots",
+        "description": "获取世界快照列表（用于冷启动恢复管理）\n\nReturns:\n    快照列表（按 tick_id 倒序）",
+        "operationId": "get_world_snapshots_api_v1_admin_world_snapshots_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get World Snapshots Api V1 Admin World Snapshots Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/logs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Recent Logs",
+        "description": "获取最近的系统日志（从 data/logs/backend.log 读取）\n\nArgs:\n    lines: 返回的日志行数（最大 500）\n    level: 日志级别过滤（debug/info/warning/error），不传则返回所有\n\nReturns:\n    日志条目列表（按时间倒序，每条为 JSON 解析后的 dict）",
+        "operationId": "get_recent_logs_api_v1_admin_logs_get",
+        "parameters": [
+          {
+            "name": "lines",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Lines"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "warning",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Recent Logs Api V1 Admin Logs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/metrics-detail": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Detailed Metrics",
+        "description": "获取详细的系统指标（解析 Prometheus 格式，返回结构化数据）\n\n返回比 /metrics/ 端点更易消费的 JSON 结构，包含：\n- 世界引擎指标（Tick 总数/耗时/错误/当前 ID）\n- 角色引擎指标（Tick 总数/耗时/错误，按角色分组）\n- Action 指标（执行次数/耗时，按 action_id 分组）\n- LLM 指标（调用次数/Token/费用，按 model 分组）\n- 消息指标（处理次数/耗时）\n- 数据库指标（查询耗时分布）\n- 系统状态（活跃角色数/Redis 状态）\n- HTTP 请求指标（请求数/耗时，按 path 分组）",
+        "operationId": "get_detailed_metrics_api_v1_admin_metrics_detail_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Detailed Metrics Api V1 Admin Metrics Detail Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/config": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Runtime Config",
+        "description": "获取运行时配置（环境变量默认值 + Redis 覆盖值）\n\nReturns:\n    各配置项的当前值、默认值、类型和说明",
+        "operationId": "get_runtime_config_api_v1_admin_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Runtime Config Api V1 Admin Config Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update Runtime Config",
+        "description": "更新运行时配置（写入 Redis 覆盖值，无需重启）\n\n通过 Pydantic 校验后写入 Redis，立即生效。\n无效值或越界值会被拒绝并返回 400。\n\nArgs:\n    updates: {key: value} 配置更新字典\n\nReturns:\n    更新结果",
+        "operationId": "update_runtime_config_api_v1_admin_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Updates"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Runtime Config Api V1 Admin Config Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/config/{key}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reset Config Item",
+        "description": "重置单个配置项为默认值（删除 Redis 覆盖）\n\nArgs:\n    key: 配置项键名\n\nRaises:\n    400: 未知配置项",
+        "operationId": "reset_config_item_api_v1_admin_config__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reset Config Item Api V1 Admin Config  Key  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_send_message_api_v1_messages_send_post": {
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "title": "Character Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_id",
+          "user_id"
+        ],
+        "title": "Body_send_message_api_v1_messages_send_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
