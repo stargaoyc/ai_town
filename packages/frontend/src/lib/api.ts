@@ -43,6 +43,9 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
   return res.json();
 }
 
+// 类型边界（审查 §十-P2）：以下手写 interface 为临时契约——后端 OpenAPI 尚未输出
+// 命名 components.schemas，gen:api 产物仅含 paths。后端补齐响应模型后应将本节
+// interface 全部替换为 components 引用并删除。
 export interface Character {
   id: string;
   name: string;
