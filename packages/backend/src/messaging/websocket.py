@@ -449,3 +449,109 @@ async def ws_chat_endpoint(
                 await websocket.close(code=1000, reason="closing")
         except Exception:
             pass
+
+
+# ============================================================
+# Dashboard 实时推送（F-1：替代前端 5s/10s 轮询）
+# ============================================================
+
+_DASHBOARD_PUSH_INTERVAL = 5.0  # 世界状态推送周期（秒），与原轮询频率一致
+
+
+async def _dashboard_snapshot(redis: Any, notif_key: str) -> dict[str, Any]:
+    """采集一帧仪表盘数据（世界状态 + 通知未读数）"""
+    state = await redis.hgetall("world:state")
+    tick_id = int(state["tick_id"]) if state.get("tick_id") else 0
+    world_time_raw = str(state.get("world_time", ""))
+    try:
+        world_time = json.loads(world_time_raw)
+        if not isinstance(world_time, str):
+            world_time = world_time_raw
+    except (json.JSONDecodeError, TypeError):
+        world_time = world_time_raw
+
+    notifications = await redis.lrange(notif_key, 0, -1)
+    unread = 0
+    for raw in notifications:
+        try:
+            if not json.loads(raw).get("read"):
+                unread += 1
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    return {
+        "type": "dashboard",
+        "world": {
+            "tick_id": tick_id,
+            "world_time": world_time,
+            "weather": str(state.get("weather", "sunny")),
+            "temperature": state.get("temperature"),
+        },
+        "notifications_unread": unread,
+    }
+
+
+@router.websocket("/ws/dashboard")
+async def ws_dashboard_endpoint(
+    websocket: WebSocket,
+    token: str | None = None,
+) -> None:
+    """仪表盘实时推送端点
+
+    查询参数：
+    - token: JWT（也可通过 Authorization: Bearer 头传递）
+
+    协议：
+    - 出站：{"type":"dashboard","world":{...},"notifications_unread":N}
+      每 _DASHBOARD_PUSH_INTERVAL 秒推一帧；无订阅者时零开销
+    - 入站消息被忽略（纯推送通道）
+    """
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        await websocket.accept()
+        await websocket.send_json(_safe_error("authentication required"))
+        await websocket.close(code=1008, reason="missing token")
+        return
+    try:
+        from src.auth import decode_token
+
+        payload = decode_token(token)
+    except Exception:
+        await websocket.accept()
+        await websocket.send_json(_safe_error("invalid token"))
+        await websocket.close(code=1008, reason="invalid token")
+        return
+
+    user_id = str(payload.get("sub", ""))
+
+    from src.runtime import get_redis, notification_key
+
+    redis = get_redis()
+    if redis is None:
+        await websocket.accept()
+        await websocket.send_json(_safe_error("redis not available"))
+        await websocket.close(code=1011, reason="service unavailable")
+        return
+
+    notif_key = notification_key(user_id)
+    await websocket.accept()
+    logger.info("ws_dashboard_connected", user_id=user_id)
+    try:
+        while True:
+            snapshot = await _dashboard_snapshot(redis, notif_key)
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.send_json(snapshot)
+            await asyncio.sleep(_DASHBOARD_PUSH_INTERVAL)
+    except WebSocketDisconnect:
+        logger.info("ws_dashboard_disconnected", user_id=user_id)
+    except Exception as e:
+        logger.warning("ws_dashboard_error", user_id=user_id, error=str(e))
+    finally:
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1000)
+        except Exception:
+            pass

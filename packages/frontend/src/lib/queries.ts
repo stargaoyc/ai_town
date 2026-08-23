@@ -18,7 +18,7 @@ export function useHealth() {
   return useQuery({
     queryKey: queryKeys.health,
     queryFn: api.getHealth,
-    refetchInterval: 5000,
+    refetchInterval: 30000, // /ws/dashboard 推送会主动 invalidate，此为断连兜底
   });
 }
 export function useCharacters(params?: { active_only?: boolean }) {
@@ -38,7 +38,7 @@ export function useWorld() {
   return useQuery({
     queryKey: queryKeys.world,
     queryFn: api.getWorld,
-    refetchInterval: 5000,
+    refetchInterval: 30000, // /ws/dashboard 推送会主动 invalidate，此为断连兜底
   });
 }
 export function useActions() {
