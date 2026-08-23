@@ -40,7 +40,7 @@ services:
       - aitown-net
 
   redis:
-    image: redis:alpine # 使用稳定的 Alpine 版本，避免 8.0-alpine 拉取失败
+    image: redis:8-alpine # 与 README/CI 对齐的大版本固定 tag，避免浮动漂移
     container_name: aitown-redis
     restart: unless-stopped
     ports:
@@ -108,7 +108,7 @@ services:
   # ============================================================
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.53.0
     container_name: aitown-prometheus
     restart: unless-stopped
     volumes:
@@ -140,7 +140,7 @@ services:
     profiles: [observability]
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:1.62.0
     container_name: aitown-jaeger
     restart: unless-stopped
     environment:
@@ -154,7 +154,7 @@ services:
     profiles: [observability]
 
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.0.0
     container_name: aitown-alloy
     restart: unless-stopped
     volumes:

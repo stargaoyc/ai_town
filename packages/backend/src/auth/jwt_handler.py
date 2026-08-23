@@ -1,4 +1,4 @@
-"""JWT 令牌生成与验证 - 基于 python-jose
+"""JWT 令牌生成与验证 - 基于 PyJWT
 
 职责：
 1. 生成 JWT（包含 user_id + 自定义 claims + 过期时间）
@@ -6,7 +6,8 @@
 3. 失败统一抛 HTTPException(401)
 
 设计要点：
-- 使用 python-jose[cryptography] 的 jwt 模块
+- 使用 PyJWT：python-jose 维护停滞（审查 §九-P2），PyJWT 为社区主流
+  且自带类型标注；算法白名单显式传入，杜绝 alg 混淆
 - 配置从 src.config.settings 读取（jwt_secret / jwt_algorithm / jwt_expire_hours）
 - 模块级便捷函数委托给单例 _handler，便于在路由中直接 import 使用
 """
@@ -17,8 +18,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+import jwt
 from fastapi import HTTPException
-from jose import JWTError, jwt
 from structlog import get_logger
 
 from src.config import settings
@@ -77,7 +78,7 @@ class JWTHandler:
                 self.secret,
                 algorithms=[self.algorithm],
             )
-        except JWTError as e:
+        except jwt.PyJWTError as e:
             logger.warning("jwt_decode_failed", error=str(e))
             raise HTTPException(
                 status_code=401,

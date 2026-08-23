@@ -39,8 +39,7 @@ dependencies = [
   "httpx>=0.28",
   # 工具
   "python-multipart>=0.0.12",
-  "python-jose[cryptography]>=3.3",
-  "passlib[bcrypt]>=1.7",
+  "pyjwt>=2.8",
   "pyyaml>=6.0",
   # 定时调度（月度分区预创建、Phase 3.5 成本控制等）
   "apscheduler>=3.11",
@@ -84,7 +83,7 @@ explicit_package_bases = true
 # 以下第三方库无类型标注（无 py.typed / 无官方 stub），精确豁免而非全局忽略，
 # 新增依赖若缺 stub 应显式加入此列表
 [[tool.mypy.overrides]]
-module = ["yaml", "jose.*", "langfuse.*", "apscheduler.*"]
+module = ["yaml", "langfuse.*", "apscheduler.*"]
 ignore_missing_imports = true
 
 # opentelemetry-instrumentation 系列无完整类型标注（无 py.typed），

@@ -118,6 +118,7 @@ AI Town 通过 OneBot v11/v12 协议接入 QQ，让二次元角色真正"住进"
 
 - **OneBot 反向 WebSocket 接入**：后端在 `/ws/onebot/v12` 暴露 WebSocket 服务端，由 OneBot 实现（NapCat / Lagrange 等）作为客户端主动反连，无需后端暴露公网入口。
 - **群聊智能回复**：默认 `ONEBOT_GROUP_AT_ONLY=false`，角色会读取所有群消息，按"角色名命中 → 疑问/情绪启发式 → 轻量 LLM 判断"三层策略决策是否回复；被 @ 时则始终回复。
+  > 隐私提示：智能回复模式会将群消息内容发送给所配置的 LLM 服务用于回复决策。若群成员对消息出域敏感，请设为 `ONEBOT_GROUP_AT_ONLY=true`（仅被 @ 时处理）。
 - **多段回复**：长回复按段落（`\n\n`）拆分为多条消息依次发送，段间附带约 0.6 秒打字间隔，单段上限 500 字符避免截断，更像真人说话节奏。
 - **主动分享推送**：角色在 Character Tick 中产生 `proactiveShareIntent` 时，会查询该角色在 QQ 平台的所有活跃会话，通过 `OneBotAdapter.push_share` 主动推送分享文案——无需你先发消息。
 

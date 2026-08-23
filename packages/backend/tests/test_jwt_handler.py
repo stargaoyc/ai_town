@@ -6,9 +6,9 @@
 
 from datetime import UTC, datetime, timedelta
 
+import jwt as pyjwt
 import pytest
 from fastapi import HTTPException
-from jose import jwt as jose_jwt
 
 from src.auth.jwt_handler import JWTHandler
 from src.auth.jwt_handler import create_token as module_create_token
@@ -71,7 +71,7 @@ def test_decode_token_expired_raises_401(handler: JWTHandler) -> None:
         "iat": now - timedelta(hours=2),
         "exp": now - timedelta(hours=1),
     }
-    expired_token = jose_jwt.encode(expired_payload, _TEST_SECRET, algorithm=_ALGORITHM)
+    expired_token = pyjwt.encode(expired_payload, _TEST_SECRET, algorithm=_ALGORITHM)
     with pytest.raises(HTTPException) as exc_info:
         handler.decode_token(expired_token)
     assert exc_info.value.status_code == 401
@@ -80,7 +80,7 @@ def test_decode_token_expired_raises_401(handler: JWTHandler) -> None:
 def test_decode_token_invalid_signature_raises_401(handler: JWTHandler) -> None:
     handler.create_token("user1")
     # 用错误密钥生成，签名不匹配
-    bad_token = jose_jwt.encode(
+    bad_token = pyjwt.encode(
         {"sub": "user1", "iat": datetime.now(UTC), "exp": datetime.now(UTC) + timedelta(hours=1)},
         "wrong-secret",
         algorithm=_ALGORITHM,
