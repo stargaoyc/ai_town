@@ -30,6 +30,7 @@ from src.cost_control import (
     get_budget_manager,
     get_circuit_breaker,
 )
+from src.llm.fallback import ModelSourcePool, invoke_with_fallback
 
 logger = get_logger(__name__)
 
@@ -85,14 +86,8 @@ class LLMClient:
         else:
             self._embedding_client = self.openai
 
-        # LangChain ChatOpenAI（仅用于对话+图像理解，agnes-2.0-flash）
-        self.chat_llm = ChatOpenAI(
-            model=settings.model_chat,
-            api_key=settings.openai_api_key,  # type: ignore[arg-type]
-            base_url=settings.openai_base_url,
-            timeout=settings.llm_timeout,
-            max_retries=settings.llm_max_retries,
-        )
+        # 多模型源池（主源 = settings，备用源 = llm_fallback_sources，失败冷却切换）
+        self._source_pool = ModelSourcePool()
 
         # HTTP 客户端（用于视频生成轮询等非 OpenAI SDK 端点）
         self._http_client: httpx.AsyncClient | None = None
@@ -217,9 +212,13 @@ class LLMClient:
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt),
                 ]
-                response = await self.chat_llm.ainvoke(messages)
             else:
-                response = await self.chat_llm.ainvoke(prompt)
+                messages = []
+
+            response, _source = await invoke_with_fallback(
+                self._source_pool,
+                lambda llm: llm.ainvoke(messages) if messages else llm.ainvoke(prompt),
+            )
             content = response.content
             logger.debug("chat_completed", model="chat", response_length=len(content))
             elapsed = time.perf_counter() - start_perf
@@ -301,7 +300,7 @@ class LLMClient:
         effective_model = model or "chat"
         start_perf = time.perf_counter()
         try:
-            response = await self.chat_llm.ainvoke([message])
+            response, _source = await invoke_with_fallback(self._source_pool, lambda llm: llm.ainvoke([message]))
             resp_content = response.content
             logger.debug(
                 "multimodal_chat_completed",
@@ -574,12 +573,16 @@ class LLMClient:
             logger.warning("structured_output_model_redirect_to_chat", original_model=model)
 
         pydantic_model = self._schema_to_pydantic(schema)
-        structured_llm = self.chat_llm.with_structured_output(pydantic_model, include_raw=True)
 
         start_perf = time.perf_counter()
         await self._check_cost_control()
         try:
-            bundle = await structured_llm.ainvoke(prompt)
+
+            async def _invoke_structured(llm: ChatOpenAI) -> dict[str, Any]:
+                structured = llm.with_structured_output(pydantic_model, include_raw=True)
+                return await structured.ainvoke(prompt)
+
+            bundle, _source = await invoke_with_fallback(self._source_pool, _invoke_structured)
             result = bundle.get("parsed")
             if result is None:
                 parsing_error = bundle.get("parsing_error")
@@ -656,11 +659,14 @@ class LLMClient:
             logger.warning("multimodal_structured_output_model_redirect_to_chat", original_model=model)
 
         pydantic_model = self._schema_to_pydantic(schema)
-        structured_llm = self.chat_llm.with_structured_output(pydantic_model)
 
         message = HumanMessage(content=content)
 
-        result = await structured_llm.ainvoke([message])
+        async def _invoke_multimodal_structured(llm: ChatOpenAI) -> Any:
+            structured = llm.with_structured_output(pydantic_model)
+            return await structured.ainvoke([message])
+
+        result, _source = await invoke_with_fallback(self._source_pool, _invoke_multimodal_structured)
         logger.debug(
             "multimodal_structured_output_completed",
             content_types=[c.get("type", "text") if isinstance(c, dict) else "text" for c in content],
@@ -668,7 +674,7 @@ class LLMClient:
         )
         if isinstance(result, BaseModel):
             return result.model_dump()
-        return result
+        return dict(result)
 
     # === 成本控制（统一挂载点）===
 

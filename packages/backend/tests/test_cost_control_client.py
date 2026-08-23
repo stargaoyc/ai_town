@@ -138,7 +138,13 @@ _DECISION_SCHEMA: dict[str, Any] = {
 
 def _make_client(fake_llm: FakeChatLLM) -> LLMClient:
     client = LLMClient()
-    client.chat_llm = fake_llm  # type: ignore[assignment]
+    # 替换多模型源池为单源池：build_llm 恒返回注入的 fake，冷却逻辑不触发
+    pool = cast(Any, SimpleNamespace())
+    pool.ordered_candidates = lambda: [0]
+    pool.build_llm = lambda index: fake_llm
+    pool.mark_success = lambda index: None
+    pool.mark_failure = lambda index: None
+    client._source_pool = pool
     return client
 
 

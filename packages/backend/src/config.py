@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     embedding_model_url: str | None = None
     llm_timeout: int = 30
     llm_max_retries: int = 2
+
+    # 多模型备用源（JSON 数组，按顺序尝试；失败冷却 5 分钟后仍可作末位兜底）
+    # 每项: {"api_key": "...", "base_url": "...", "model": "可选，缺省用 model_chat"}
+    llm_fallback_sources: str = "[]"
     # 与迁移 0005 的物理列 halfvec(2048) 对齐；改此值必须同步新迁移重建列与 HNSW 索引
     embedding_dim: int = 2048
 
