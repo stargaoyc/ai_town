@@ -42,16 +42,20 @@ class ModelSource:
 
 
 class _SourceState:
-    """单个源的运行时状态（最近失败时间戳）"""
+    """单个源的运行时状态（最近失败时间戳）
+
+    failed_at 用 None 表示从未失败——不能用 0.0：time.monotonic() 起点任意，
+    新启动的进程（如 CI 容器）读数可能小于冷却时长，把未失败源误判为冷却中。
+    """
 
     __slots__ = ("failed_at",)
 
     def __init__(self) -> None:
-        self.failed_at: float = 0.0
+        self.failed_at: float | None = None
 
     @property
     def cooling(self) -> bool:
-        return (time.monotonic() - self.failed_at) < SOURCE_FAILURE_COOLDOWN_SECONDS
+        return self.failed_at is not None and ((time.monotonic() - self.failed_at) < SOURCE_FAILURE_COOLDOWN_SECONDS)
 
     def mark_failed(self) -> None:
         self.failed_at = time.monotonic()
@@ -117,11 +121,13 @@ class ModelSourcePool:
         )
 
     def mark_success(self, index: int) -> None:
-        self._states[index].failed_at = 0.0
+        self._states[index].failed_at = None
 
     def mark_failure(self, index: int) -> None:
-        self._states[index].mark_failed()
-        remaining_until = int(SOURCE_FAILURE_COOLDOWN_SECONDS - (time.monotonic() - self._states[index].failed_at))
+        state = self._states[index]
+        failed_at = time.monotonic()
+        state.failed_at = failed_at
+        remaining_until = int(SOURCE_FAILURE_COOLDOWN_SECONDS - (time.monotonic() - failed_at))
         logger.warning(
             "llm_source_cooldown_started",
             source_index=index,

@@ -72,10 +72,24 @@ class TestCooling:
         pool = _make_pool("[]", monkeypatch)
         pool.mark_failure(0)
         assert pool.ordered_candidates() == [0]  # 仅主源时仍参与候选
+        assert pool._states[0].cooling
 
-        # 模拟冷却过期
+        # 成功后清除冷却
+        pool.mark_success(0)
+        assert not pool._states[0].cooling
+
+        # 再次失败进入冷却，模拟冷却过期：失败时间点回拨到冷却窗口之外
+        pool.mark_failure(0)
+        assert pool._states[0].cooling
+        assert pool._states[0].failed_at is not None
         pool._states[0].failed_at -= SOURCE_FAILURE_COOLDOWN_SECONDS + 1
         assert not pool._states[0].cooling
+
+    def test_fresh_source_never_cools_even_with_low_monotonic(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """从未失败的源不得被判为冷却中——CI 容器启动初期 monotonic 读数很小"""
+        pool = _make_pool("[]", monkeypatch)
+        assert pool._states[0].failed_at is None
+        assert pool.ordered_candidates() == [0]
 
 
 class TestInvokeWithFallback:
@@ -127,7 +141,11 @@ class TestInvokeWithFallback:
     async def test_cooldown_expiry_restores_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
         pool = _make_pool('[{"api_key":"k2","base_url":"https://b.example/v1"}]', monkeypatch)
         pool.mark_failure(1)
-        assert pool.ordered_candidates() == [0, 1]
+        assert pool._states[1].cooling
+        # 冷却中的源排末尾兜底
+        assert pool.ordered_candidates()[-1] == 1
 
+        # 冷却过期后恢复原顺序
+        assert pool._states[1].failed_at is not None
         pool._states[1].failed_at -= SOURCE_FAILURE_COOLDOWN_SECONDS + 1
         assert pool.ordered_candidates() == [0, 1]
