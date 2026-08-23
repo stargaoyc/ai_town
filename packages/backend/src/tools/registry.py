@@ -176,8 +176,15 @@ def _get_redis() -> Any:
     return get_redis()
 
 
+# 工具启用状态的进程内 TTL 缓存：单次 Tick 含多轮 ReAct 决策与工具调用，
+# 每次都 hgetall 会产生 5-8 次 Redis 往返；TTL 内复用本地快照，
+# Dashboard 切换开关最迟 5 秒生效
+_ENABLED_CACHE_TTL_SECONDS = 5.0
+_enabled_cache: tuple[float, frozenset[str]] | None = None
+
+
 async def get_enabled_tools() -> set[str]:
-    """从 Redis 读取已启用的工具全名集合
+    """从 Redis 读取已启用的工具全名集合（带 5 秒 TTL 缓存）
 
     Redis hash `tools:enabled` 存储 {tool_full_name: "true"|"false"}。
     未配置（hash 为空）时默认全部启用。
@@ -185,6 +192,14 @@ async def get_enabled_tools() -> set[str]:
     Returns:
         已启用的工具全名集合；Redis 不可用时返回全部工具名。
     """
+    global _enabled_cache
+
+    import time
+
+    now = time.monotonic()
+    if _enabled_cache is not None and (now - _enabled_cache[0]) < _ENABLED_CACHE_TTL_SECONDS:
+        return set(_enabled_cache[1])
+
     r = _get_redis()
     all_tools = set(TOOL_REGISTRY.keys())
     if r is None:
@@ -192,14 +207,19 @@ async def get_enabled_tools() -> set[str]:
     try:
         raw = await r.hgetall(TOOLS_ENABLED_KEY)
         if not raw:
-            return all_tools
-        result: set[str] = set()
-        for name, enabled in raw.items():
-            name_str = name.decode("utf-8") if isinstance(name, (bytes, bytearray)) else str(name)
-            enabled_str = enabled.decode("utf-8") if isinstance(enabled, (bytes, bytearray)) else str(enabled)
-            if enabled_str.lower() in ("true", "1", "yes"):
-                result.add(name_str)
-        return result
+            enabled = frozenset(all_tools)
+        else:
+            result: set[str] = set()
+            for name, enabled_flag in raw.items():
+                name_str = name.decode("utf-8") if isinstance(name, (bytes, bytearray)) else str(name)
+                enabled_str = (
+                    enabled_flag.decode("utf-8") if isinstance(enabled_flag, (bytes, bytearray)) else str(enabled_flag)
+                )
+                if enabled_str.lower() in ("true", "1", "yes"):
+                    result.add(name_str)
+            enabled = frozenset(result)
+        _enabled_cache = (now, enabled)
+        return set(enabled)
     except Exception:
         logger.warning("tools_enabled_read_failed", exc_info=True)
         return all_tools
@@ -217,11 +237,6 @@ class ToolRegistry:
     替代原 MCPClient，通过 async 函数引用直接调用工具，无网络开销。
     状态变更类工具的必需参数从 context 自动注入。
     """
-
-    def __init__(self) -> None:
-        # 缓存当前调用方的角色 ID 与关系映射，用于 injected_params 中的特殊字段
-        self._current_character_id: str | None = None
-        self._relation_map: dict[str, int] | None = None
 
     async def list_tools(self) -> list[dict[str, Any]]:
         """列出所有已启用工具的元数据（静态配置，不依赖外部服务在线）"""
