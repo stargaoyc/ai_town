@@ -509,6 +509,17 @@ class MessageService:
             except Exception:
                 pass  # Redis 读取失败不影响对话
 
+        # 角色对该用户的长期认知回流对话上下文（审查 §五-P0：Person Memory 只写不读修复）
+        person_memory_text = "（初次与该用户交流）"
+        try:
+            from src.db.session import db
+            from src.memory.person_memory_service import PersonMemoryService
+
+            pm_service = PersonMemoryService(session_factory=db.session)
+            person_memory_text = await pm_service.get_relevant_context(character.id, conversation.user_id)
+        except Exception as e:
+            logger.warning("person_memory_context_load_failed", error=str(e))
+
         return {
             "name": character.name,
             "personality": personality_text,
@@ -519,6 +530,7 @@ class MessageService:
             "energy": state.stamina,
             "mood": state.mood or "calm",
             "context_summary": context_summary or "（新对话，暂无摘要）",
+            "person_memory": person_memory_text,
         }
 
     async def _generate_reply(

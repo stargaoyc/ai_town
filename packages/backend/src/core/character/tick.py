@@ -33,6 +33,7 @@ from src.db.models import ActionRecord, Character, CharacterStateHistory, Memory
 from src.db.repositories import (
     ActionRepository,
     CharacterRepository,
+    DiaryRepository,
     MemoryRepository,
     PlanRepository,
     ReflectionRepository,
@@ -297,7 +298,14 @@ class CharacterTickEngine:
 
         # 检索相关记忆（需要 db session 创建 RetrievalService）
         # embedding 失败时降级为空记忆列表，不阻断 Tick
-        query = f"角色{character.name}当前在{state.get('location')}，最近在做什么"
+        # 检索 query 动态化：拼入时段/情绪/计划标题，提升向量区分度（审查 §五-P1）
+        plan_titles = "、".join(p.title for p in plans[:3]) if plans else "无"
+        hour_now = datetime.now(UTC).hour
+        time_band = "凌晨" if hour_now < 6 else "上午" if hour_now < 12 else "下午" if hour_now < 18 else "晚上"
+        query = (
+            f"{character.name}在{state.get('location')}，{time_band}，"
+            f"情绪{state.get('mood', '平静')}，计划：{plan_titles}，最近的经历与相关往事"
+        )
         memories = []
         try:
             async with db.session() as session:
@@ -307,6 +315,36 @@ class CharacterTickEngine:
         except Exception as e:
             logger.warning(
                 "memory_retrieval_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
+        # 检索近期反思（高层认知）注入决策——认知产物必须回流上下文（审查 §五-P0）
+        reflections_text = "暂无高层认知"
+        try:
+            async with db.session() as session:
+                ref_repo = ReflectionRepository(session)
+                refs = await ref_repo.get_by_character(character_id, limit=5)
+                if refs:
+                    reflections_text = "\n".join(f"- {r.content}" for r in refs)
+        except Exception as e:
+            logger.warning(
+                "reflections_load_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
+        # 检索最近一篇日报注入决策——角色带着"今天经历过什么"的叙事做决策（审查 §五-P0）
+        diary_text = "暂无日记"
+        try:
+            async with db.session() as session:
+                diary_repo = DiaryRepository(session)
+                latest_diary = await diary_repo.get_latest(character_id, period="day")
+                if latest_diary and latest_diary.content:
+                    diary_text = latest_diary.content[:300]
+        except Exception as e:
+            logger.warning(
+                "diary_load_failed_continue",
                 character_id=str(character_id),
                 error=str(e),
             )
@@ -381,6 +419,8 @@ class CharacterTickEngine:
             "state": state,
             "world": world,
             "memories": memories,
+            "reflections": reflections_text,
+            "diary": diary_text,
             "plans": plans,
             "nearby_characters": nearby_characters,
             "relations": relations_map,
@@ -480,6 +520,8 @@ class CharacterTickEngine:
             weather=world.get("weather", "sunny"),
             scenes=scenes_text,
             memories=memories_text,
+            reflections=context.get("reflections", "暂无高层认知"),
+            diary=context.get("diary", "暂无日记"),
             plans=plans_text,
             candidates=candidates_text,
             nearby_characters=nearby_text,
@@ -935,6 +977,11 @@ class CharacterTickEngine:
                 )
                 session.add(history)
 
+                # 应用 LLM 计划变更（planChanges 落库，审查 §五-P1 死功能修复）
+                if decision.plan_changes:
+                    plan_repo = PlanRepository(session)
+                    await self._apply_plan_changes(plan_repo, character_id, decision.plan_changes)
+
             # 更新 Redis 实时状态
             await self.redis.hset(
                 f"char:{character_id}:state",
@@ -1165,6 +1212,41 @@ class CharacterTickEngine:
         )
 
         return dialogue
+
+    @staticmethod
+    async def _apply_plan_changes(
+        plan_repo: PlanRepository,
+        character_id: UUID,
+        changes: list[dict[str, Any]],
+    ) -> None:
+        """将 LLM 决策的 planChanges 应用到 plans 表
+
+        LLM 可携带任意 planId，更新必须以 character_id 约束范围防跨角色篡改；
+        单条变更失败仅告警，不回滚整个 Action 事务。
+        """
+        status_map = {"complete": "completed", "abandon": "abandoned", "update": "active"}
+        for change in changes:
+            if not isinstance(change, dict):
+                continue
+            try:
+                plan_id = UUID(str(change.get("planId") or ""))
+            except (ValueError, TypeError):
+                logger.warning("plan_change_invalid_id", plan_id=str(change.get("planId")))
+                continue
+
+            action = str(change.get("action") or "update").lower()
+            updates: dict[str, Any] = {}
+            if action in status_map:
+                updates["status"] = status_map[action]
+            progress = change.get("progress")
+            if isinstance(progress, int) and not isinstance(progress, bool):
+                updates["progress"] = max(0, min(100, progress))
+            if not updates:
+                continue
+
+            applied = await plan_repo.update_plan_scoped(plan_id, character_id, **updates)
+            if not applied:
+                logger.warning("plan_change_target_not_found", plan_id=str(plan_id), character_id=str(character_id))
 
     async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """记忆沉淀

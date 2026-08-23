@@ -114,7 +114,7 @@ class EpisodeService:
         character_name: str | None = None,
         reason: str | None = None,
         mood: str | None = None,
-    ) -> MemoryEpisode:
+    ) -> MemoryEpisode | None:
         """创建记忆片段
 
         ⚠️ embedding 由 EmbeddingWorker 异步生成，此处不阻塞 Tick 循环。
@@ -124,6 +124,9 @@ class EpisodeService:
         - 若 MEMORY_LLM_SCORING_ENABLED=true 且提供 character_name，
           调用 LLM 评分（更精准），失败时回退到传入的 importance
         - 否则使用调用方计算的规则评分 importance
+
+        写入去重：内容归一化（折叠空白）后与近 24 小时记忆比对，
+        命中则跳过写入返回 None——抑制重复行为产生的近似重复记忆膨胀。
 
         Args:
             character_id: 角色 ID
@@ -136,8 +139,17 @@ class EpisodeService:
             mood: 当前情绪（LLM 评分所需）
 
         Returns:
-            MemoryEpisode 实体
+            MemoryEpisode 实体；重复内容返回 None
         """
+        normalized_content = " ".join(content.split())
+        if await self.repo.exists_recent_duplicate(character_id, normalized_content):
+            logger.info(
+                "memory_duplicate_skipped",
+                character_id=str(character_id),
+                content_preview=normalized_content[:80],
+            )
+            return None
+
         final_importance = importance
 
         # LLM 评分（可选，环境变量控制）

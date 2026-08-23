@@ -10,12 +10,14 @@
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import func, select, update
 from structlog import get_logger
 
 from src import runtime
 from src.config import settings
+from src.db.models import PersonMemory
 from src.db.repositories import CharacterRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService
@@ -252,3 +254,48 @@ async def reconciliation_loop() -> None:
         except Exception as e:
             logger.error("reconciliation_loop_error", error=str(e), exc_info=True)
             # 继续循环，不中断
+
+
+async def person_memory_heat_decay_loop() -> None:
+    """Person Memory 热度衰减后台循环
+
+    每 6 小时执行一次：超过 14 天未交互的记忆热度减半，
+    抑制历史用户长期占据检索优先级（审查 §五-P1：heat 只增不减）。
+    """
+    interval = 6 * 3600
+    logger.info("person_memory_heat_decay_loop_started", interval=interval)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+
+            async with db.session() as session:
+                cutoff = datetime.now(UTC) - timedelta(days=14)
+                count_stmt = (
+                    select(func.count())
+                    .select_from(PersonMemory)
+                    .where(
+                        PersonMemory.heat > 0,
+                        PersonMemory.last_interaction_at < cutoff,
+                    )
+                )
+                stale_count = int((await session.execute(count_stmt)).scalar_one())
+                if stale_count == 0:
+                    continue
+                stmt = (
+                    update(PersonMemory)
+                    .where(
+                        PersonMemory.heat > 0,
+                        PersonMemory.last_interaction_at < cutoff,
+                    )
+                    .values(heat=func.floor(PersonMemory.heat / 2))
+                )
+                await session.execute(stmt)
+                await session.commit()
+                logger.info("person_memory_heat_decayed", rows=stale_count)
+
+        except asyncio.CancelledError:
+            logger.info("person_memory_heat_decay_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("person_memory_heat_decay_loop_error", error=str(e), exc_info=True)

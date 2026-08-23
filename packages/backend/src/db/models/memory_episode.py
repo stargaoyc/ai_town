@@ -39,7 +39,8 @@ class MemoryEpisode(Base):
     - source_type: 来源类型（action/conversation/reflection）
 
     检索策略（混合排序）：
-        final_score = sim_score * 0.6 + importance * 0.05 + time_decay
+        recency = exp(-距今天数/30)
+        final_score = (sim_score * 0.6 + importance * 0.05) * (0.25 + 0.75 * recency)
     详见 architecture.md §5.7
     """
 

@@ -17,11 +17,12 @@
 - 角色删除时记忆数据自动级联清理
 
 混合排序公式：
-    final_score = sim_score * 0.6 + importance * 0.05 - time_decay
+    recency = exp(-距今天数/30)
+    final_score = (sim_score * 0.6 + importance * 0.05) * (0.25 + 0.75 * recency)
 详见 architecture.md §5.7
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -132,6 +133,30 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         await self.session.execute(stmt)
         await self.session.flush()
         logger.info("memory_marked_reflected", count=len(episode_ids))
+
+    async def exists_recent_duplicate(
+        self,
+        character_id: UUID,
+        normalized_content: str,
+        hours: int = 24,
+    ) -> bool:
+        """检查近 N 小时内是否已存在归一化后相同的记忆（写入去重）
+
+        归一化规则与调用方一致：折叠全部空白字符为单个空格。
+        命中返回 True，调用方跳过写入，抑制重复行为产生的近似重复记忆。
+        """
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        stmt = (
+            select(MemoryEpisode.id)
+            .where(
+                MemoryEpisode.character_id == character_id,
+                MemoryEpisode.timestamp >= cutoff,
+                func.trim(func.regexp_replace(MemoryEpisode.content, r"\s+", " ", "g")) == normalized_content,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def fetch_unmaterialized(self, limit: int = 100) -> list[MemoryEpisode]:
         """拉取未向量化的记忆（供 embedding worker 异步处理）
@@ -265,8 +290,11 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         执行流程：
         1. SET LOCAL hnsw.ef_search = 100 —— 提升 HNSW 召回质量
         2. CTE candidates：先按向量距离召回 Top-K*2 候选，限定角色范围
-        3. 计算 final_score = sim_score*0.6 + importance*0.05 + time_decay
-           （time_decay = -距今天数*0.05，越久远扣分越多）
+        3. 计算 final_score：
+           recency = exp(-距今天数/30)（指数衰减）
+           final_score = (sim_score*0.6 + importance*0.05) * (0.25 + 0.75*recency)
+           指数衰减使老记忆得分有 25% 下限、永不为负——重要事件数月后
+           仍可被召回（原线性衰减在 22 天后使其不可达，见审查 §五-P0）
         4. 按 final_score 排序取 Top-K
 
         注意：
@@ -294,8 +322,9 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
                 LIMIT $3
             )
             SELECT id, content, importance, timestamp, source_type, is_reflected, sim_score,
-                   sim_score * 0.6 + importance * 0.05
-                   - EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 * 0.05 AS final_score
+                   (sim_score * 0.6 + importance * 0.05)
+                   * (0.25 + 0.75 * exp(- EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 / 30.0))
+                   AS final_score
             FROM candidates
             ORDER BY final_score DESC
             LIMIT $4

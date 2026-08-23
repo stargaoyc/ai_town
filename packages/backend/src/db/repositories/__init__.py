@@ -13,6 +13,7 @@ from src.db.repositories.action_repo import ActionRepository
 from src.db.repositories.base import BaseRepository
 from src.db.repositories.character_repo import CharacterRepository
 from src.db.repositories.conversation_repo import ConversationRepository
+from src.db.repositories.diary_repo import DiaryRepository
 from src.db.repositories.memory_repo import MemoryRepository
 from src.db.repositories.message_repo import MessageRepository
 from src.db.repositories.plan_repo import PlanRepository
@@ -27,6 +28,7 @@ __all__ = [
     "MemoryRepository",
     "PlanRepository",
     "RelationRepository",
+    "DiaryRepository",
     "ReflectionRepository",
     "WorldEventRepository",
     "WorldSnapshotRepository",

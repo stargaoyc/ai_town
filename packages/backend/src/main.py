@@ -69,7 +69,12 @@ from src.observability import (
 )
 from src.observability.sanitizer import sanitize_url
 from src.scheduler import PartitionScheduler
-from src.scheduler.loops import character_tick_loop, diary_scheduler_loop, reconciliation_loop
+from src.scheduler.loops import (
+    character_tick_loop,
+    diary_scheduler_loop,
+    person_memory_heat_decay_loop,
+    reconciliation_loop,
+)
 from src.security.rate_limiter import RateLimiter
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
@@ -310,6 +315,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("diary_scheduler_start_failed", error=str(e), exc_info=True)
 
+    # 5.55 启动 Person Memory 热度衰减循环（后台任务）
+    pm_heat_task: asyncio.Task[None] | None = None
+    try:
+        pm_heat_task = asyncio.create_task(person_memory_heat_decay_loop())
+        logger.info("person_memory_heat_decay_started")
+    except Exception as e:
+        logger.error("person_memory_heat_decay_start_failed", error=str(e), exc_info=True)
+
     # 5.6 启动 Redis vs PG 状态对账循环（后台任务）
     reconcile_task: asyncio.Task[None] | None = None
     try:
@@ -423,6 +436,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         diary_scheduler_task.cancel()
         try:
             await diary_scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消 Person Memory 热度衰减循环
+    if pm_heat_task:
+        pm_heat_task.cancel()
+        try:
+            await pm_heat_task
         except asyncio.CancelledError:
             pass
 

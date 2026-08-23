@@ -25,6 +25,12 @@ template: |
   [相关记忆]
   {memories}
 
+  [高层认知（近期反思）]
+  {reflections}
+
+  [最近日记]
+  {diary}
+
   [当前计划]
   {plans}
 

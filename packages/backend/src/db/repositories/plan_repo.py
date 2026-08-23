@@ -55,3 +55,28 @@ class PlanRepository(BaseRepository[Plan]):
         await self.session.execute(stmt)
         await self.session.flush()
         logger.info("plan_updated", plan_id=str(plan_id), fields=list(fields.keys()))
+
+    async def update_plan_scoped(
+        self,
+        plan_id: UUID,
+        character_id: UUID,
+        **fields: Any,
+    ) -> bool:
+        """更新计划字段（限定归属角色）
+
+        LLM 决策可携带任意 planId，必须以 character_id 约束更新范围，
+        防止跨角色篡改。返回是否命中目标计划。
+        """
+        if not fields:
+            return False
+        exists_stmt = select(Plan.id).where(
+            Plan.id == plan_id,
+            Plan.character_id == character_id,
+        )
+        if (await self.session.execute(exists_stmt)).scalar_one_or_none() is None:
+            return False
+        stmt = update(Plan).where(Plan.id == plan_id).values(**fields)
+        await self.session.execute(stmt)
+        await self.session.flush()
+        logger.info("plan_updated_scoped", plan_id=str(plan_id), fields=list(fields.keys()))
+        return True
