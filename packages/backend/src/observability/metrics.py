@@ -126,6 +126,18 @@ WORLD_TICK_ID = Gauge(
     "当前 World Tick ID",
 )
 
+# === 对账指标（Redis vs PG 定期 diff）===
+RECONCILE_DRIFT_TOTAL = Counter(
+    "ai_town_reconcile_drift_total",
+    "对账发现的漂移次数（含自动修复）",
+    ["kind"],  # kind: missing_key / value_drift
+)
+RECONCILE_REPAIR_TOTAL = Counter(
+    "ai_town_reconcile_repair_total",
+    "对账自动修复次数",
+    ["direction"],  # direction: pg_to_redis / redis_to_pg
+)
+
 # === HTTP 请求指标（供 PrometheusMiddleware 使用） ===
 HTTP_REQUEST_DURATION = Histogram(
     "ai_town_http_request_duration_seconds",

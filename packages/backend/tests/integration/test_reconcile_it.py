@@ -1,0 +1,113 @@
+"""状态对账集成测试（roadmap #24）- 真实 PG + Redis 上的漂移检测与修复
+
+覆盖：
+- Redis 键缺失 → 从 PG 回灌（pg_to_redis）
+- 数值字段漂移 → 以 Redis 为准修正 PG（redis_to_pg）
+- 位置/库存字段漂移修复
+- 无漂移时零写入
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid6 import uuid7
+
+from src.core.reconcile import collect_drift, run_reconciliation
+from src.core.state_codec import encode_state_mapping
+from src.db.models import Character, CharacterState
+
+
+@asynccontextmanager
+async def _session_ctx(session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    """把受管 session 包装为上下文管理器，供 run_reconciliation 注入"""
+    yield session
+
+
+async def _make_character(it_session: AsyncSession, **state_fields: object) -> CharacterState:
+    char = Character(id=uuid7(), name="对账测试角色")
+    state = CharacterState(character_id=char.id, **state_fields)
+    it_session.add_all([char, state])
+    await it_session.flush()
+    return state
+
+
+class TestCollectDrift:
+    def test_no_drift_when_fields_match(self, it_session: AsyncSession) -> None:
+        state = CharacterState(character_id=uuid7(), location="cafe", stamina=80, money=100)
+        redis_hash = encode_state_mapping({"location": "cafe", "stamina": 80, "money": 100})
+        assert collect_drift(state, redis_hash) == []
+
+    def test_numeric_drift_detected(self, it_session: AsyncSession) -> None:
+        state = CharacterState(character_id=uuid7(), stamina=80, money=100)
+        redis_hash = encode_state_mapping({"stamina": 65, "money": 100})
+        assert collect_drift(state, redis_hash) == ["stamina"]
+
+    def test_location_drift_detected(self, it_session: AsyncSession) -> None:
+        state = CharacterState(character_id=uuid7(), location="cafe")
+        redis_hash = encode_state_mapping({"location": "park"})
+        assert collect_drift(state, redis_hash) == ["location"]
+
+    def test_redis_missing_field_is_not_drift(self, it_session: AsyncSession) -> None:
+        """Redis 缺字段 = 信息不足（None 被过滤），不判漂移"""
+        state = CharacterState(character_id=uuid7(), mood="happy", stamina=80)
+        redis_hash = encode_state_mapping({"mood": "happy"})  # 无 stamina
+        assert collect_drift(state, redis_hash) == []
+
+
+class TestRunReconciliation:
+    async def test_missing_redis_key_rehydrated_from_pg(self, it_session: AsyncSession, it_redis: Redis) -> None:
+        state = await _make_character(it_session, location="library", stamina=70, money=250)
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["missing_keys"] == 1
+        assert stats["repairs"] >= 1
+        restored = await it_redis.hgetall(f"char:{state.character_id}:state")
+        assert restored["location"] == "library"
+        assert restored["stamina"] == "70"
+        assert restored["money"] == "250"
+
+    async def test_value_drift_repairs_pg_from_redis(self, it_session: AsyncSession, it_redis: Redis) -> None:
+        state = await _make_character(it_session, location="cafe", stamina=80, money=100)
+        key = f"char:{state.character_id}:state"
+        # Redis 是真相源：写入与 PG 不同的值
+        await it_redis.hset(key, mapping=encode_state_mapping({"stamina": 55, "money": 320, "location": "cafe"}))  # type: ignore[arg-type]
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["value_drift"] == 1
+        # PG 被修正为 Redis 的值
+        await it_session.refresh(state)
+        assert state.stamina == 55
+        assert state.money == 320
+
+    async def test_no_drift_no_writes(self, it_session: AsyncSession, it_redis: Redis) -> None:
+        state = await _make_character(it_session, location="park", stamina=90, money=500)
+        key = f"char:{state.character_id}:state"
+        await it_redis.hset(
+            key,
+            mapping=encode_state_mapping(  # type: ignore[arg-type]
+                {"location": "park", "stamina": 90, "money": 500, "inventory": {}}
+            ),
+        )
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["repairs"] == 0
+        await it_session.refresh(state)
+        assert state.stamina == 90
+
+    async def test_inventory_drift_repairs_pg(self, it_session: AsyncSession, it_redis: Redis) -> None:
+        state = await _make_character(it_session, inventory={"coffee": 1})
+        key = f"char:{state.character_id}:state"
+        await it_redis.hset(key, mapping=encode_state_mapping({"inventory": {"coffee": 1, "book": 2}}))  # type: ignore[arg-type]
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["value_drift"] == 1
+        await it_session.refresh(state)
+        assert state.inventory == {"coffee": 1, "book": 2}

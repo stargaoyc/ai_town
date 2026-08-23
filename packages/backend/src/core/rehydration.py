@@ -13,10 +13,36 @@ from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.core.state_codec import encode_state_mapping
+from src.db.models import CharacterState
 from src.db.repositories import CharacterRepository, WorldSnapshotRepository
 from src.db.session import db
 
 logger = get_logger(__name__)
+
+
+def character_state_mapping(st: CharacterState) -> dict[str, str]:
+    """将 PG CharacterState 行编码为 Redis 哈希映射（回灌用）"""
+    return encode_state_mapping(
+        {
+            "location": st.location,
+            "stamina": st.stamina,
+            "satiety": st.satiety,
+            "mood": st.mood,
+            "money": st.money,
+            "inventory": st.inventory,
+            "current_action": st.current_action,
+            "phone_battery": st.phone_battery,
+            "social_energy": st.social_energy,
+        }
+    )
+
+
+async def restore_character_to_redis(redis: Redis, state: CharacterState) -> None:
+    """把单个角色的 PG 镜像写回 Redis（键不存在才调用方判断后使用）"""
+    await redis.hset(
+        f"char:{state.character_id}:state",
+        mapping=character_state_mapping(state),  # type: ignore[arg-type]
+    )
 
 
 async def rehydrate_states(redis: Redis) -> None:
@@ -34,20 +60,7 @@ async def rehydrate_states(redis: Redis) -> None:
             key = f"char:{st.character_id}:state"
             if await redis.exists(key):
                 continue
-            mapping = encode_state_mapping(
-                {
-                    "location": st.location,
-                    "stamina": st.stamina,
-                    "satiety": st.satiety,
-                    "mood": st.mood,
-                    "money": st.money,
-                    "inventory": st.inventory,
-                    "current_action": st.current_action,
-                    "phone_battery": st.phone_battery,
-                    "social_energy": st.social_energy,
-                }
-            )
-            await redis.hset(key, mapping=mapping)  # type: ignore[arg-type]
+            await restore_character_to_redis(redis, st)
             restored_chars += 1
     if restored_chars:
         logger.info("rehydrated_character_states", count=restored_chars)

@@ -303,6 +303,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("diary_scheduler_start_failed", error=str(e), exc_info=True)
 
+    # 5.6 启动 Redis vs PG 状态对账循环（后台任务）
+    reconcile_task: asyncio.Task[None] | None = None
+    try:
+        reconcile_task = asyncio.create_task(_reconciliation_loop())
+        logger.info("reconciliation_loop_started")
+    except Exception as e:
+        logger.error("reconciliation_loop_start_failed", error=str(e), exc_info=True)
+
     # 5.6 启动时同步活跃角色数指标（避免重启后指标面板显示 0）
     try:
         from src.db.session import db as _db
@@ -402,6 +410,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         diary_scheduler_task.cancel()
         try:
             await diary_scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消对账循环
+    if reconcile_task:
+        reconcile_task.cancel()
+        try:
+            await reconcile_task
         except asyncio.CancelledError:
             pass
 
@@ -597,6 +613,37 @@ async def _diary_scheduler_loop() -> None:
             raise
         except Exception as e:
             logger.error("diary_scheduler_loop_error", error=str(e), exc_info=True)
+            # 继续循环，不中断
+
+
+async def _reconciliation_loop() -> None:
+    """Redis vs PG 状态对账后台循环（roadmap #24）
+
+    每 600 秒（10 分钟）diff 一次两库状态并自动修复漂移：
+    - Redis 键缺失 → 从 PG 回灌
+    - 字段值漂移 → 以 Redis 为准修正 PG
+
+    循环内部捕获所有异常，保证不会崩溃退出。
+    """
+    from src.core.reconcile import run_reconciliation
+
+    interval = 600
+    logger.info("reconciliation_loop_started_detail", interval=interval)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+
+            redis = runtime.get_redis()
+            if not redis:
+                continue
+
+            await run_reconciliation(redis, db.session)
+        except asyncio.CancelledError:
+            logger.info("reconciliation_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("reconciliation_loop_error", error=str(e), exc_info=True)
             # 继续循环，不中断
 
 
