@@ -8,6 +8,13 @@
 
 ### Added
 
+- **认知产物回流上下文**（20260824 审查 P0）：反思（最近 5 条）与最近日报注入角色决策 Prompt；Person Memory 注入对话 system prompt——此前三类认知产物只写不读，「我记得你」未在模型上下文生效。
+- **记忆生命周期治理**：`memory_retention_loop` 每 24 小时按重要性分级清理老记忆（≤3 级 90 天、4-6 级 180 天，≥7 永久保留），`MEMORY_RETENTION_ENABLED` 可关闭。
+- **Person Memory 热度衰减**：后台每 6 小时将超 14 天未交互的记忆热度减半。
+- **记忆写入去重**：内容归一化后与近 24 小时比对，命中即跳过写入。
+- **计划变更落库**：LLM 决策的 `planChanges` 在 Action 事务内经归属校验写入 plans 表（此前解析后丢弃）。
+- **前端冒烟测试**：vitest 覆盖 queryKeys 契约与认证 store，CI frontend job 接入。
+
 - **多模型备用源**：`LLM_FALLBACK_SOURCES` 可配置多个 OpenAI-compatible 源，调用失败自动切换，失败源冷却 5 分钟后作为末位兜底。
 - **Redis vs PG 状态对账**：后台每 10 分钟 diff 两库并自动修复（键缺失回灌、字段漂移以 Redis 为准修正 PG）；新增指标 `ai_town_reconcile_drift_total` / `ai_town_reconcile_repair_total`。
 - **Prometheus 告警规则**：11 条规则覆盖世界 Tick 停摆、角色 Tick 失败率、LLM 预算/熔断、状态漂移、Redis 断连、5xx 错误率。
@@ -17,11 +24,28 @@
 
 ### Changed
 
+- **记忆混合检索改指数衰减**：`final_score = (sim*0.6 + importance*0.05) * (0.25 + 0.75*exp(-天数/30))`，老记忆得分有 25% 下限永不为负（原线性衰减使 22 天前记忆不可达）。
+- **决策 Prompt 增强**：注入真实场景描述（容量/开放时段/活动）替换空占位；检索 query 拼入时段/情绪/计划标题。
+- **chat_with 升级两轮往返对话**：4 句承接式交流，提升角色间交互深度。
+- **JWT 库替换**：python-jose（维护停滞）→ PyJWT；移除声明后零使用的 passlib[bcrypt]。
+- **镜像 tag 固定**：Redis 统一 `redis:8-alpine`（compose/CI/README 三方对齐）；可观测性 profile 固定 prometheus/jaeger/alloy 版本。
+- **容器自动迁移**：backend 启动前执行 `alembic upgrade head`。
+- **main.py 瘦身**：844 → 约 500 行，三个后台循环下沉 `scheduler/loops.py`，AuthMiddleware 迁入 `auth/middleware.py`；core 层主动分享改为 runtime 回调，消除 core→messaging 反向依赖。
+- **性能**：同场景角色感知复用一次性关系查询（消除 N+1）；工具启用状态增加 5 秒 TTL 缓存；`update_state` 每次写入自增 version；DB 查询耗时接入 Prometheus；Langfuse 埋点附带 OTel trace id。
 - Docker 编排合并为单一 `docker-compose.yml`（原 `docker-compose.infra.yml` / `docker-compose-win.infra.yml` 删除）；PG 统一为 `pgvector/pgvector:pg18` 官方镜像、端口 5433、bind mount `./data/`。
 - 消息分页改为 `(created_at, id)` keyset 双游标，修复同事务批量写入时游标漏数据；Action 时间线查询补 UUIDv7 tiebreaker。
 - `EMBEDDING_DIM` 默认值对齐迁移 0005 的物理列 `halfvec(2048)`（此前默认配置下 embedding 写入必失败）。
 - 场景拥挤度特性接通：角色移动时维护 `world:scene:visitors` 计数（此前恒为 0）。
 - `/api/v1/actions/{id}` 返回真实 Action 字段（scene / allow_dynamic_duration / 全部带符号 cost 字段）。
+
+### Fixed
+
+- 认知回流断流（20260824 审查 P0）：反思 / Person Memory / 日记此前只写不读，现分别注入决策与对话上下文。
+- 时间衰减缺陷（P0）：线性衰减使 22 天前记忆检索得分必为负，改指数衰减后老记忆保有 25% 得分下限。
+- `planChanges` 死功能：LLM 决策的计划变更解析后被丢弃，现事务内落库（带角色归属校验）。
+- 同场景角色感知 N+1 查询（注释宣称批量而实现逐角色开 session）。
+- world_events 去重基线仅存内存，重启后首轮重复写入，现持久化到 Redis。
+- 全仓 ruff 口径 42 错：删除包根遗留探针脚本 `_cycle_probe.py`。
 
 ### Removed
 

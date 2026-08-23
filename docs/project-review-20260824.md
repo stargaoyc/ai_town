@@ -348,3 +348,40 @@ embedding 队列的指数退避熔断、月度分区预创建对真实事故模�
 
 完成 P0 冲刺（约一周内可交付）后，该项目即可兑现其 README 承诺的基本盘；再补上记忆生命周期治理，
 便有能力从「架构示范品」跨入「可长期运行的陪伴产品」。
+
+---
+
+## 十四、修复状态追踪（2026-08-24 修复批）
+
+本报告发布当日已完成一轮修复，逐章对应关系如下（commit 为 main 分支哈希）：
+
+| 章节 | 修复项 | 状态 | Commit |
+|------|--------|------|--------|
+| §三 | 删除 `_cycle_probe.py`（全仓 ruff 42 错来源） | ✅ 已修 | `230f80e` |
+| §三 | core→messaging 反向依赖解耦（runtime 回调） | ✅ 已修 | `230f80e` |
+| §三 | main.py 瘦身（循环下沉 scheduler/loops.py、AuthMiddleware 迁 auth/） | ✅ 已修 | `230f80e` |
+| §三 | API 层直连 repository ×5 | ⏸ 暂缓 | FastAPI 常规模式，重构收益低回归风险高 |
+| §四 | nearby_characters N+1（复用一次性关系查询） | ✅ 已修 | `3bd9665` |
+| §四 | world_events 去重基线持久化 Redis | ✅ 已修 | `3bd9665` |
+| §四 | decision prompt 注入真实场景描述 | ✅ 已修 | `3bd9665` |
+| §四 | chat_with 两轮往返对话 | ✅ 已修 | `3bd9665` |
+| §四 | 对话即时写入对方上下文 | ⏸ 暂缓 | 记忆检索为既定回流路径，避免双写不一致 |
+| §五 | **P0-1 认知回流三断流**（反思/PersonMemory/日记注入） | ✅ 已修 | `4e1da7a` |
+| §五 | **P0-2 时间衰减改指数公式**（25% 下限永不为负） | ✅ 已修 | `4e1da7a` |
+| §五 | planChanges 死功能落库（带归属校验） | ✅ 已修 | `4e1da7a` |
+| §五 | 记忆写入去重 / 检索 query 动态化 | ✅ 已修 | `4e1da7a` |
+| §五 | PersonMemory ORM 化 + preferences 落库 + 热度衰减任务 + 增量合并语义 | ✅ 已修 | `4e1da7a` |
+| §六 | 工具启用状态 5s TTL 缓存 / 死代码字段清理 | ✅ 已修 | `b7b19dd` |
+| §七 | memory_retention_loop 分级清理（HASH 分区膨胀治理） | ✅ 已修 | `6c4e83c` |
+| §七 | update_state 自增 version | ✅ 已修 | `6c4e83c` |
+| §七 | 容器启动自动迁移 / README PgBouncer 失真移除 | ✅ 已修 | `6c4e83c` |
+| §八 | Langfuse 附带 OTel trace id / DB_QUERY_DURATION 接入埋点 | ✅ 已修 | `1bcb8ab` |
+| §九 | python-jose→PyJWT / 移除零使用 passlib | ✅ 已修 | `a202481` |
+| §九 | Redis 版本三方统一 redis:8-alpine / 可观测性 tag 固定 | ✅ 已修 | `a202481` |
+| §九 | README 群聊隐私提示 | ✅ 已修 | `a202481` |
+| §十 | vitest 冒烟测试（queryKeys/auth store）+ CI 接入 | ✅ 已修 | `9a67885` |
+| §十 | 手写类型与生成类型边界标注 | ✅ 已修 | `9a67885`（后端输出命名 schemas 后替换） |
+| 战略级 | 群体动力学 / LangChain 去留 / 冷启动演练脚本 | 📋 规划中 | 见 §十二战略级清单 |
+
+修复后验证基线：`ruff check/format` 全过、`mypy --strict` 163 文件零错误、pytest **355 passed**、
+前端 lint/typecheck 全过 + vitest 6 passed。
