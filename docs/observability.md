@@ -379,7 +379,7 @@ OTel Collector 配置 tail-based sampling，错误与慢请求优先保留。
 
 ## 十一、部署实现（Docker Compose）
 
-> 以下配置已落地，位于 `docker/observability/` 目录与 `docker-compose-win.infra.yml`。
+> 以下配置已落地，位于 `docker/observability/` 目录与根目录 `docker-compose.yml`（`--profile observability`）。
 
 ### 11.1 文件清单
 
@@ -407,11 +407,8 @@ OTel Collector 配置 tail-based sampling，错误与慢请求优先保留。
 ### 11.3 启动方式
 
 ```bash
-# Windows 本地开发
-docker compose -f docker-compose-win.infra.yml up -d
-
-# Linux/Mac
-docker compose -f docker-compose.infra.yml up -d
+# 统一入口（所有平台）
+docker compose --profile observability up -d
 ```
 
 ### 11.4 访问地址

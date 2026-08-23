@@ -209,7 +209,7 @@ ai-town/
 │   │   ├── Dockerfile          # 多阶段构建（pnpm + Vite → Nginx）
 │   │   └── nginx.conf          # SPA 回退 + API 反代 + WebSocket 反代
 ├── docs/                       # 项目文档
-├── docker-compose.yml          # 完整生产部署编排
+├── docker-compose.yml          # 统一编排（基础设施 + 应用 + observability profile）
 ├── .env.example
 └── README.md
 ```

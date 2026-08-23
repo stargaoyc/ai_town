@@ -227,7 +227,7 @@ volumes:
   prometheus_data:
 ```
 
-> **实际配置文件**：可观测性组件的完整配置位于 `docker/observability/` 目录，包含 Prometheus 采集规则、Loki 存储配置、Alloy 采集管道、Grafana 数据源与 3 个预置 Dashboard（Overview / LLM / Character Tick）。本地开发使用 `docker-compose-win.infra.yml`，生产使用 `docker-compose.infra.yml`。详见 [可观测性设计](observability.md#十二部署实现docker-compose)。
+> **实际配置文件**：可观测性组件的完整配置位于 `docker/observability/` 目录，包含 Prometheus 采集规则、Loki 存储配置、Alloy 采集管道、Grafana 数据源与 3 个预置 Dashboard（Overview / LLM / Character Tick）。统一使用根目录 `docker-compose.yml`（可观测性组件通过 `--profile observability` 启用）。详见 [可观测性设计](observability.md#十二部署实现docker-compose)。
 
 ---
 

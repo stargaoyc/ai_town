@@ -202,8 +202,7 @@ docker build -t aitown/postgres docker/postgres/
 | 文件                           | 用途                                       |
 | ------------------------------ | ------------------------------------------ |
 | `docker-compose.yml`           | 完整生产部署（基础设施 + 应用 + 可观测性） |
-| `docker-compose.infra.yml`     | 仅基础设施（本地开发用）                   |
-| `docker-compose-win.infra.yml` | Windows 基础设施（路径兼容）               |
+| `docker-compose.yml`           | 唯一编排文件（分层启动：基础设施 / 应用 / observability profile） |
 
 ### 4.2 分层启动（Profile 机制）
 
@@ -320,7 +319,7 @@ backend:
 
 ```bash
 # 使用基础设施编排 + 本地运行应用
-docker compose -f docker-compose.infra.yml up -d
+docker compose up -d postgres redis
 
 # 本地启动后端（热重载）
 cd packages/backend

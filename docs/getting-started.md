@@ -435,7 +435,7 @@ pnpm --version
 
 ```powershell
 # 在项目根目录执行
-docker compose -f docker-compose.infra.yml up -d postgres
+docker compose up -d postgres
 ```
 
 这会启动一个 PostgreSQL 18 容器，已安装 pgvector + pg_trgm，端口 5432，用户名 `ai_town`，密码 `password`，数据库名 `ai_town`。
@@ -589,7 +589,7 @@ SELECT show_trgm('hello');
 docker run -d --name aitown-redis -p 6379:6379 redis:8.0-alpine
 
 # 或使用项目的 docker-compose
-docker compose -f docker-compose.infra.yml up -d redis
+docker compose up -d redis
 ```
 
 #### 3.3.2 验证连接
@@ -705,8 +705,7 @@ aitown/
 │   └── observability/           # Prometheus / Loki / Grafana 配置
 ├── docs/                        # 所有设计文档
 ├── .env.example                 # 环境变量模板
-├── docker-compose.infra.yml     # 基础设施（PG/Redis/监控）
-├── docker-compose-win.infra.yml # Windows 版基础设施
+├── docker-compose.yml          # 统一编排（基础设施 + 应用 + observability profile）
 └── README.md
 ```
 
@@ -1065,7 +1064,7 @@ curl http://localhost:8000/api/v1/admin/status `
 redis_connection_failed: Error 111 connecting to localhost:6379
 ```
 
-解决：启动 Redis（`docker compose -f docker-compose.infra.yml up -d redis`）。
+解决：启动 Redis（`docker compose up -d redis`）。
 
 **错误 2：数据库连接失败**
 
@@ -1688,7 +1687,7 @@ curl "http://localhost:8000/api/v1/characters/0190a3b8-.../plans" `
 项目已经预置了完整的可观测性栈，一键启动：
 
 ```powershell
-docker compose -f docker-compose.infra.yml up -d prometheus loki jaeger alloy grafana
+docker compose --profile observability up -d prometheus loki jaeger alloy grafana
 ```
 
 这会启动：

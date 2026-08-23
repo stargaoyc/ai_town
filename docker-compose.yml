@@ -1,15 +1,16 @@
-# docker-compose.yml - AI Town 完整生产部署编排
-# 包含：基础设施（PG/Redis）+ 应用（后端/前端）+ 可观测性（Prometheus/Grafana/Loki/Jaeger）
+# docker-compose.yml - AI Town 统一编排（唯一真相源）
+#
+# 基础设施配置与 docker-compose-win.infra.yml（已合并删除）对齐：
+# pgvector/pgvector:pg18 官方镜像（迁移链依赖 PG18 内建 uuidv7()）、
+# bind mount ./data/*、端口 PG=5433。
 #
 # 使用方法：
 #   1. 复制 .env.example 为 .env 并填写配置
-#   2. docker compose up -d
-#   3. 访问 http://localhost （前端）/ http://localhost:8000/docs （后端 API）
+#   2. docker compose up -d              # 全栈（PG/Redis/后端/前端）
 #
 # 分层启动：
-#   docker compose up -d postgres redis                # 仅基础设施
-#   docker compose up -d backend frontend               # 加应用
-#   docker compose --profile observability up -d        # 加可观测性
+#   docker compose up -d postgres redis   # 仅基础设施（本地开发）
+#   docker compose --profile observability up -d   # 加可观测性
 
 services:
   # ============================================================
@@ -17,36 +18,40 @@ services:
   # ============================================================
 
   postgres:
-    build:
-      context: ./docker/postgres
-      dockerfile: Dockerfile
+    image: pgvector/pgvector:pg18
     container_name: aitown-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ai_town
-      POSTGRES_USER: ${DB_USER:-ai_town}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_USER: ai_town
+      POSTGRES_PASSWORD: password
+      TZ: Asia/Shanghai
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ai_town}"]
+      test: ["CMD-SHELL", "pg_isready -U ai_town"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [aitown-net]
+    networks:
+      - aitown-net
 
   redis:
-    image: redis:8.0-alpine
+    image: redis:alpine # 使用稳定的 Alpine 版本，避免 8.0-alpine 拉取失败
     container_name: aitown-redis
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    networks: [aitown-net]
+      - ./data/redis:/data
+    command: redis-server --appendonly yes # 开启 AOF 持久化
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - aitown-net
 
   # ============================================================
   # 应用层
@@ -58,10 +63,13 @@ services:
       dockerfile: Dockerfile
     container_name: aitown-backend
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - path: .env # 根目录 .env（生产部署）；本地仅起基础设施时可以没有
+        required: false
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-ai_town}:${DB_PASSWORD:-password}@postgres:5432/ai_town
+      DATABASE_URL: postgresql+asyncpg://ai_town:password@postgres:5432/ai_town
       REDIS_URL: redis://redis:6379/0
+      TZ: Asia/Shanghai
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,7 +79,8 @@ services:
       - "8000:8000"
     volumes:
       - ./data/logs:/app/data/logs
-    networks: [aitown-net]
+    networks:
+      - aitown-net
 
   frontend:
     build:
@@ -83,11 +92,8 @@ services:
       - backend
     ports:
       - "80:80"
-    networks: [aitown-net]
-
-  # ============================================================
-  # 工具层已内联到后端进程（src/tools/），无需独立容器
-  # ============================================================
+    networks:
+      - aitown-net
 
   # ============================================================
   # 可观测性层（通过 --profile observability 启用）
@@ -99,10 +105,13 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
+      - ./data/prometheus:/prometheus
     ports:
       - "9090:9090"
-    networks: [aitown-net]
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - aitown-net
     profiles: [observability]
 
   loki:
@@ -111,23 +120,28 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/observability/loki-config.yml:/etc/loki/local-config.yaml:ro
-      - loki_data:/loki
+      - ./data/loki:/loki
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
-    networks: [aitown-net]
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - aitown-net
     profiles: [observability]
 
   jaeger:
-    image: jaegertracing/all-in-one:1.60
+    image: jaegertracing/all-in-one:latest
     container_name: aitown-jaeger
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+      TZ: Asia/Shanghai
     ports:
-      - "16686:16686"
-      - "4318:4318"
-    networks: [aitown-net]
+      - "16686:16686" # Jaeger UI
+      - "14318:4318" # OTLP HTTP
+    networks:
+      - aitown-net
     profiles: [observability]
 
   alloy:
@@ -141,9 +155,12 @@ services:
     command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     ports:
       - "12345:12345"
+    environment:
+      TZ: Asia/Shanghai
     depends_on:
       - loki
-    networks: [aitown-net]
+    networks:
+      - aitown-net
     profiles: [observability]
 
   grafana:
@@ -151,29 +168,25 @@ services:
     container_name: aitown-grafana
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+      TZ: Asia/Shanghai
     volumes:
       - ./docker/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ./docker/observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana_data:/var/lib/grafana
+      - ./data/grafana:/var/lib/grafana
     ports:
       - "3000:3000"
     depends_on:
       - prometheus
       - loki
       - jaeger
-    networks: [aitown-net]
+    networks:
+      - aitown-net
     profiles: [observability]
-
-volumes:
-  pg_data:
-  redis_data:
-  prometheus_data:
-  loki_data:
-  grafana_data:
 
 networks:
   aitown-net:
