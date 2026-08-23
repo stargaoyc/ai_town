@@ -29,9 +29,14 @@ _CHARACTER_ID = UUID("01964000-0000-7000-8000-000000000001")
 class FakeRedis:
     def __init__(self) -> None:
         self.hset_calls: list[tuple[str, dict[str, Any]]] = []
+        self.hincrby_calls: list[tuple[str, str, int]] = []
 
     async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self.hset_calls.append((key, mapping or {}))
+
+    async def hincrby(self, key: str, field: str, amount: int = 1) -> int:
+        self.hincrby_calls.append((key, field, amount))
+        return amount
 
 
 class FakeSession:
@@ -179,7 +184,7 @@ async def test_move_to_unknown_scene_falls_back_to_wait(
 async def test_move_success_uses_matrix_duration_and_updates_location(
     monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
 ) -> None:
-    engine, _ = _make_engine(_make_registry())
+    engine, redis = _make_engine(_make_registry())
     fake_movement = FakeMovementSystem(MovementResult(success=True, path=["home", "cafe"], total_minutes=12))
     monkeypatch.setattr("src.runtime.get_movement_system", lambda: fake_movement)
 
@@ -193,6 +198,9 @@ async def test_move_success_uses_matrix_duration_and_updates_location(
     assert record.duration_minutes == 12
     update = persistence["char_repo"].updates[-1]
     assert update["location"] == "cafe"
+    # 位置变化应维护场景在场人数：旧场景 -1、新场景 +1
+    assert ("world:scene:visitors", "home", -1) in redis.hincrby_calls
+    assert ("world:scene:visitors", "cafe", 1) in redis.hincrby_calls
 
 
 async def test_llm_duration_ignored_without_allow_dynamic_duration(

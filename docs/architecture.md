@@ -33,7 +33,7 @@
 | 多段回复     | 长回复按段落拆分为多条消息依次发送（0.6s 间隔），模拟真人打字节奏，提升二次元陪伴感                                              |
 | 可插拔能力   | 功能工具（商店、知识库、社交、世界查询等）以进程内 async 函数实现，通过 Redis hash `tools:enabled` 动态启用/禁用，无需重启       |
 | 全链路可观测 | 每个决策周期可追踪、可审计、可调试（Prometheus 指标 + structlog 日志 + Langfuse 链路）                                           |
-| 多端触达     | 支持 Web Dashboard、QQ（OneBot v11/v12）、飞书（Lark）、开放 API 等多渠道交互                                                    |
+| 多端触达     | 支持 Web Dashboard、QQ（OneBot v11/v12）、开放 API 等多渠道交互                                                    |
 
 ### 1.3 设计原则
 
@@ -56,9 +56,9 @@
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        用户接入层 (Access Layer)                            │
-│   Web Dashboard  │  QQ (OneBot v11/v12)  │  飞书 (Lark)  │  开放 API       │
-│   /ws/chat/{cid} │  /ws/onebot/v12       │   (规划中)    │  /api/v1/*      │
-│   WebSocketManager│ OneBotAdapter         │  LarkAdapter │  JWT + API Key  │
+│   Web Dashboard  │  QQ (OneBot v11/v12)  │  开放 API                      │
+│   /ws/chat/{cid} │  /ws/onebot/v12       │                │  /api/v1/*      │
+│   WebSocketManager│ OneBotAdapter         │               │  JWT + API Key  │
 └──────────────────────────────────┬──────────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼──────────────────────────────────────────┐
@@ -126,7 +126,7 @@
 
 | 层           | 职责                                                       | 关键组件                                                                                    | 代码位置                                                               |
 | ------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 用户接入层   | 多平台消息收发与协议适配                                   | `WebSocketManager`、`OneBotAdapter`、`LarkAdapter`                                          | `src/api/`（REST 路由）、`src/messaging/websocket.py`、`src/adapters/` |
+| 用户接入层   | 多平台消息收发与协议适配                                   | `WebSocketManager`、`OneBotAdapter`                                                         | `src/api/`（REST 路由）、`src/messaging/websocket.py`、`src/adapters/` |
 | 消息服务层   | 消息标准化、会话上下文、回复生成、主动推送、群聊智能回复   | `MessageService`、`ProactiveSharingService`、`PromptGuard`                                  | `src/messaging/`                                                       |
 | 世界引擎层   | 全局状态推进、角色行为闭环、多智能体调度、演化器链         | `WorldEngine`、`CharacterTickEngine`、`default_evolutions()`                                | `src/core/`                                                            |
 | Agent 能力层 | 记忆/反思/规划/决策/社交/本地工具                          | `EpisodeService`、`ReflectionService`、`RetrievalService`、`ActionRegistry`、`ToolRegistry` | `src/memory/`、`src/actions/`、`src/tools/`                            |

@@ -948,6 +948,16 @@ class CharacterTickEngine:
                 mapping=encode_state_mapping(new_state),  # type: ignore[arg-type]
             )
 
+            # 位置变化时维护场景在场人数（SceneEvolution 拥挤度数据源）
+            old_location = context["state"].get("location")
+            new_location = new_state.get("location")
+            if decision.action == "move" and new_location and old_location != new_location:
+                from src.core.world.evolutions.scene_evolution import VISITORS_KEY
+
+                if old_location:
+                    await self.redis.hincrby(VISITORS_KEY, str(old_location), -1)
+                await self.redis.hincrby(VISITORS_KEY, str(new_location), 1)
+
             from src.observability.metrics import ACTION_EXECUTION_DURATION, ACTION_EXECUTION_TOTAL
 
             ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="success").inc()
