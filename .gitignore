@@ -39,3 +39,10 @@ dist-ssr
 *.sln
 *.sw?
 *.tar.gz
+# TypeScript 增量构建缓存
+*.tsbuildinfo
+
+# 本地遗留：教程草稿（与 docs/ 重叠，未定去留前不入库）
+tmp/
+# 历史运行时数据（当前 compose 已无 minio 服务）
+data/minio/

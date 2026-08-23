@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from redis.asyncio import Redis
@@ -18,14 +19,64 @@ logger = get_logger(__name__)
 # 事件状态在 Redis 中的 Key
 EVENTS_KEY = "world:state:events"
 
+
 # 节日日历：(month, day) → 事件定义（name / 持续天数 / 描述）
-FESTIVAL_CALENDAR: dict[tuple[int, int], dict[str, Any]] = {
-    (1, 1): {"name": "新年祭", "duration_days": 1, "description": "新年伊始，小镇共庆。"},
-    (4, 5): {"name": "樱花祭", "duration_days": 3, "description": "樱花盛放，镇民齐聚公园赏花。"},
-    (7, 15): {"name": "夏日祭", "duration_days": 2, "description": "夏日烟花与捞金鱼。"},
-    (10, 31): {"name": "万圣节", "duration_days": 1, "description": "南瓜灯与变装巡游。"},
-    (12, 25): {"name": "圣诞节", "duration_days": 3, "description": "圣诞集市与交换礼物。"},
-}
+def _load_festival_calendar() -> dict[tuple[int, int], dict[str, Any]]:
+    """从 configs/events.yaml 加载节日日历（C-2：唯一真相源 + 启动校验）
+
+    校验项：
+    - date 必须是 MM-DD 格式
+    - duration_days 为正整数
+    - main_scenes / activities 与 scenes.yaml 词表交叉校验在 town loader 已覆盖场景存在性；
+      此处校验结构完整性（id/name/date 必填）
+
+    Returns:
+        {(month, day): {name, duration_days, description}} 日历
+    """
+    import yaml as _yaml
+
+    # 布局自适应：本地仓库（backend/packages/aitown 多层）与容器（/app/src/...）
+    # 的 __file__ 深度不同，向上逐级找 configs/events.yaml
+    here = Path(__file__).resolve()
+    calendar_path: Path | None = None
+    for parent in here.parents:
+        candidate = parent / "configs" / "events.yaml"
+        if candidate.is_file():
+            calendar_path = candidate
+            break
+    if calendar_path is None:
+        raise FileNotFoundError(
+            f"configs/events.yaml not found in any parent of {here}; 容器部署需挂载 ./configs:/app/configs"
+        )
+    with open(calendar_path, encoding="utf-8") as f:
+        data = _yaml.safe_load(f) or {}
+
+    calendar: dict[tuple[int, int], dict[str, Any]] = {}
+    for entry in data.get("events", []):
+        event_id = entry.get("id")
+        name = entry.get("name")
+        raw_date = str(entry.get("date", ""))
+        try:
+            month, day = (int(x) for x in raw_date.split("-"))
+            assert 1 <= month <= 12 and 1 <= day <= 31
+        except (ValueError, AssertionError) as e:
+            raise ValueError(f"events.yaml 节日 {event_id!r} 的 date 非法: {raw_date!r}") from e
+        duration = int(entry.get("duration_days", 1))
+        if duration < 1:
+            raise ValueError(f"events.yaml 节日 {event_id!r} 的 duration_days 必须为正整数: {duration}")
+
+        calendar[(month, day)] = {
+            "name": name or event_id,
+            "duration_days": duration,
+            "description": entry.get("description", ""),
+        }
+
+    logger.info("festival_calendar_loaded", source="configs/events.yaml", events=len(calendar))
+    return calendar
+
+
+# 进程级缓存：模块导入时加载一次，配置损坏即启动失败（fail-fast）
+FESTIVAL_CALENDAR: dict[tuple[int, int], dict[str, Any]] = _load_festival_calendar()
 
 
 class EventEvolution(WorldEvolution):

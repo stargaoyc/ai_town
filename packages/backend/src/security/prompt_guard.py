@@ -114,11 +114,12 @@ class PromptGuard:
 
         处理步骤：
         1. 移除控制字符（\\x00-\\x1f 除 \\n \\r \\t）
-        2. 移除注入模式匹配到的内容
-        3. 转义 HTML 特殊字符（< > &）
-        4. 限制长度（截断到 max_length）
+        2. 转义 HTML 特殊字符（< > &）
+        3. 限制长度（截断到 max_length）
 
-        不会破坏正常的中文/英文文本。
+        S-6 策略统一：注入「检测→拒绝」是 check_injection 的职责（调用方在
+        sanitize 前已拦截）；本函数只做无害化清理，不按注入模式删除片段——
+        删除会让句子语义错乱后再喂给 LLM，反而制造新的不可预期输入。
 
         Args:
             text: 原始用户输入
@@ -132,17 +133,10 @@ class PromptGuard:
         # 1. 移除控制字符（保留 \n \r \t）
         sanitized = _CONTROL_CHARS_RE.sub("", text)
 
-        # 2. 移除注入模式匹配到的内容
-        # 注意：必须在 HTML 转义之前执行，否则 <script 会被转义为 &lt;script 导致漏检
-        for desc, pattern in self._compiled_patterns:
-            if pattern.search(sanitized):
-                logger.info("injection_pattern_removed", pattern=desc)
-            sanitized = pattern.sub("", sanitized)
-
-        # 3. 转义 HTML 特殊字符（仅 < > &，不转义引号以保留正常文本可读性）
+        # 2. 转义 HTML 特殊字符（仅 < > &，不转义引号以保留正常文本可读性）
         sanitized = html.escape(sanitized, quote=False)
 
-        # 4. 限制长度（按字符截断）
+        # 3. 限制长度（按字符截断）
         if len(sanitized) > self.max_length:
             sanitized = sanitized[: self.max_length]
 

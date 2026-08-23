@@ -33,6 +33,16 @@ REQUIRED_TEMPLATES = frozenset(
 )
 
 
+def _find_prompts_dir() -> Path:
+    """向上逐级查找 configs/prompts 目录（本地仓库与容器布局深度不同）"""
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "configs" / "prompts"
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError(f"configs/prompts not found in any parent of {here}; 容器部署需挂载 ./configs:/app/configs")
+
+
 class PromptTemplates:
     """Prompt 模板管理器"""
 
@@ -42,7 +52,7 @@ class PromptTemplates:
         Args:
             config_dir: 配置文件目录，默认为 configs/prompts
         """
-        self.config_dir = config_dir or Path(__file__).resolve().parents[4] / "configs" / "prompts"
+        self.config_dir = config_dir or _find_prompts_dir()
         self.templates: dict[str, str] = {}
         self.system_templates: dict[str, str] = {}
         self._load_templates()

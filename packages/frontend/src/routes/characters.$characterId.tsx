@@ -20,6 +20,7 @@ import {
   useNearbyCharacters,
 } from "@/lib/queries";
 import type { Message } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 export const Route = createFileRoute("/characters/$characterId")({
   component: CharacterDetailPage,
@@ -45,6 +46,8 @@ function cleanCQCodes(text: string): string {
 
 function CharacterDetailPage() {
   const { characterId } = Route.useParams();
+  // F-2：用户标识来自登录态，不再硬编码 web_user
+  const currentUserId = useAuthStore((s) => s.userId);
   const { data: character, isLoading, error } = useCharacter(characterId);
   const { data: memoriesData } = useMemories(characterId);
   const { data: messagesData } = useMessages(characterId);
@@ -78,7 +81,7 @@ function CharacterDetailPage() {
     setOptimisticMessages((prev) => [...prev, optimisticMsg]);
 
     sendMessage.mutate(
-      { characterId, userId: "web_user", content },
+      { characterId, userId: currentUserId ?? "web_user", content },
       {
         onSuccess: () => {
           // 移除乐观消息，服务端会通过 query invalidation 返回完整列表（含角色回复）

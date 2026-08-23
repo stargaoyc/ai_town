@@ -544,7 +544,7 @@ class OneBotAdapter:
                 return
             else:
                 # 智能回复模式：读取所有群消息，决策是否回复
-                should, reason = await self._should_reply_in_group(raw_message, user_id, onebot_ws)
+                should, reason = await self._should_reply_in_group(raw_message, user_id, onebot_ws, group_id=group_id)
                 if not should:
                     logger.info(
                         "onebot_group_smart_skip",
@@ -680,19 +680,24 @@ class OneBotAdapter:
             logger.debug("onebot_meta_event", detail_type=detail_type)
 
     async def _should_reply_in_group(
-        self, message: str, sender_user_id: str | int | None, onebot_ws: WebSocket
+        self,
+        message: str,
+        sender_user_id: str | int | None,
+        onebot_ws: WebSocket,
+        group_id: str | int | None = None,
     ) -> tuple[bool, str]:
         """群聊智能回复决策 - 调用 MessageService.should_reply_in_group
 
         流程：
         1. 获取 LLM 全局实例
-        2. 解析角色 ID 和角色名
+        2. 解析角色 ID 和角色名（A-6：判定与回复必须解析到同一角色）
         3. 调用 MessageService.should_reply_in_group 判断是否回复
 
         Args:
             message: 群聊消息纯文本
             sender_user_id: 发送者 QQ 号
             onebot_ws: OneBot WebSocket 连接
+            group_id: 群 ID（群-角色映射的键；缺省时仅默认角色兜底）
 
         Returns:
             (should_reply, reason)
@@ -701,8 +706,9 @@ class OneBotAdapter:
         if llm_client is None or prompts_obj is None:
             return False, "llm_not_ready"
 
-        # 解析角色 ID（群聊场景）
-        character_id = _resolve_character_id(is_group=True, group_id=None)
+        # 解析角色 ID（群聊场景）：必须带 group_id，否则群-角色映射永远失效，
+        # 判定角色与实际回复角色可能不一致（A-6）
+        character_id = _resolve_character_id(is_group=True, group_id=group_id)
         if character_id is None:
             return False, "character_not_configured"
 

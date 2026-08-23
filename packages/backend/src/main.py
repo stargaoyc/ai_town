@@ -118,8 +118,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("ai_town_backend_starting")
 
-    # 安全检查：默认密码警告
+    # 安全检查（S-3）：默认弱口令在生产模式（ENVIRONMENT=production）下 fail-fast，
+    # 开发模式仅告警
     if settings.admin_password == "admin123":
+        if settings.environment == "production":
+            logger.error(
+                "insecure_default_password_blocked",
+                message="ADMIN_PASSWORD 仍为默认值 'admin123'，生产模式禁止启动；请在 .env 中设置强密码",
+            )
+            raise RuntimeError("ADMIN_PASSWORD must be changed from the default in production mode")
         logger.warning(
             "insecure_default_password",
             message="ADMIN_PASSWORD 仍为默认值 'admin123'，请在 .env 中修改为强密码",
@@ -374,6 +381,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     flush_langfuse()
 
+    # 统一取消散落的 fire-and-forget 任务（P-2：注册表持有强引用，
+    # lifespan 在 yield 前抛异常时也能被本段清理）
+    from src.core.background import shutdown_background_tasks
+
+    await shutdown_background_tasks()
+
     # 停止 OneBot 适配器
     try:
         await onebot_adapter.stop()
@@ -432,6 +445,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("redis_connection_closed")
 
 
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """判断异常是否为 LLM 供应商限流（429）
+
+    覆盖两条路径：
+    - openai SDK 的 APIStatusError（含 RateLimitError）携带 status_code
+    - 其他异常回退到类型名匹配 RateLimitError（LangChain 包装层）
+    """
+    from openai import APIStatusError
+
+    if isinstance(exc, APIStatusError):
+        return exc.status_code == 429
+    return type(exc).__name__ == "RateLimitError"
+
+
 async def _character_tick_loop() -> None:
     """Character Tick 后台循环
 
@@ -484,8 +511,10 @@ async def _character_tick_loop() -> None:
                 from src.observability.metrics import CHARACTER_TICK_ERRORS
 
                 CHARACTER_TICK_ERRORS.labels(character_id=str(char.id)).inc()
-                # 检测 LLM 限流 (429)，本批次结束后退避
-                if "429" in error_str or "RateLimitError" in error_str:
+                # 检测 LLM 限流 (429)，本批次结束后退避。
+                # P-6：按异常类型/状态码判定，不用字符串匹配——错误文本中
+                # 碰巧含 "429"（QQ 号、消息内容）会误判并中止整个批次
+                if _is_rate_limit_error(exc):
                     logger.warning(
                         "character_tick_rate_limited",
                         character_id=str(char.id),
@@ -655,14 +684,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 中间件
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS 中间件（S-2）：allow_credentials=True 与通配符 * 组合在浏览器规范下无效，
+# 等于放弃跨域防护。来源必须显式配置；未配置时仅放行同源（空列表）。
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    logger.warning("cors_origins_not_configured", hint="设置 CORS_ORIGINS 为前端域名列表以启用跨域")
 
 
 # 鉴权中间件（ASGI 层面，兼容 WebSocket）

@@ -4,3430 +4,3430 @@
  */
 
 export interface paths {
-    "/api/v1/notifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Notifications
-         * @description 获取通知列表
-         *
-         *     Args:
-         *         limit: 返回数量（最大 200）
-         *         unread_only: 仅返回未读通知
-         *
-         *     Returns:
-         *         通知列表（按时间倒序，最新的在前）
-         */
-        get: operations["list_notifications_api_v1_notifications_get"];
-        put?: never;
-        /**
-         * Create Notification
-         * @description 手动创建通知（前端"模拟通知"按钮调用）
-         *
-         *     Body:
-         *         type: 通知类型 (share/system/character/qq)
-         *         title: 标题
-         *         content: 内容
-         */
-        post: operations["create_notification_api_v1_notifications_post"];
-        /**
-         * Clear All Notifications
-         * @description 清除所有通知
-         */
-        delete: operations["clear_all_notifications_api_v1_notifications_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/api/v1/notifications": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/notifications/{notif_id}/read": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Mark Notification Read
-         * @description 标记单条通知为已读
-         */
-        put: operations["mark_notification_read_api_v1_notifications__notif_id__read_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Notifications
+     * @description 获取通知列表
+     *
+     *     Args:
+     *         limit: 返回数量（最大 200）
+     *         unread_only: 仅返回未读通知
+     *
+     *     Returns:
+     *         通知列表（按时间倒序，最新的在前）
+     */
+    get: operations["list_notifications_api_v1_notifications_get"];
+    put?: never;
+    /**
+     * Create Notification
+     * @description 手动创建通知（前端"模拟通知"按钮调用）
+     *
+     *     Body:
+     *         type: 通知类型 (share/system/character/qq)
+     *         title: 标题
+     *         content: 内容
+     */
+    post: operations["create_notification_api_v1_notifications_post"];
+    /**
+     * Clear All Notifications
+     * @description 清除所有通知
+     */
+    delete: operations["clear_all_notifications_api_v1_notifications_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/notifications/{notif_id}/read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/notifications/read-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Mark All Notifications Read
-         * @description 标记所有通知为已读
-         */
-        put: operations["mark_all_notifications_read_api_v1_notifications_read_all_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    /**
+     * Mark Notification Read
+     * @description 标记单条通知为已读
+     */
+    put: operations["mark_notification_read_api_v1_notifications__notif_id__read_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/notifications/read-all": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/notifications/{notif_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Notification
-         * @description 删除单条通知
-         */
-        delete: operations["delete_notification_api_v1_notifications__notif_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    /**
+     * Mark All Notifications Read
+     * @description 标记所有通知为已读
+     */
+    put: operations["mark_all_notifications_read_api_v1_notifications_read_all_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/notifications/{notif_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/tools/servers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Tool Servers
-         * @description 列出所有工具命名空间
-         *
-         *     Returns:
-         *         命名空间列表（含描述、工具清单、启用状态）
-         */
-        get: operations["list_tool_servers_api_v1_tools_servers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete Notification
+     * @description 删除单条通知
+     */
+    delete: operations["delete_notification_api_v1_notifications__notif_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tools/servers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/tools/servers/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Tool Servers Health
-         * @description 检查所有工具命名空间的健康状态
-         *
-         *     本地工具为进程内调用，始终在线。
-         */
-        get: operations["check_tool_servers_health_api_v1_tools_servers_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Tool Servers
+     * @description 列出所有工具命名空间
+     *
+     *     Returns:
+     *         命名空间列表（含描述、工具清单、启用状态）
+     */
+    get: operations["list_tool_servers_api_v1_tools_servers_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tools/servers/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/tools/servers/{server_name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tool Server Detail
-         * @description 获取单个命名空间详情
-         *
-         *     Args:
-         *         server_name: 命名空间名称（如 "shop"）
-         */
-        get: operations["get_tool_server_detail_api_v1_tools_servers__server_name__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Check Tool Servers Health
+     * @description 检查所有工具命名空间的健康状态
+     *
+     *     本地工具为进程内调用，始终在线。
+     */
+    get: operations["check_tool_servers_health_api_v1_tools_servers_health_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tools/servers/{server_name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/tools/tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List All Tools
-         * @description 列出所有已启用工具
-         *
-         *     Returns:
-         *         所有可用工具的扁平列表（仅含已启用工具）
-         */
-        get: operations["list_all_tools_api_v1_tools_tools_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Tool Server Detail
+     * @description 获取单个命名空间详情
+     *
+     *     Args:
+     *         server_name: 命名空间名称（如 "shop"）
+     */
+    get: operations["get_tool_server_detail_api_v1_tools_servers__server_name__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tools/tools": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/tools/servers/{server_name}/enabled": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Toggle Tool Server
-         * @description 启用/禁用整个命名空间的所有工具
-         *
-         *     状态持久化到 Redis hash `tools:enabled`，Character Tick 决策时
-         *     会读取该状态过滤可用工具列表。
-         *
-         *     Args:
-         *         server_name: 命名空间名称
-         *         payload: {"enabled": true|false}
-         *
-         *     Returns:
-         *         更新后的启用状态
-         */
-        put: operations["toggle_tool_server_api_v1_tools_servers__server_name__enabled_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List All Tools
+     * @description 列出所有已启用工具
+     *
+     *     Returns:
+     *         所有可用工具的扁平列表（仅含已启用工具）
+     */
+    get: operations["list_all_tools_api_v1_tools_tools_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tools/servers/{server_name}/enabled": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/tools/tools/{tool_name}/invoke": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Invoke Tool
-         * @description 调用本地工具（测试用）
-         *
-         *     Args:
-         *         tool_name: 工具全名（如 "shop.buy_item"）或简短名（如 "buy_item"）
-         *         server_name: 可选命名空间（用于消歧）
-         *         args: 工具参数（JSON body）
-         *
-         *     Returns:
-         *         工具执行结果
-         */
-        post: operations["invoke_tool_api_v1_tools_tools__tool_name__invoke_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    /**
+     * Toggle Tool Server
+     * @description 启用/禁用整个命名空间的所有工具
+     *
+     *     状态持久化到 Redis hash `tools:enabled`，Character Tick 决策时
+     *     会读取该状态过滤可用工具列表。
+     *
+     *     Args:
+     *         server_name: 命名空间名称
+     *         payload: {"enabled": true|false}
+     *
+     *     Returns:
+     *         更新后的启用状态
+     */
+    put: operations["toggle_tool_server_api_v1_tools_servers__server_name__enabled_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tools/tools/{tool_name}/invoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/diaries": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Diaries
-         * @description 获取角色日记列表
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *         period: 周期过滤（day/week/month/year）
-         *         limit: 返回数量上限
-         */
-        get: operations["list_diaries_api_v1_characters__character_id__diaries_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Invoke Tool
+     * @description 调用本地工具（测试用）
+     *
+     *     Args:
+     *         tool_name: 工具全名（如 "shop.buy_item"）或简短名（如 "buy_item"）
+     *         server_name: 可选命名空间（用于消歧）
+     *         args: 工具参数（JSON body）
+     *
+     *     Returns:
+     *         工具执行结果
+     */
+    post: operations["invoke_tool_api_v1_tools_tools__tool_name__invoke_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/diaries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/diaries/generate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate Diary
-         * @description 为角色生成指定周期的日记
-         *
-         *     需 admin/operator 权限。
-         */
-        post: operations["generate_diary_api_v1_characters__character_id__diaries_generate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Diaries
+     * @description 获取角色日记列表
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *         period: 周期过滤（day/week/month/year）
+     *         limit: 返回数量上限
+     */
+    get: operations["list_diaries_api_v1_characters__character_id__diaries_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/diaries/generate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/person-memory": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Person Memory
-         * @description 获取角色对某用户的记忆
-         */
-        get: operations["get_person_memory_api_v1_characters__character_id__person_memory_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Generate Diary
+     * @description 为角色生成指定周期的日记
+     *
+     *     需 admin/operator 权限。
+     */
+    post: operations["generate_diary_api_v1_characters__character_id__diaries_generate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/person-memory": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/person-memory/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Person Memories
-         * @description 获取角色对所有用户的记忆列表（按热度倒序）
-         */
-        get: operations["list_person_memories_api_v1_characters__character_id__person_memory_list_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Person Memory
+     * @description 获取角色对某用户的记忆
+     */
+    get: operations["get_person_memory_api_v1_characters__character_id__person_memory_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/person-memory/list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/memories/{character_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Memories
-         * @description 获取角色记忆
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *         limit: 返回数量限制（默认 20）
-         *
-         *     Returns:
-         *         角色最近的记忆片段
-         */
-        get: operations["get_memories_api_v1_memories__character_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Person Memories
+     * @description 获取角色对所有用户的记忆列表（按热度倒序）
+     */
+    get: operations["list_person_memories_api_v1_characters__character_id__person_memory_list_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{character_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health
-         * @description 健康检查
-         *
-         *     返回服务状态、各模块运行状态、World Tick ID。
-         *     必须模块失败时 status 为 "degraded"。
-         */
-        get: operations["health_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Memories
+     * @description 获取角色记忆
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *         limit: 返回数量限制（默认 20）
+     *
+     *     Returns:
+     *         角色最近的记忆片段
+     */
+    get: operations["get_memories_api_v1_memories__character_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Login
-         * @description 登录接口 - 账号密码换取 JWT Token
-         *
-         *     请求体: {"username": "admin", "password": "admin123"}
-         *     返回: {"token": "jwt_token", "user_id": "admin", "expires_in": 86400}
-         */
-        post: operations["login_api_v1_auth_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Health
+     * @description 健康检查
+     *
+     *     返回服务状态、各模块运行状态、World Tick ID。
+     *     必须模块失败时 status 为 "degraded"。
+     */
+    get: operations["health_health_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/modules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Modules
-         * @description 列出所有系统模块及其运行状态
-         *
-         *     Returns:
-         *         模块列表（含类型、状态、依赖）
-         */
-        get: operations["list_modules_api_v1_modules_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Login
+     * @description 登录接口 - 账号密码换取 JWT Token
+     *
+     *     请求体: {"username": "admin", "password": "admin123"}
+     *     返回: {"token": "jwt_token", "user_id": "admin", "expires_in": 86400}
+     */
+    post: operations["login_api_v1_auth_login_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/modules": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/duration/calculate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Calculate Duration
-         * @description 计算动态耗时
-         *
-         *     Args:
-         *         base_duration: 基础耗时（分钟）
-         *         weather: 天气
-         *         is_outdoor: 是否户外
-         *         crowdedness: 拥挤度 0-1
-         *         stamina: 体力 0-100
-         *         mood: 情绪
-         */
-        get: operations["calculate_duration_api_v1_duration_calculate_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Modules
+     * @description 列出所有系统模块及其运行状态
+     *
+     *     Returns:
+     *         模块列表（含类型、状态、依赖）
+     */
+    get: operations["list_modules_api_v1_modules_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/duration/calculate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Characters
-         * @description 获取角色列表
-         *
-         *     Args:
-         *         limit: 返回数量限制（默认 20）
-         *         active_only: 是否只返回活跃角色（默认 False）
-         *
-         *     Returns:
-         *         角色列表
-         */
-        get: operations["list_characters_api_v1_characters_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Calculate Duration
+     * @description 计算动态耗时
+     *
+     *     Args:
+     *         base_duration: 基础耗时（分钟）
+     *         weather: 天气
+     *         is_outdoor: 是否户外
+     *         crowdedness: 拥挤度 0-1
+     *         stamina: 体力 0-100
+     *         mood: 情绪
+     */
+    get: operations["calculate_duration_api_v1_duration_calculate_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Character
-         * @description 获取角色详情
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *
-         *     Returns:
-         *         角色档案 + 实时状态
-         */
-        get: operations["get_character_api_v1_characters__character_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Characters
+     * @description 获取角色列表
+     *
+     *     Args:
+     *         limit: 返回数量限制（默认 20）
+     *         active_only: 是否只返回活跃角色（默认 False）
+     *
+     *     Returns:
+     *         角色列表
+     */
+    get: operations["list_characters_api_v1_characters_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/reflections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Reflections
-         * @description 获取角色反思记录
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *         limit: 返回数量限制（默认 10）
-         *
-         *     Returns:
-         *         角色最近的反思记录（按创建时间倒序）
-         */
-        get: operations["get_reflections_api_v1_characters__character_id__reflections_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Character
+     * @description 获取角色详情
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *
+     *     Returns:
+     *         角色档案 + 实时状态
+     */
+    get: operations["get_character_api_v1_characters__character_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/reflections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/plans": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Plans
-         * @description 获取角色进行中的计划
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *
-         *     Returns:
-         *         角色所有 active 状态的计划（按优先级降序）
-         */
-        get: operations["get_plans_api_v1_characters__character_id__plans_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Reflections
+     * @description 获取角色反思记录
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *         limit: 返回数量限制（默认 10）
+     *
+     *     Returns:
+     *         角色最近的反思记录（按创建时间倒序）
+     */
+    get: operations["get_reflections_api_v1_characters__character_id__reflections_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/plans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/actions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Action History
-         * @description 获取角色行为历史
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *         limit: 返回数量限制（默认 50）
-         *
-         *     Returns:
-         *         角色行为时间线（按时间倒序）
-         */
-        get: operations["get_action_history_api_v1_characters__character_id__actions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Plans
+     * @description 获取角色进行中的计划
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *
+     *     Returns:
+     *         角色所有 active 状态的计划（按优先级降序）
+     */
+    get: operations["get_plans_api_v1_characters__character_id__plans_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/actions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Move Character
-         * @description 角色移动到指定场景
-         *
-         *     Args:
-         *         character_id: 角色 ID
-         *         to_scene: 目标场景 ID
-         *         hour: 当前小时（用于开放判断），默认从世界状态获取
-         */
-        post: operations["move_character_api_v1_characters__character_id__move_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Action History
+     * @description 获取角色行为历史
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *         limit: 返回数量限制（默认 50）
+     *
+     *     Returns:
+     *         角色行为时间线（按时间倒序）
+     */
+    get: operations["get_action_history_api_v1_characters__character_id__actions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/schedule": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Character Schedule
-         * @description 获取角色作息状态
-         *
-         *     Args:
-         *         character_id: 角色 ID
-         *         hour: 查询的小时（默认当前小时）
-         */
-        get: operations["get_character_schedule_api_v1_characters__character_id__schedule_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Move Character
+     * @description 角色移动到指定场景
+     *
+     *     Args:
+     *         character_id: 角色 ID
+     *         to_scene: 目标场景 ID
+     *         hour: 当前小时（用于开放判断），默认从世界状态获取
+     */
+    post: operations["move_character_api_v1_characters__character_id__move_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/schedule": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/relations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Character Relations
-         * @description 获取角色的所有关系
-         */
-        get: operations["get_character_relations_api_v1_characters__character_id__relations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Character Schedule
+     * @description 获取角色作息状态
+     *
+     *     Args:
+     *         character_id: 角色 ID
+     *         hour: 查询的小时（默认当前小时）
+     */
+    get: operations["get_character_schedule_api_v1_characters__character_id__schedule_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/relations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/nearby": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Character Nearby
-         * @description 获取与该角色同场景的其他角色（多智能体交互可见性）
-         *
-         *     用于前端展示「当前场景中还有谁」，让用户感知到角色间的社交可能性。
-         *     返回数据含角色档案、当前动作、与查询角色的关系强度。
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *
-         *     Returns:
-         *         {
-         *             "data": [
-         *                 {
-         *                     "id": "...",
-         *                     "name": "...",
-         *                     "personality": "...",
-         *                     "mood": "...",
-         *                     "current_action_name": "...",
-         *                     "relationship_type": "...",
-         *                     "strength": 50,
-         *                     "location": "cafe"
-         *                 }
-         *             ],
-         *             "total": N,
-         *             "location": "cafe"
-         *         }
-         */
-        get: operations["get_character_nearby_api_v1_characters__character_id__nearby_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Character Relations
+     * @description 获取角色的所有关系
+     */
+    get: operations["get_character_relations_api_v1_characters__character_id__relations_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/nearby": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/relations/{target_id}/interact": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Record Interaction
-         * @description 记录角色间互动（更新关系）
-         */
-        post: operations["record_interaction_api_v1_characters__character_id__relations__target_id__interact_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Character Nearby
+     * @description 获取与该角色同场景的其他角色（多智能体交互可见性）
+     *
+     *     用于前端展示「当前场景中还有谁」，让用户感知到角色间的社交可能性。
+     *     返回数据含角色档案、当前动作、与查询角色的关系强度。
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *
+     *     Returns:
+     *         {
+     *             "data": [
+     *                 {
+     *                     "id": "...",
+     *                     "name": "...",
+     *                     "personality": "...",
+     *                     "mood": "...",
+     *                     "current_action_name": "...",
+     *                     "relationship_type": "...",
+     *                     "strength": 50,
+     *                     "location": "cafe"
+     *                 }
+     *             ],
+     *             "total": N,
+     *             "location": "cafe"
+     *         }
+     */
+    get: operations["get_character_nearby_api_v1_characters__character_id__nearby_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/relations/{target_id}/interact": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/state-history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Character State History
-         * @description 获取角色状态历史记录（用于状态图表）
-         *
-         *     Args:
-         *         character_id: 角色 ID
-         *         limit: 返回记录数（默认 50）
-         *
-         *     Returns:
-         *         状态历史列表（按时间正序，便于前端绘制曲线）
-         */
-        get: operations["get_character_state_history_api_v1_characters__character_id__state_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Record Interaction
+     * @description 记录角色间互动（更新关系）
+     */
+    post: operations["record_interaction_api_v1_characters__character_id__relations__target_id__interact_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/state-history": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/characters/{character_id}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Character Messages
-         * @description 获取角色的所有消息历史（跨会话）
-         *
-         *     Args:
-         *         character_id: 角色 ID
-         *         limit: 返回数量上限
-         *
-         *     Returns:
-         *         消息列表（按时间正序）
-         */
-        get: operations["get_character_messages_api_v1_characters__character_id__messages_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Character State History
+     * @description 获取角色状态历史记录（用于状态图表）
+     *
+     *     Args:
+     *         character_id: 角色 ID
+     *         limit: 返回记录数（默认 50）
+     *
+     *     Returns:
+     *         状态历史列表（按时间正序，便于前端绘制曲线）
+     */
+    get: operations["get_character_state_history_api_v1_characters__character_id__state_history_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/characters/{character_id}/messages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/world": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get World State
-         * @description 获取世界状态
-         *
-         *     Returns:
-         *         世界当前状态（与前端 WorldState 接口对齐）
-         */
-        get: operations["get_world_state_api_v1_world_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Character Messages
+     * @description 获取角色的所有消息历史（跨会话）
+     *
+     *     Args:
+     *         character_id: 角色 ID
+     *         limit: 返回数量上限
+     *
+     *     Returns:
+     *         消息列表（按时间正序）
+     */
+    get: operations["get_character_messages_api_v1_characters__character_id__messages_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/world": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/world/events/{tick_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get World Events
-         * @description 获取指定 Tick 的世界事件
-         *
-         *     Args:
-         *         tick_id: Tick ID
-         *
-         *     Returns:
-         *         该 Tick 的所有世界事件（差分记录）
-         */
-        get: operations["get_world_events_api_v1_world_events__tick_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get World State
+     * @description 获取世界状态
+     *
+     *     Returns:
+     *         世界当前状态（与前端 WorldState 接口对齐）
+     */
+    get: operations["get_world_state_api_v1_world_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/world/events/{tick_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/world/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get World Events Range
-         * @description 查询 Tick 区间内的所有世界事件（用于事件时间线）
-         *
-         *     Args:
-         *         start_tick: 起始 Tick（默认 0）
-         *         end_tick: 结束 Tick（默认 0 表示当前 tick_id）
-         *         event_type: 事件类型过滤（可选）
-         *         limit: 返回数量上限
-         *
-         *     Returns:
-         *         世界事件列表（按 tick_id, created_at 排序）
-         */
-        get: operations["get_world_events_range_api_v1_world_events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get World Events
+     * @description 获取指定 Tick 的世界事件
+     *
+     *     Args:
+     *         tick_id: Tick ID
+     *
+     *     Returns:
+     *         该 Tick 的所有世界事件（差分记录）
+     */
+    get: operations["get_world_events_api_v1_world_events__tick_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/world/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/actions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Actions
-         * @description 获取所有 Action
-         *
-         *     Returns:
-         *         所有已注册的 Action 列表
-         */
-        get: operations["list_actions_api_v1_actions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get World Events Range
+     * @description 查询 Tick 区间内的所有世界事件（用于事件时间线）
+     *
+     *     Args:
+     *         start_tick: 起始 Tick（默认 0）
+     *         end_tick: 结束 Tick（默认 0 表示当前 tick_id）
+     *         event_type: 事件类型过滤（可选）
+     *         limit: 返回数量上限
+     *
+     *     Returns:
+     *         世界事件列表（按 tick_id, created_at 排序）
+     */
+    get: operations["get_world_events_range_api_v1_world_events_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/actions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/actions/{action_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Action
-         * @description 获取单个 Action 详情
-         *
-         *     Args:
-         *         action_id: Action ID
-         *
-         *     Returns:
-         *         Action 详情
-         */
-        get: operations["get_action_api_v1_actions__action_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Actions
+     * @description 获取所有 Action
+     *
+     *     Returns:
+     *         所有已注册的 Action 列表
+     */
+    get: operations["list_actions_api_v1_actions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/actions/{action_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/town/scenes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Scenes
-         * @description 获取所有场景列表
-         */
-        get: operations["list_scenes_api_v1_town_scenes_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Action
+     * @description 获取单个 Action 详情
+     *
+     *     Args:
+     *         action_id: Action ID
+     *
+     *     Returns:
+     *         Action 详情
+     */
+    get: operations["get_action_api_v1_actions__action_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/town/scenes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/town/scenes/{scene_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Scene Detail
-         * @description 获取场景详情（含实时状态）
-         */
-        get: operations["get_scene_detail_api_v1_town_scenes__scene_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Scenes
+     * @description 获取所有场景列表
+     */
+    get: operations["list_scenes_api_v1_town_scenes_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/town/scenes/{scene_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/messages/send": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send Message
-         * @description 发送消息给角色并获取回复
-         *
-         *     Args:
-         *         character_id: 角色 UUID
-         *         user_id: 用户标识
-         *         platform: 来源平台（web/qq/lark/internal）
-         *         content: 用户消息内容
-         *
-         *     Returns:
-         *         角色回复内容与元数据（token/cost/conversation_id）
-         */
-        post: operations["send_message_api_v1_messages_send_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Scene Detail
+     * @description 获取场景详情（含实时状态）
+     */
+    get: operations["get_scene_detail_api_v1_town_scenes__scene_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/messages/send": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/messages/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Message History
-         * @description 获取会话消息历史（支持游标分页）
-         *
-         *     Args:
-         *         conversation_id: 会话 UUID
-         *         limit: 返回数量上限（默认 50）
-         *         before: 游标时间（ISO 8601），仅返回该时间点之前的消息
-         *
-         *     Returns:
-         *         消息列表（按时间倒序）
-         */
-        get: operations["get_message_history_api_v1_messages_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Send Message
+     * @description 发送消息给角色并获取回复
+     *
+     *     Args:
+     *         character_id: 角色 UUID
+     *         user_id: 用户标识
+     *         platform: 来源平台（web/qq/lark/internal）
+     *         content: 用户消息内容
+     *
+     *     Returns:
+     *         角色回复内容与元数据（token/cost/conversation_id）
+     */
+    post: operations["send_message_api_v1_messages_send_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/messages/history": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Conversations
-         * @description 查询会话列表（仅返回当前用户的会话）
-         *
-         *     Args:
-         *         current_user: 当前认证用户（JWT/API Key）
-         *         character_id: 可选，按角色过滤
-         *         user_id: 可选，按用户过滤；与当前用户不一致时拒绝
-         *         limit: 返回数量上限
-         *
-         *     Returns:
-         *         会话列表（按 last_message_at 倒序）
-         */
-        get: operations["list_conversations_api_v1_conversations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Message History
+     * @description 获取会话消息历史（支持游标分页）
+     *
+     *     Args:
+     *         conversation_id: 会话 UUID
+     *         limit: 返回数量上限（默认 50）
+     *         before: 游标时间（ISO 8601），仅返回该时间点之前的消息
+     *
+     *     Returns:
+     *         消息列表（按时间倒序）
+     */
+    get: operations["get_message_history_api_v1_messages_history_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/conversations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/messages/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Message Stats
-         * @description 获取消息统计（token/cost 累计，供成本监控）
-         *
-         *     Args:
-         *         character_id: 可选，按角色过滤
-         *         start_date: 可选，起始日期（ISO 8601）
-         *         end_date: 可选，结束日期（ISO 8601）
-         *
-         *     Returns:
-         *         累计消息数、token 数与 cost（USD），含按角色/按日期分组
-         */
-        get: operations["get_message_stats_api_v1_messages_stats_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Conversations
+     * @description 查询会话列表（仅返回当前用户的会话）
+     *
+     *     Args:
+     *         current_user: 当前认证用户（JWT/API Key）
+     *         character_id: 可选，按角色过滤
+     *         user_id: 可选，按用户过滤；与当前用户不一致时拒绝
+     *         limit: 返回数量上限
+     *
+     *     Returns:
+     *         会话列表（按 last_message_at 倒序）
+     */
+    get: operations["list_conversations_api_v1_conversations_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/messages/stats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/tick": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Force Tick
-         * @description 强制触发 Tick（管理接口）
-         *
-         *     Args:
-         *         character_id: 可选，指定角色 ID。如果为空则对所有活跃角色执行 Tick
-         *
-         *     Returns:
-         *         执行结果
-         */
-        post: operations["force_tick_api_v1_admin_tick_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Message Stats
+     * @description 获取消息统计（token/cost 累计，供成本监控）
+     *
+     *     Args:
+     *         character_id: 可选，按角色过滤
+     *         start_date: 可选，起始日期（ISO 8601）
+     *         end_date: 可选，结束日期（ISO 8601）
+     *
+     *     Returns:
+     *         累计消息数、token 数与 cost（USD），含按角色/按日期分组
+     */
+    get: operations["get_message_stats_api_v1_messages_stats_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/tick": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/world/tick": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Force World Tick
-         * @description 强制触发 World Tick（管理接口）
-         *
-         *     Returns:
-         *         执行结果
-         */
-        post: operations["force_world_tick_api_v1_admin_world_tick_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Force Tick
+     * @description 强制触发 Tick（管理接口）
+     *
+     *     Args:
+     *         character_id: 可选，指定角色 ID。如果为空则对所有活跃角色执行 Tick
+     *
+     *     Returns:
+     *         执行结果
+     */
+    post: operations["force_tick_api_v1_admin_tick_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/world/tick": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/world/reset-time": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset World Time
-         * @description 重置世界虚拟时间（管理接口）
-         *
-         *     清除 Redis 中的旧时间状态，让时间演化器在下次 Tick 时重新初始化。
-         *     用于修复初始时间设置错误或需要重置世界时间的场景。
-         *
-         *     Args:
-         *         new_time: 可选，ISO 格式的新初始时间（如 "2026-07-13T08:00:00"）。
-         *                   留空则使用当前现实日期的 08:00 或环境变量配置。
-         *
-         *     Returns:
-         *         重置结果
-         */
-        post: operations["reset_world_time_api_v1_admin_world_reset_time_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Force World Tick
+     * @description 强制触发 World Tick（管理接口）
+     *
+     *     Returns:
+     *         执行结果
+     */
+    post: operations["force_world_tick_api_v1_admin_world_tick_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/world/reset-time": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Admin Status
-         * @description 获取系统状态（管理接口）
-         *
-         *     Returns:
-         *         各组件运行状态
-         */
-        get: operations["get_admin_status_api_v1_admin_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Reset World Time
+     * @description 重置世界虚拟时间（管理接口）
+     *
+     *     清除 Redis 中的旧时间状态，让时间演化器在下次 Tick 时重新初始化。
+     *     用于修复初始时间设置错误或需要重置世界时间的场景。
+     *
+     *     Args:
+     *         new_time: 可选，ISO 格式的新初始时间（如 "2026-07-13T08:00:00"）。
+     *                   留空则使用当前现实日期的 08:00 或环境变量配置。
+     *
+     *     Returns:
+     *         重置结果
+     */
+    post: operations["reset_world_time_api_v1_admin_world_reset_time_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/characters/import": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Import Character Card
-         * @description 导入角色卡 YAML 文件
-         *
-         *     通过 JSON body 提供 yaml 字段（值为 YAML 字符串）。
-         *     同名角色将更新档案与初始状态，保留历史数据（记忆/行为/关系）。
-         *
-         *     Args:
-         *         payload: JSON body，包含 yaml 字段
-         *
-         *     Returns:
-         *         创建或更新的角色信息
-         */
-        post: operations["import_character_card_api_v1_admin_characters_import_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Admin Status
+     * @description 获取系统状态（管理接口）
+     *
+     *     Returns:
+     *         各组件运行状态
+     */
+    get: operations["get_admin_status_api_v1_admin_status_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/characters/import": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/characters/import-batch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Import Characters Batch
-         * @description 批量导入角色卡（多角色 YAML，用 --- 分隔）
-         *
-         *     Args:
-         *         payload: JSON body，包含 yaml 字段（多角色 YAML 文本）
-         *
-         *     Returns:
-         *         导入结果统计
-         */
-        post: operations["import_characters_batch_api_v1_admin_characters_import_batch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Import Character Card
+     * @description 导入角色卡 YAML 文件
+     *
+     *     通过 JSON body 提供 yaml 字段（值为 YAML 字符串）。
+     *     同名角色将更新档案与初始状态，保留历史数据（记忆/行为/关系）。
+     *
+     *     Args:
+     *         payload: JSON body，包含 yaml 字段
+     *
+     *     Returns:
+     *         创建或更新的角色信息
+     */
+    post: operations["import_character_card_api_v1_admin_characters_import_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/characters/import-batch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/characters/{character_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Character
-         * @description 删除角色及其所有相关数据（管理接口，仅 admin）
-         *
-         *     删除范围（依赖 PG ON DELETE CASCADE 自动级联）：
-         *     - characters / character_states / character_state_history
-         *     - action_records / memory_episodes / reflections / reflection_sources
-         *     - plans / person_memories / conversations→messages / relations / character_diaries
-         *     - Redis 状态键 char:{id}:state
-         *
-         *     Args:
-         *         character_id: 角色 ID
-         *
-         *     Returns:
-         *         删除结果
-         *
-         *     Raises:
-         *         404: 角色不存在
-         */
-        delete: operations["delete_character_api_v1_admin_characters__character_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Import Characters Batch
+     * @description 批量导入角色卡（多角色 YAML，用 --- 分隔）
+     *
+     *     Args:
+     *         payload: JSON body，包含 yaml 字段（多角色 YAML 文本）
+     *
+     *     Returns:
+     *         导入结果统计
+     */
+    post: operations["import_characters_batch_api_v1_admin_characters_import_batch_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/characters/{character_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/onebot/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Onebot Messages
-         * @description 获取 QQ 消息记录（用于 QQ 消息监控）
-         *
-         *     查询 platform=qq 的会话中的最近消息，包含发送者和内容。
-         *
-         *     Returns:
-         *         消息列表（按时间倒序）
-         */
-        get: operations["get_onebot_messages_api_v1_admin_onebot_messages_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete Character
+     * @description 删除角色及其所有相关数据（管理接口，仅 admin）
+     *
+     *     删除范围（依赖 PG ON DELETE CASCADE 自动级联）：
+     *     - characters / character_states / character_state_history
+     *     - action_records / memory_episodes / reflections / reflection_sources
+     *     - plans / person_memories / conversations→messages / relations / character_diaries
+     *     - Redis 状态键 char:{id}:state
+     *
+     *     Args:
+     *         character_id: 角色 ID
+     *
+     *     Returns:
+     *         删除结果
+     *
+     *     Raises:
+     *         404: 角色不存在
+     */
+    delete: operations["delete_character_api_v1_admin_characters__character_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/onebot/messages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/proactive-shares": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Proactive Shares
-         * @description 获取主动分享历史记录
-         *
-         *     仅查询 extra_data.share_type='proactive' 的消息，
-         *     按 share_id 去重（同一次分享投递给多个用户只显示一条）。
-         *
-         *     Returns:
-         *         分享记录列表
-         */
-        get: operations["get_proactive_shares_api_v1_admin_proactive_shares_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Onebot Messages
+     * @description 获取 QQ 消息记录（用于 QQ 消息监控）
+     *
+     *     查询 platform=qq 的会话中的最近消息，包含发送者和内容。
+     *
+     *     Returns:
+     *         消息列表（按时间倒序）
+     */
+    get: operations["get_onebot_messages_api_v1_admin_onebot_messages_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/proactive-shares": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/vector-search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Vector Search
-         * @description 向量检索测试 - 调试 pgvector 检索
-         *
-         *     Args:
-         *         character_id: 角色 ID
-         *         query: 查询文本
-         *         top_k: 返回结果数
-         *
-         *     Returns:
-         *         检索结果列表（含相似度分数）
-         */
-        post: operations["vector_search_api_v1_admin_vector_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Proactive Shares
+     * @description 获取主动分享历史记录
+     *
+     *     仅查询 extra_data.share_type='proactive' 的消息，
+     *     按 share_id 去重（同一次分享投递给多个用户只显示一条）。
+     *
+     *     Returns:
+     *         分享记录列表
+     */
+    get: operations["get_proactive_shares_api_v1_admin_proactive_shares_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/vector-search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/world/snapshots": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get World Snapshots
-         * @description 获取世界快照列表（用于冷启动恢复管理）
-         *
-         *     Returns:
-         *         快照列表（按 tick_id 倒序）
-         */
-        get: operations["get_world_snapshots_api_v1_admin_world_snapshots_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Vector Search
+     * @description 向量检索测试 - 调试 pgvector 检索
+     *
+     *     Args:
+     *         character_id: 角色 ID
+     *         query: 查询文本
+     *         top_k: 返回结果数
+     *
+     *     Returns:
+     *         检索结果列表（含相似度分数）
+     */
+    post: operations["vector_search_api_v1_admin_vector_search_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/world/snapshots": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Recent Logs
-         * @description 获取最近的系统日志（从 data/logs/backend.log 读取）
-         *
-         *     Args:
-         *         lines: 返回的日志行数（最大 500）
-         *         level: 日志级别过滤（debug/info/warning/error），不传则返回所有
-         *
-         *     Returns:
-         *         日志条目列表（按时间倒序，每条为 JSON 解析后的 dict）
-         */
-        get: operations["get_recent_logs_api_v1_admin_logs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get World Snapshots
+     * @description 获取世界快照列表（用于冷启动恢复管理）
+     *
+     *     Returns:
+     *         快照列表（按 tick_id 倒序）
+     */
+    get: operations["get_world_snapshots_api_v1_admin_world_snapshots_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/logs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/metrics-detail": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Detailed Metrics
-         * @description 获取详细的系统指标（解析 Prometheus 格式，返回结构化数据）
-         *
-         *     返回比 /metrics/ 端点更易消费的 JSON 结构，包含：
-         *     - 世界引擎指标（Tick 总数/耗时/错误/当前 ID）
-         *     - 角色引擎指标（Tick 总数/耗时/错误，按角色分组）
-         *     - Action 指标（执行次数/耗时，按 action_id 分组）
-         *     - LLM 指标（调用次数/Token/费用，按 model 分组）
-         *     - 消息指标（处理次数/耗时）
-         *     - 数据库指标（查询耗时分布）
-         *     - 系统状态（活跃角色数/Redis 状态）
-         *     - HTTP 请求指标（请求数/耗时，按 path 分组）
-         */
-        get: operations["get_detailed_metrics_api_v1_admin_metrics_detail_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Recent Logs
+     * @description 获取最近的系统日志（从 data/logs/backend.log 读取）
+     *
+     *     Args:
+     *         lines: 返回的日志行数（最大 500）
+     *         level: 日志级别过滤（debug/info/warning/error），不传则返回所有
+     *
+     *     Returns:
+     *         日志条目列表（按时间倒序，每条为 JSON 解析后的 dict）
+     */
+    get: operations["get_recent_logs_api_v1_admin_logs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/metrics-detail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Runtime Config
-         * @description 获取运行时配置（环境变量默认值 + Redis 覆盖值）
-         *
-         *     Returns:
-         *         各配置项的当前值、默认值、类型和说明
-         */
-        get: operations["get_runtime_config_api_v1_admin_config_get"];
-        /**
-         * Update Runtime Config
-         * @description 更新运行时配置（写入 Redis 覆盖值，无需重启）
-         *
-         *     通过 Pydantic 校验后写入 Redis，立即生效。
-         *     无效值或越界值会被拒绝并返回 400。
-         *
-         *     Args:
-         *         updates: {key: value} 配置更新字典
-         *
-         *     Returns:
-         *         更新结果
-         */
-        put: operations["update_runtime_config_api_v1_admin_config_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Detailed Metrics
+     * @description 获取详细的系统指标（解析 Prometheus 格式，返回结构化数据）
+     *
+     *     返回比 /metrics/ 端点更易消费的 JSON 结构，包含：
+     *     - 世界引擎指标（Tick 总数/耗时/错误/当前 ID）
+     *     - 角色引擎指标（Tick 总数/耗时/错误，按角色分组）
+     *     - Action 指标（执行次数/耗时，按 action_id 分组）
+     *     - LLM 指标（调用次数/Token/费用，按 model 分组）
+     *     - 消息指标（处理次数/耗时）
+     *     - 数据库指标（查询耗时分布）
+     *     - 系统状态（活跃角色数/Redis 状态）
+     *     - HTTP 请求指标（请求数/耗时，按 path 分组）
+     */
+    get: operations["get_detailed_metrics_api_v1_admin_metrics_detail_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/config": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/admin/config/{key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Reset Config Item
-         * @description 重置单个配置项为默认值（删除 Redis 覆盖）
-         *
-         *     Args:
-         *         key: 配置项键名
-         *
-         *     Raises:
-         *         400: 未知配置项
-         */
-        delete: operations["reset_config_item_api_v1_admin_config__key__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Runtime Config
+     * @description 获取运行时配置（环境变量默认值 + Redis 覆盖值）
+     *
+     *     Returns:
+     *         各配置项的当前值、默认值、类型和说明
+     */
+    get: operations["get_runtime_config_api_v1_admin_config_get"];
+    /**
+     * Update Runtime Config
+     * @description 更新运行时配置（写入 Redis 覆盖值，无需重启）
+     *
+     *     通过 Pydantic 校验后写入 Redis，立即生效。
+     *     无效值或越界值会被拒绝并返回 400。
+     *
+     *     Args:
+     *         updates: {key: value} 配置更新字典
+     *
+     *     Returns:
+     *         更新结果
+     */
+    put: operations["update_runtime_config_api_v1_admin_config_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/config/{key}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Reset Config Item
+     * @description 重置单个配置项为默认值（删除 Redis 覆盖）
+     *
+     *     Args:
+     *         key: 配置项键名
+     *
+     *     Raises:
+     *         400: 未知配置项
+     */
+    delete: operations["reset_config_item_api_v1_admin_config__key__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        /** Body_send_message_api_v1_messages_send_post */
-        Body_send_message_api_v1_messages_send_post: {
-            /** Character Id */
-            character_id: string;
-            /** User Id */
-            user_id: string;
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /** ValidationError */
-        ValidationError: {
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
-        };
+  schemas: {
+    /** Body_send_message_api_v1_messages_send_post */
+    Body_send_message_api_v1_messages_send_post: {
+      /** Character Id */
+      character_id: string;
+      /** User Id */
+      user_id: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
+    };
+    /** ValidationError */
+    ValidationError: {
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+      /** Input */
+      input?: unknown;
+      /** Context */
+      ctx?: Record<string, never>;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_notifications_api_v1_notifications_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                unread_only?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  list_notifications_api_v1_notifications_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        unread_only?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    create_notification_api_v1_notifications_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    clear_all_notifications_api_v1_notifications_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  create_notification_api_v1_notifications_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    mark_notification_read_api_v1_notifications__notif_id__read_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notif_id: string;
-            };
-            cookie?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    mark_all_notifications_read_api_v1_notifications_read_all_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    delete_notification_api_v1_notifications__notif_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notif_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  clear_all_notifications_api_v1_notifications_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    list_tool_servers_api_v1_tools_servers_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
     };
-    check_tool_servers_health_api_v1_tools_servers_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  mark_notification_read_api_v1_notifications__notif_id__read_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        notif_id: string;
+      };
+      cookie?: never;
     };
-    get_tool_server_detail_api_v1_tools_servers__server_name__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                server_name: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    list_all_tools_api_v1_tools_tools_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  mark_all_notifications_read_api_v1_notifications_read_all_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    toggle_tool_server_api_v1_tools_servers__server_name__enabled_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                server_name: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    invoke_tool_api_v1_tools_tools__tool_name__invoke_post: {
-        parameters: {
-            query?: {
-                server_name?: string | null;
-            };
-            header?: never;
-            path: {
-                tool_name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                } | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  delete_notification_api_v1_notifications__notif_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        notif_id: string;
+      };
+      cookie?: never;
     };
-    list_diaries_api_v1_characters__character_id__diaries_get: {
-        parameters: {
-            query?: {
-                period?: ("day" | "week" | "month" | "year") | null;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    generate_diary_api_v1_characters__character_id__diaries_generate_post: {
-        parameters: {
-            query?: {
-                period?: "day" | "week" | "month" | "year";
-                character_name?: string;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  list_tool_servers_api_v1_tools_servers_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    get_person_memory_api_v1_characters__character_id__person_memory_get: {
-        parameters: {
-            query: {
-                /** @description 用户标识 */
-                user_id: string;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
     };
-    list_person_memories_api_v1_characters__character_id__person_memory_list_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  check_tool_servers_health_api_v1_tools_servers_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    get_memories_api_v1_memories__character_id__get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
     };
-    health_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  get_tool_server_detail_api_v1_tools_servers__server_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        server_name: string;
+      };
+      cookie?: never;
     };
-    login_api_v1_auth_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    list_modules_api_v1_modules_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  list_all_tools_api_v1_tools_tools_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    calculate_duration_api_v1_duration_calculate_get: {
-        parameters: {
-            query: {
-                base_duration: number;
-                weather?: string;
-                is_outdoor?: boolean;
-                crowdedness?: number;
-                stamina?: number;
-                mood?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
     };
-    list_characters_api_v1_characters_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                active_only?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  toggle_tool_server_api_v1_tools_servers__server_name__enabled_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        server_name: string;
+      };
+      cookie?: never;
     };
-    get_character_api_v1_characters__character_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    get_reflections_api_v1_characters__character_id__reflections_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_plans_api_v1_characters__character_id__plans_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  invoke_tool_api_v1_tools_tools__tool_name__invoke_post: {
+    parameters: {
+      query?: {
+        server_name?: string | null;
+      };
+      header?: never;
+      path: {
+        tool_name: string;
+      };
+      cookie?: never;
     };
-    get_action_history_api_v1_characters__character_id__actions_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody?: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        } | null;
+      };
     };
-    move_character_api_v1_characters__character_id__move_post: {
-        parameters: {
-            query: {
-                to_scene: string;
-                hour?: number | null;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_character_schedule_api_v1_characters__character_id__schedule_get: {
-        parameters: {
-            query?: {
-                hour?: number | null;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  list_diaries_api_v1_characters__character_id__diaries_get: {
+    parameters: {
+      query?: {
+        period?: ("day" | "week" | "month" | "year") | null;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    get_character_relations_api_v1_characters__character_id__relations_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_character_nearby_api_v1_characters__character_id__nearby_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  generate_diary_api_v1_characters__character_id__diaries_generate_post: {
+    parameters: {
+      query?: {
+        period?: "day" | "week" | "month" | "year";
+        character_name?: string;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    record_interaction_api_v1_characters__character_id__relations__target_id__interact_post: {
-        parameters: {
-            query?: {
-                strength_delta?: number;
-                notes?: string | null;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-                target_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_character_state_history_api_v1_characters__character_id__state_history_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_person_memory_api_v1_characters__character_id__person_memory_get: {
+    parameters: {
+      query: {
+        /** @description 用户标识 */
+        user_id: string;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    get_character_messages_api_v1_characters__character_id__messages_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_world_state_api_v1_world_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  list_person_memories_api_v1_characters__character_id__person_memory_list_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    get_world_events_api_v1_world_events__tick_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                tick_id: number;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_world_events_range_api_v1_world_events_get: {
-        parameters: {
-            query?: {
-                start_tick?: number;
-                end_tick?: number;
-                event_type?: string | null;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_memories_api_v1_memories__character_id__get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    list_actions_api_v1_actions_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_action_api_v1_actions__action_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                action_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  health_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    list_scenes_api_v1_town_scenes_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
     };
-    get_scene_detail_api_v1_town_scenes__scene_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                scene_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  login_api_v1_auth_login_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    send_message_api_v1_messages_send_post: {
-        parameters: {
-            query?: {
-                platform?: string;
-                content?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Body_send_message_api_v1_messages_send_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    get_message_history_api_v1_messages_history_get: {
-        parameters: {
-            query: {
-                conversation_id: string;
-                limit?: number;
-                before?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    list_conversations_api_v1_conversations_get: {
-        parameters: {
-            query?: {
-                character_id?: string | null;
-                user_id?: string | null;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  list_modules_api_v1_modules_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    get_message_stats_api_v1_messages_stats_get: {
-        parameters: {
-            query?: {
-                character_id?: string | null;
-                start_date?: string | null;
-                end_date?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
     };
-    force_tick_api_v1_admin_tick_post: {
-        parameters: {
-            query?: {
-                character_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  calculate_duration_api_v1_duration_calculate_get: {
+    parameters: {
+      query: {
+        base_duration: number;
+        weather?: string;
+        is_outdoor?: boolean;
+        crowdedness?: number;
+        stamina?: number;
+        mood?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    force_world_tick_api_v1_admin_world_tick_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    reset_world_time_api_v1_admin_world_reset_time_post: {
-        parameters: {
-            query?: {
-                new_time?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  list_characters_api_v1_characters_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        active_only?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    get_admin_status_api_v1_admin_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    import_character_card_api_v1_admin_characters_import_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_character_api_v1_characters__character_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    import_characters_batch_api_v1_admin_characters_import_batch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    delete_character_api_v1_admin_characters__character_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_reflections_api_v1_characters__character_id__reflections_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    get_onebot_messages_api_v1_admin_onebot_messages_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_proactive_shares_api_v1_admin_proactive_shares_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_plans_api_v1_characters__character_id__plans_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    vector_search_api_v1_admin_vector_search_post: {
-        parameters: {
-            query: {
-                character_id: string;
-                query: string;
-                top_k?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_world_snapshots_api_v1_admin_world_snapshots_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_action_history_api_v1_characters__character_id__actions_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    get_recent_logs_api_v1_admin_logs_get: {
-        parameters: {
-            query?: {
-                lines?: number;
-                level?: ("debug" | "info" | "warning" | "error") | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_detailed_metrics_api_v1_admin_metrics_detail_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
+  };
+  move_character_api_v1_characters__character_id__move_post: {
+    parameters: {
+      query: {
+        to_scene: string;
+        hour?: number | null;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    get_runtime_config_api_v1_admin_config_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    update_runtime_config_api_v1_admin_config_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  get_character_schedule_api_v1_characters__character_id__schedule_get: {
+    parameters: {
+      query?: {
+        hour?: number | null;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
     };
-    reset_config_item_api_v1_admin_config__key__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
+  };
+  get_character_relations_api_v1_characters__character_id__relations_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_character_nearby_api_v1_characters__character_id__nearby_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  record_interaction_api_v1_characters__character_id__relations__target_id__interact_post: {
+    parameters: {
+      query?: {
+        strength_delta?: number;
+        notes?: string | null;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+        target_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_character_state_history_api_v1_characters__character_id__state_history_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_character_messages_api_v1_characters__character_id__messages_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_world_state_api_v1_world_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  get_world_events_api_v1_world_events__tick_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tick_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_world_events_range_api_v1_world_events_get: {
+    parameters: {
+      query?: {
+        start_tick?: number;
+        end_tick?: number;
+        event_type?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_actions_api_v1_actions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  get_action_api_v1_actions__action_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        action_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_scenes_api_v1_town_scenes_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  get_scene_detail_api_v1_town_scenes__scene_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  send_message_api_v1_messages_send_post: {
+    parameters: {
+      query?: {
+        platform?: string;
+        content?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Body_send_message_api_v1_messages_send_post"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_message_history_api_v1_messages_history_get: {
+    parameters: {
+      query: {
+        conversation_id: string;
+        limit?: number;
+        before?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_conversations_api_v1_conversations_get: {
+    parameters: {
+      query?: {
+        character_id?: string | null;
+        user_id?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_message_stats_api_v1_messages_stats_get: {
+    parameters: {
+      query?: {
+        character_id?: string | null;
+        start_date?: string | null;
+        end_date?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  force_tick_api_v1_admin_tick_post: {
+    parameters: {
+      query?: {
+        character_id?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  force_world_tick_api_v1_admin_world_tick_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  reset_world_time_api_v1_admin_world_reset_time_post: {
+    parameters: {
+      query?: {
+        new_time?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_admin_status_api_v1_admin_status_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  import_character_card_api_v1_admin_characters_import_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  import_characters_batch_api_v1_admin_characters_import_batch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_character_api_v1_admin_characters__character_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        character_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_onebot_messages_api_v1_admin_onebot_messages_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_proactive_shares_api_v1_admin_proactive_shares_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  vector_search_api_v1_admin_vector_search_post: {
+    parameters: {
+      query: {
+        character_id: string;
+        query: string;
+        top_k?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_world_snapshots_api_v1_admin_world_snapshots_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_recent_logs_api_v1_admin_logs_get: {
+    parameters: {
+      query?: {
+        lines?: number;
+        level?: ("debug" | "info" | "warning" | "error") | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_detailed_metrics_api_v1_admin_metrics_detail_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  get_runtime_config_api_v1_admin_config_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  update_runtime_config_api_v1_admin_config_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  reset_config_item_api_v1_admin_config__key__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
 }

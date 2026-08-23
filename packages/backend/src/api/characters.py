@@ -265,7 +265,12 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
     if not result.success:
         raise HTTPException(status_code=400, detail=result.reason)
 
-    # 更新角色位置
+    # 更新角色位置（A-1：双写——先 PG 镜像事务提交，再写 Redis 真相源）
+    from src.db.repositories import CharacterRepository
+    from src.db.session import db
+
+    async with db.session() as session:
+        await CharacterRepository(session).update_state(cid, location=to_scene)
     await redis.hset(f"char:{cid}:state", "location", to_scene)
 
     return {

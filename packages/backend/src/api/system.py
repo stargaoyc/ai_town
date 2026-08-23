@@ -93,7 +93,7 @@ def _get_current_world_time() -> dict[str, Any] | None:
     return None
 
 
-@router.post("/api/v1/auth/login", dependencies=[Depends(rate_limit("login", 5, 60))])
+@router.post("/api/v1/auth/login", dependencies=[Depends(rate_limit("login", 5, 60, fail_closed=True))])
 async def login(body: dict[str, Any]) -> dict[str, Any]:
     """登录接口 - 账号密码换取 JWT Token
 

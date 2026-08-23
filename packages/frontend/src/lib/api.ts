@@ -14,7 +14,7 @@ function getApiKey(): string | null {
   return localStorage.getItem("api_key");
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options?.headers as Record<string, string>),
@@ -31,7 +31,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       localStorage.removeItem("token");
       localStorage.removeItem("user_id");
       if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+        // api.ts 位于 React 之外，无法用 router 导航；location.replace 避免
+        // 回退键回到已失效的会话页
+        window.location.replace("/login");
       }
       throw new Error("未认证，请重新登录");
     }

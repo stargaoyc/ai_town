@@ -437,7 +437,8 @@ async def ws_chat_endpoint(
         )
         try:
             if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.send_json(_safe_error(f"Unexpected error: {str(e)}"))
+                # S-5：内部异常详情只进日志，不发给客户端
+                await websocket.send_json(_safe_error("internal error, please retry"))
         except Exception:
             pass
     finally:

@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     # RBAC 角色配置（逗号分隔的用户名:角色列表）
     rbac_roles: str = ""  # 如 "admin:admin,viewer1:viewer,operator1:operator"
 
+    # CORS（逗号分隔的具体来源列表；allow_credentials=True 与通配符 * 互斥，
+    # 生产必须配置实际前端域名，如 "https://town.example.com,https://www.town.example.com"）
+    cors_origins: str = ""
+
+    # 运行环境标识：production 时启用安全 fail-fast（如默认口令禁止启动）
+    environment: str = "development"
+
     # Cost Control
     llm_daily_budget_usd: float = 10.0
     llm_circuit_breaker_threshold: int = 5

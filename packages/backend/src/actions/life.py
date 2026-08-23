@@ -20,6 +20,7 @@ def build_life_actions() -> list[Action]:
             duration_minutes=480,
             energy_cost=40,  # 恢复 40 体力
             satiety_cost=-10,  # 消耗 10 饱腹度
+            social_cost=10,  # 独处恢复社交能量
         ),
         Action(
             id="eat",
@@ -46,6 +47,7 @@ def build_life_actions() -> list[Action]:
             scene=None,  # 任意场景
             duration_minutes=30,
             energy_cost=15,  # 恢复 15 体力
+            social_cost=10,  # 独处恢复社交能量
         ),
         Action(
             id="read_book",
@@ -55,6 +57,7 @@ def build_life_actions() -> list[Action]:
             duration_minutes=60,
             energy_cost=-5,  # 消耗 5 体力
             precondition=lambda s: s.get("location") in {"home", "library", "bookstore"},
+            social_cost=10,  # 独处恢复社交能量
         ),
         Action(
             id="use_phone",

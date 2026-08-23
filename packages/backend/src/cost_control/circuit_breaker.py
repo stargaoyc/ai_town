@@ -127,13 +127,24 @@ class CircuitBreaker:
         """
         return await self._read_state()
 
+    # P-3：HALF_OPEN 试探名额原子抢占。0→1 成功者获得唯一试探资格，
+    # 其余并发调用者在半开期被拒绝，避免试探流量涌入下游
+    _HALF_OPEN_PROBE_LUA = """
+    local v = redis.call('hget', KEYS[1], 'half_open_probe')
+    if v == '1' then
+      return 0
+    end
+    redis.call('hset', KEYS[1], 'half_open_probe', '1')
+    return 1
+    """
+
     async def can_execute(self) -> bool:
         """检查是否允许调用
 
         - CLOSED → True
-        - OPEN 且已过 ``recovery_timeout`` → 转 HALF_OPEN，返回 True
+        - OPEN 且已过 ``recovery_timeout`` → 转 HALF_OPEN，抢试探名额，抢到返回 True
         - OPEN 且未超时 → False
-        - HALF_OPEN → True（放行一次试探）
+        - HALF_OPEN → 仅持有试探名额的一个调用者返回 True
 
         Returns:
             是否允许执行
@@ -146,8 +157,12 @@ class CircuitBreaker:
 
         if state == CircuitState.OPEN:
             if now - last_failure_time >= self.recovery_timeout:
-                # 进入 HALF_OPEN，放行试探调用
+                # 进入 HALF_OPEN 并原子抢占唯一试探名额
                 await self._write_state(CircuitState.HALF_OPEN, failure_count, last_failure_time)
+                probe = int(await self.redis.eval(self._HALF_OPEN_PROBE_LUA, 1, _CB_KEY))
+                if not probe:
+                    logger.debug("circuit_breaker_probe_taken", failure_count=failure_count)
+                    return False
                 logger.info(
                     "circuit_breaker_half_open",
                     failure_count=failure_count,
@@ -156,8 +171,9 @@ class CircuitBreaker:
                 return True
             return False
 
-        # HALF_OPEN：放行试探
-        return True
+        # HALF_OPEN：已有状态转换者持有名额；其余调用走同一 Lua 原子判定
+        probe = int(await self.redis.eval(self._HALF_OPEN_PROBE_LUA, 1, _CB_KEY))
+        return bool(probe)
 
     async def record_success(self) -> None:
         """记录一次成功调用
@@ -170,6 +186,7 @@ class CircuitBreaker:
 
         if state == CircuitState.HALF_OPEN:
             await self._write_state(CircuitState.CLOSED, 0, last_failure_time)
+            await self.redis.hdel(_CB_KEY, "half_open_probe")
             logger.info("circuit_breaker_recovered", state="CLOSED")
             return
 
@@ -193,6 +210,8 @@ class CircuitBreaker:
 
         if state == CircuitState.HALF_OPEN:
             await self._write_state(CircuitState.OPEN, new_count, now)
+            # 试探失败重回 OPEN：释放试探标记，下个恢复窗口重新抢占
+            await self.redis.hdel(_CB_KEY, "half_open_probe")
             logger.warning("circuit_breaker_reopened", failure_count=new_count)
             return
 

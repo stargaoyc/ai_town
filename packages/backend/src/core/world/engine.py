@@ -92,6 +92,19 @@ class WorldEngine:
         except Exception as e:
             logger.warning("world_engine_tick_id_restore_failed", error=str(e))
 
+        # 演化器初始化钩子（P-8：setup 此前从未被调用，演化器靠 evolve 内
+        # fallback 碰巧工作）。单个 setup 失败不阻断启动——evolve 的 fallback 仍在
+        for evolution in self.evolutions:
+            try:
+                await evolution.setup(self.redis)
+            except Exception as e:
+                logger.warning(
+                    "evolution_setup_failed",
+                    evolution=evolution.name,
+                    error=str(e),
+                    exc_info=True,
+                )
+
         # 立即同步 Gauge 指标（避免重启后指标面板显示 #0）
         WORLD_TICK_ID.set(self.tick_id)
         REDIS_CONNECTED.set(1)
@@ -124,10 +137,15 @@ class WorldEngine:
                 pass
 
         # 释放锁（compare-and-delete，仅当仍是本实例持有时才删除）
+        # 容错：shutdown 链路中 Redis 可能已断连；锁有 TTL 兜底，不应阻断后续清理
         if self.is_leader and self._leader_token:
-            await release_lock(self.redis, self.LOCK_KEY, self._leader_token)
-            self.is_leader = False
-            logger.info("world_lock_released")
+            try:
+                await release_lock(self.redis, self.LOCK_KEY, self._leader_token)
+                logger.info("world_lock_released")
+            except Exception as e:
+                logger.warning("world_lock_release_failed", error=str(e))
+            finally:
+                self.is_leader = False
 
     async def _leader_loop(self) -> None:
         """Leader Election 循环
@@ -195,6 +213,13 @@ class WorldEngine:
                 raise
             except Exception as e:
                 logger.error("tick_loop_error", error=str(e), exc_info=True)
+
+    async def execute_tick(self) -> None:
+        """公开入口：执行一次 World Tick（管理接口 force_world_tick 使用）
+
+        调用方必须先确认本实例持有 Leader 锁（is_leader）。
+        """
+        await self._execute_tick()
 
     async def _execute_tick(self) -> None:
         """执行一次 World Tick

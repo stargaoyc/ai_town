@@ -423,8 +423,6 @@ class MessageService:
 
         # 异步更新角色对用户的记忆（不阻塞回复）
         try:
-            import asyncio
-
             from src.db.session import db
             from src.memory.person_memory_service import PersonMemoryService
 
@@ -433,8 +431,10 @@ class MessageService:
                 llm_client=self.llm,
                 prompts=self.prompts,
             )
-            # 异步执行，不等待（fire-and-forget）
-            asyncio.create_task(
+            # 异步执行，不等待；注册表持有强引用并记录异常（P-2）
+            from src.core.background import spawn_background
+
+            spawn_background(
                 pm_service.update_memory(
                     character_id=character_id,
                     character_name=character.name,
@@ -442,10 +442,11 @@ class MessageService:
                     platform=platform,
                     user_message=content,
                     character_reply=reply_text,
-                )
+                ),
+                name=f"person_memory_update:{character_id}",
             )
-        except Exception:
-            pass  # 记忆更新失败不影响主流程
+        except Exception as e:
+            logger.warning("person_memory_spawn_failed", error=str(e))  # 记忆更新失败不影响主流程
 
         return {
             "conversation_id": conversation.id,

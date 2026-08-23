@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { request } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
@@ -105,13 +106,11 @@ function MetricsPage() {
   const [error, setError] = useState<Error | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // 获取 Prometheus 指标
+  // 获取 Prometheus 指标（F-2：复用统一 request 封装——带 Authorization/X-API-Key
+  // 头与 401 处理；/metrics 返回 Prometheus 文本，request 泛型直接以 string 承接）
   const fetchMetrics = useCallback(async () => {
     try {
-      // 直接 fetch /metrics/ 端点，返回 Prometheus 格式文本
-      const res = await fetch("/metrics/");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
+      const text = await request<string>("/metrics/", { headers: { Accept: "text/plain" } });
       setData(parseMetrics(text));
       setLastUpdated(new Date());
       setError(null);

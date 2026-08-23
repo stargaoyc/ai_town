@@ -23,11 +23,13 @@ from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.actions import Action, ActionRegistry, DecisionResult
+from src.actions.base import apply_cost_fields
 from src.config import settings
-from src.core.locks import lock_watchdog, release_lock
+from src.core.locks import acquire_resource_locks, lock_watchdog, release_lock
 from src.core.state_codec import decode_state_value, encode_state_mapping
+from src.core.world.evolutions.scene_evolution import VISITORS_KEY
 from src.cost_control import CircuitOpen
-from src.db.models import ActionRecord, Character
+from src.db.models import ActionRecord, Character, CharacterStateHistory, MemoryEpisode
 from src.db.repositories import (
     ActionRepository,
     CharacterRepository,
@@ -35,10 +37,22 @@ from src.db.repositories import (
     MemoryRepository,
     PlanRepository,
     ReflectionRepository,
+    RelationRepository,
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
+from src.messaging.proactive_sharing import ProactiveSharingService
+from src.modules.relation.graph import RelationGraph
+from src.observability.langfuse_tracing import trace_character_tick
+from src.observability.metrics import (
+    ACTION_EXECUTION_DURATION,
+    ACTION_EXECUTION_TOTAL,
+    CHARACTER_TICK_DURATION,
+    CHARACTER_TICK_TOTAL,
+)
+from src.runtime import get_movement_system, get_onebot_adapter, get_ws_manager
+from src.tools import ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -208,16 +222,9 @@ class CharacterTickEngine:
                     exc_info=True,
                 )
 
-        from src.observability.metrics import (
-            CHARACTER_TICK_DURATION,
-            CHARACTER_TICK_TOTAL,
-        )
-
         tick_elapsed = time.perf_counter() - start_perf
         CHARACTER_TICK_DURATION.observe(tick_elapsed)
         CHARACTER_TICK_TOTAL.labels(character_id=cid).inc()
-
-        from src.observability.langfuse_tracing import trace_character_tick
 
         trace_character_tick(
             character_id=str(character_id),
@@ -310,8 +317,6 @@ class CharacterTickEngine:
         relations_map: dict[str, int] = {}
         try:
             async with db.session() as session:
-                from src.db.repositories import RelationRepository
-
                 rel_repo = RelationRepository(session)
                 rels = await rel_repo.get_relations(character_id)
                 relations_map = {str(r.target_id): r.strength for r in rels}
@@ -336,7 +341,6 @@ class CharacterTickEngine:
                     )
 
                 # 查询关系（批量读取，避免 N+1）
-                from src.modules.relation.graph import RelationGraph
 
                 for other_char, other_state in others:
                     # 关系查询使用独立 session（RelationGraph 内部走 repo）
@@ -425,8 +429,6 @@ class CharacterTickEngine:
 
         # 构建工具列表文本（角色可调用本地工具获取信息或执行操作）
         try:
-            from src.tools import ToolRegistry
-
             tool_registry = ToolRegistry()
             tools_text = await tool_registry.format_tools_for_prompt()
         except Exception:
@@ -562,7 +564,6 @@ class CharacterTickEngine:
         Returns:
             工具返回结果字典，失败时返回 None
         """
-        from src.tools import ToolRegistry
 
         tool_name = decision.params.get("tool_name", "")
         tool_args = decision.params.get("tool_args", {})
@@ -705,8 +706,6 @@ class CharacterTickEngine:
         if relation_delta and target_id:
             try:
                 async with db.session() as session:
-                    from src.db.repositories import RelationRepository
-
                     rel_repo = RelationRepository(session)
                     rel = await rel_repo.get_or_create(character_id, UUID(target_id))
                     new_strength = max(0, min(100, rel.strength + int(relation_delta)))
@@ -762,7 +761,6 @@ class CharacterTickEngine:
         action_def = self.registry.get(decision.action)
         if not action_def:
             logger.error("action_not_found", action=decision.action)
-            from src.observability.metrics import ACTION_EXECUTION_TOTAL
 
             ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="failed").inc()
             return
@@ -782,7 +780,6 @@ class CharacterTickEngine:
                 action_def = self.registry.get(decision.action)
                 if action_def is None:
                     logger.error("fallback_wait_action_not_found", character_id=str(character_id))
-                    from src.observability.metrics import ACTION_EXECUTION_TOTAL
 
                     ACTION_EXECUTION_TOTAL.labels(action_id="chat_with", status="failed").inc()
                     return
@@ -791,8 +788,6 @@ class CharacterTickEngine:
         # LLM 幻觉的不存在场景在此被拦截，不再直接写入位置
         move_total_minutes: int | None = None
         if decision.action == "move":
-            from src.runtime import get_movement_system
-
             movement_system = get_movement_system()
             if movement_system is None:
                 logger.warning(
@@ -804,7 +799,6 @@ class CharacterTickEngine:
                 action_def = self.registry.get(decision.action)
                 if action_def is None:
                     logger.error("fallback_wait_action_not_found", character_id=str(character_id))
-                    from src.observability.metrics import ACTION_EXECUTION_TOTAL
 
                     ACTION_EXECUTION_TOTAL.labels(action_id="move", status="failed").inc()
                     return
@@ -828,7 +822,6 @@ class CharacterTickEngine:
                     action_def = self.registry.get(decision.action)
                     if action_def is None:
                         logger.error("fallback_wait_action_not_found", character_id=str(character_id))
-                        from src.observability.metrics import ACTION_EXECUTION_TOTAL
 
                         ACTION_EXECUTION_TOTAL.labels(action_id="move", status="failed").inc()
                         return
@@ -847,7 +840,6 @@ class CharacterTickEngine:
         new_state = context["state"].copy()
 
         # 应用资源变更（使用 apply_cost_fields 辅助函数）
-        from src.actions.base import apply_cost_fields
 
         changes = apply_cost_fields(new_state, action_def)
         new_state.update(changes)
@@ -926,7 +918,6 @@ class CharacterTickEngine:
                 )
 
                 # 写入状态历史快照（支持前端状态趋势图表）
-                from src.db.models import CharacterStateHistory
 
                 history = CharacterStateHistory(
                     character_id=character_id,
@@ -952,13 +943,9 @@ class CharacterTickEngine:
             old_location = context["state"].get("location")
             new_location = new_state.get("location")
             if decision.action == "move" and new_location and old_location != new_location:
-                from src.core.world.evolutions.scene_evolution import VISITORS_KEY
-
                 if old_location:
                     await self.redis.hincrby(VISITORS_KEY, str(old_location), -1)
                 await self.redis.hincrby(VISITORS_KEY, str(new_location), 1)
-
-            from src.observability.metrics import ACTION_EXECUTION_DURATION, ACTION_EXECUTION_TOTAL
 
             ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="success").inc()
             ACTION_EXECUTION_DURATION.labels(action_id=decision.action).observe(time.perf_counter() - start_perf)
@@ -970,8 +957,6 @@ class CharacterTickEngine:
                 duration=duration,
             )
         except Exception:
-            from src.observability.metrics import ACTION_EXECUTION_TOTAL
-
             ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="failed").inc()
             raise
 
@@ -1025,7 +1010,6 @@ class CharacterTickEngine:
         character = context["character"]
 
         # 跨角色资源锁：防止 A→B 和 B→A 同时执行导致关系更新竞争
-        from src.core.locks import acquire_resource_locks
 
         async with acquire_resource_locks(self.redis, character_id, target_id) as acquired:
             if not acquired:
@@ -1056,7 +1040,6 @@ class CharacterTickEngine:
         target_char, _ = target_data
 
         # 读取关系（用于在 prompt 中说明亲密度，影响对话语气）
-        from src.modules.relation.graph import RelationGraph
 
         rel_snapshot = None
         try:
@@ -1131,8 +1114,6 @@ class CharacterTickEngine:
         # 为双方各写入一条记忆（source_type=conversation）
         # 让两人都记得这次对话，未来检索时可回忆起
         try:
-            from src.db.models import MemoryEpisode
-
             async with db.session() as session:
                 now = datetime.now(UTC)
 
@@ -1278,7 +1259,6 @@ class CharacterTickEngine:
             context: 感知环境结果
         """
         # 延迟导入避免循环依赖（main.py 导入 character_tick）
-        from src.messaging.proactive_sharing import ProactiveSharingService
 
         # 获取 ActionRecord（evaluate_and_share 需要 action 参数）
         # 从最近的 ActionRecord 中取本次 Tick 的行为
@@ -1299,7 +1279,6 @@ class CharacterTickEngine:
         # 调用 ProactiveSharingService 生成分享并写入 DB
         async with db.session() as session:
             # 获取 ws_manager（可能为 None，Web 客户端实时推送可选）
-            from src.runtime import get_ws_manager
 
             ws_manager = get_ws_manager()
 
@@ -1349,8 +1328,6 @@ class CharacterTickEngine:
             content: 分享文案
         """
         try:
-            from src.runtime import get_onebot_adapter
-
             onebot_adapter = get_onebot_adapter()
         except (ImportError, AttributeError):
             logger.debug("onebot_adapter_not_available_for_share")

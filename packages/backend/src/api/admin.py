@@ -64,6 +64,17 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 logger = get_logger(__name__)
 
 # 依赖类型别名（避免 B008：不在函数默认参数中调用 Depends/Body）
+_env_defaults: Settings | None = None
+
+
+def _get_env_defaults() -> Settings:
+    """环境默认值单例（C-3：避免每次请求重新解析 .env）"""
+    global _env_defaults
+    if _env_defaults is None:
+        _env_defaults = Settings()  # type: ignore[call-arg]
+    return _env_defaults
+
+
 AdminOrOperator = Annotated[dict[str, Any], Depends(require_role("admin", "operator"))]
 Admin = Annotated[dict[str, Any], Depends(require_role("admin"))]
 BodyDict = Annotated[dict[str, Any], Body(...)]
@@ -139,8 +150,15 @@ async def force_world_tick(user: AdminOrOperator) -> dict[str, Any]:
     if not world_engine:
         raise HTTPException(status_code=503, detail="World engine not initialized")
 
+    # A-1：只有 Leader 可以推进世界。非 Leader 实例执行会造成多写分叉
+    if not world_engine.is_leader:
+        raise HTTPException(
+            status_code=409,
+            detail="This instance is not the World Tick leader; the leader executes ticks on its own schedule",
+        )
+
     try:
-        await world_engine._execute_tick()
+        await world_engine.execute_tick()
         return {
             "message": "World tick executed",
             "tick_id": world_engine.tick_id,
@@ -886,7 +904,7 @@ async def get_runtime_config(user: Admin) -> dict[str, Any]:
         各配置项的当前值、默认值、类型和说明
     """
     config = _get_runtime_config_singleton()
-    defaults = Settings()  # type: ignore[call-arg]
+    defaults = _get_env_defaults()
 
     result = []
     for key, field in RuntimeConfig.model_fields.items():

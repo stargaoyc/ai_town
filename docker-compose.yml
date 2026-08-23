@@ -48,6 +48,11 @@ services:
     volumes:
       - ./data/redis:/data
     command: redis-server --appendonly yes # 开启 AOF 持久化
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       TZ: Asia/Shanghai
     networks:
@@ -74,11 +79,14 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
       - ./data/logs:/app/data/logs
+      # Prompt 模板与节日日历（fail-fast 配置）：容器镜像只含 packages/backend，
+      # configs/ 在仓库根，必须挂载进容器
+      - ./configs:/app/configs:ro
     networks:
       - aitown-net
 

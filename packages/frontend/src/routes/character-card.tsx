@@ -24,7 +24,7 @@ function yamlValue(val: unknown, indent = 0): string {
   if (val === null || val === undefined) return '""';
   if (typeof val === "string") {
     // 含特殊字符的字符串加引号
-    if (/[:#\[\]{}&*!|>'"%@`]/.test(val) || val.includes("\n")) {
+    if (/[:#[\]{}&*!|>'"%@`]/.test(val) || val.includes("\n")) {
       return `"${val.replace(/"/g, '\\"')}"`;
     }
     return `"${val}"`;

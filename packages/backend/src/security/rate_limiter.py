@@ -19,6 +19,16 @@ from structlog import get_logger
 logger = get_logger(__name__)
 
 
+# 固定窗口限流原子脚本：INCR 后仅在计数为 1（窗口首个请求）时设置 EXPIRE
+_RATE_LIMIT_LUA = """
+local count = redis.call('incr', KEYS[1])
+if count == 1 then
+  redis.call('expire', KEYS[1], ARGV[1])
+end
+return count
+"""
+
+
 class RateLimiter:
     """基于 Redis 的速率限制器
 
@@ -76,12 +86,17 @@ class RateLimiter:
         """
         full_key = self._build_key(key)
 
-        # INCR 原子自增（key 不存在时自动创建并置为 1）
-        count = await self.redis.incr(full_key)
-
-        # 第一次请求时设置过期时间（窗口结束时自动清零）
+        # S-4：INCR 与首次 EXPIRE 必须原子完成——两步实现若在中间崩溃，
+        # key 永不过期，用户被永久限流
+        count = int(
+            await self.redis.eval(
+                _RATE_LIMIT_LUA,
+                1,
+                full_key,
+                window_seconds,
+            )
+        )
         if count == 1:
-            await self.redis.expire(full_key, window_seconds)
             logger.debug(
                 "rate_limit_window_started",
                 key=key,

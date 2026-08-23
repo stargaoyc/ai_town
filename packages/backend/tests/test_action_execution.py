@@ -168,7 +168,8 @@ async def test_move_to_unknown_scene_falls_back_to_wait(
     fake_movement = FakeMovementSystem(
         MovementResult(success=False, path=[], total_minutes=0, reason="场景 home 无法直达 mars")
     )
-    monkeypatch.setattr("src.runtime.get_movement_system", lambda: fake_movement)
+    # tick 顶层绑定了 get_movement_system，须 patch tick 模块内名字
+    monkeypatch.setattr(tick_module, "get_movement_system", lambda: fake_movement)
 
     decision = DecisionResult(action="move", reason="想去火星", params={"target_scene": "mars"})
     context = _make_context()
@@ -186,7 +187,8 @@ async def test_move_success_uses_matrix_duration_and_updates_location(
 ) -> None:
     engine, redis = _make_engine(_make_registry())
     fake_movement = FakeMovementSystem(MovementResult(success=True, path=["home", "cafe"], total_minutes=12))
-    monkeypatch.setattr("src.runtime.get_movement_system", lambda: fake_movement)
+    # tick 顶层绑定了 get_movement_system，须 patch tick 模块内名字
+    monkeypatch.setattr(tick_module, "get_movement_system", lambda: fake_movement)
 
     decision = DecisionResult(action="move", reason="去咖啡店", params={"target_scene": "cafe"})
     context = _make_context()

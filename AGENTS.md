@@ -144,9 +144,12 @@
 |----------|--------|------|
 | 应用配置 | `.env` + `src/config.py` | pydantic-settings 读取 |
 | 角色卡 | `configs/characters/*.yaml` | 多角色配置 |
-| 世界地图 | `configs/world-map.yaml` | 场景与连通矩阵 |
-| 事件 | `configs/events.yaml` | 节日与事件 |
-| Prompt | `configs/prompts/*.yaml` | LLM 模板 |
+| 场景定义 | `configs/scenes.yaml` | 场景元数据（容量/开放时段/活动词表） |
+| 连通矩阵 | `configs/world-map.yaml` | 移动耗时矩阵（loader 启动校验对称性与可达性） |
+| 节日事件 | `configs/events.yaml` | 节日日历（event_evolution 启动加载，损坏即 fail-fast） |
+| Prompt | `configs/prompts/*.yaml` | LLM 模板（缺失即启动失败） |
+
+> scenes.yaml 与 world-map.yaml 的场景 ID 必须一致，loader 加载时交叉校验。
 
 ---
 

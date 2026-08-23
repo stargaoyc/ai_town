@@ -117,5 +117,6 @@ def apply_cost_fields(state: dict[str, Any], action: Action) -> dict[str, Any]:
     if action.phone_battery_cost:
         changes["phone_battery"] = clamp_resource(state.get("phone_battery", 0) + action.phone_battery_cost)
     if action.money_cost or action.money_gain:
-        changes["money"] = state.get("money", 0) - action.money_cost + action.money_gain
+        # money 下界统一为 0（A-5）：与工具 delta 路径的 max(0, ...) 一致，Action 不产生负债
+        changes["money"] = max(0, state.get("money", 0) - action.money_cost + action.money_gain)
     return changes

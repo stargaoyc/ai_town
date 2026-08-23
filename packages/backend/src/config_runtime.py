@@ -87,10 +87,30 @@ class RuntimeConfig(BaseModel):
         """将覆盖值同步到 settings 对象（向后兼容，业务代码仍读 settings.xxx）
 
         仅同步显式覆盖的字段；None（未覆盖）保持 settings 自身默认值不动。
+        同步后调用各热更新项的组件侧应用器（P-7）：settings 只是配置载体，
+        日志、预算管理器等已构造的组件需要显式通知才会生效。
         """
         for key, value in self.model_dump().items():
             if value is not None:
                 setattr(settings_obj, key, value)
+                self._apply_component(key, value)
+
+    @staticmethod
+    def _apply_component(key: str, value: Any) -> None:
+        """把热更新值应用到已构造的组件（P-7 应用器注册表）"""
+        from src.observability.logging import setup_logging
+
+        if key == "log_level":
+            # setup_logging 以新级别重建 handlers，幂等
+            setup_logging(log_level=value, log_format=settings.log_format)
+        elif key == "llm_daily_budget_usd":
+            from src.cost_control import get_budget_manager
+
+            budget = get_budget_manager()
+            if budget is not None:
+                budget.daily_budget_usd = float(value)
+        # character_max_concurrent：CharacterTickEngine._ensure_semaphore 每次 Tick
+        # 比对 SEMAPHORE_LIMIT 自动重建，无需此处处理
 
 
 # 全局单例
@@ -119,12 +139,15 @@ async def load_runtime_config(redis: Redis) -> RuntimeConfig:
     """
     global _instance
 
-    # 从 Redis 读取覆盖值
+    # 从 Redis 读取覆盖值（C-4：区分首次启动与配置损坏）
     overrides: dict[str, Any] = {}
     override_keys: list[str] = []
+    has_stored_config = False
+    config_corrupted = False
     try:
         raw = await redis.get(_CONFIG_OVERRIDES_KEY)
-        if raw:
+        if raw is not None:
+            has_stored_config = True
             data = json.loads(raw)
             # 仅取已知字段
             for key in RuntimeConfig.model_fields:
@@ -132,12 +155,18 @@ async def load_runtime_config(redis: Redis) -> RuntimeConfig:
                     overrides[key] = data[key]
                     override_keys.append(key)
     except Exception as e:
-        logger.warning("runtime_config_load_failed", error=str(e))
+        # 已有配置但解析失败：损坏而非首启，明确告警
+        config_corrupted = True
+        logger.error(
+            "runtime_config_corrupted",
+            error=str(e),
+            action="ignoring stored overrides; fix or DELETE the Redis key to recover",
+        )
 
-    # 通过 Pydantic 校验
+    # 通过 Pydantic 校验；损坏的配置拒绝应用（保持 Settings 默认值运行），
+    # 但不静默——error 级日志供告警规则抓取
     try:
         _instance = RuntimeConfig.model_validate(overrides)
-        # 同步到 settings 对象（向后兼容）
         _instance.apply_to_settings(settings)
         logger.info(
             "runtime_config_loaded",
@@ -145,7 +174,13 @@ async def load_runtime_config(redis: Redis) -> RuntimeConfig:
             override_keys=override_keys,
         )
     except Exception as e:
-        logger.error("runtime_config_validation_failed", error=str(e))
+        logger.error(
+            "runtime_config_validation_failed",
+            error=str(e),
+            had_stored_config=has_stored_config,
+            corrupted=config_corrupted,
+            action="running with Settings defaults; admin must re-set overrides",
+        )
         _instance = RuntimeConfig()
         _instance.apply_to_settings(settings)
 

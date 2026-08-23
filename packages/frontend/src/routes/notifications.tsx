@@ -8,7 +8,6 @@ import {
   MessageCircle,
   Trash2,
   CheckCheck,
-  Sparkles,
   Clock,
   RefreshCw,
 } from "lucide-react";
@@ -24,7 +23,6 @@ import {
 } from "@/components/ui";
 import {
   useNotifications,
-  useCreateNotification,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
   useDeleteNotification,
@@ -79,44 +77,6 @@ const typeConfig: Record<
   },
 };
 
-// 模拟通知模板（用于测试）
-const mockTemplates: {
-  type: NotificationType;
-  title: string;
-  content: string;
-}[] = [
-  {
-    type: "share",
-    title: "角色主动分享了动态",
-    content: "樱花酱主动向你分享了一张图书馆窗外的夕阳照片，并附言「今天的天空好美呀~」",
-  },
-  {
-    type: "system",
-    title: "World Engine 告警",
-    content: "世界引擎 Tick 延迟超过 5 秒，当前延迟 8.2s，请检查服务器负载",
-  },
-  {
-    type: "character",
-    title: "角色状态异常",
-    content: "角色「樱花酱」的精力值已降至 12，饱腹值降至 8，请关注其状态",
-  },
-  {
-    type: "qq",
-    title: "QQ 连接已恢复",
-    content: "OneBot 反向 WebSocket 已重新连接，消息收发恢复正常",
-  },
-  {
-    type: "system",
-    title: "LLM 调用超时",
-    content: "LLM 接口响应时间过长，已自动重试 3 次，部分角色回复可能延迟",
-  },
-  {
-    type: "character",
-    title: "角色情绪低落",
-    content: "角色「月野兔」连续 3 个 Tick 情绪为「沮丧」，建议触发社交互动",
-  },
-];
-
 // 格式化为相对时间
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -151,7 +111,6 @@ const item = {
 
 function NotificationsPage() {
   const { data, isLoading, error, refetch, isFetching } = useNotifications(100, 30000); // WS 推送失效缓存，30s 仅兜底
-  const createNotif = useCreateNotification();
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
   const deleteNotif = useDeleteNotification();
@@ -161,17 +120,6 @@ function NotificationsPage() {
   const unreadCount = data?.unread ?? 0;
   const totalCount = data?.total ?? 0;
   const byType = (type: NotificationType) => notifications.filter((n) => n.type === type).length;
-
-  // 添加模拟通知（通过后端 API 创建）
-  const handleAddMock = () => {
-    const template = mockTemplates[Math.floor(Math.random() * mockTemplates.length)];
-    if (!template) return;
-    createNotif.mutate({
-      type: template.type,
-      title: template.title,
-      content: template.content,
-    });
-  };
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -206,17 +154,6 @@ function NotificationsPage() {
             </button>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <AnimeButton
-              onClick={handleAddMock}
-              variant="secondary"
-              className="!px-3 !py-2 !text-sm"
-              disabled={createNotif.isPending}
-            >
-              <span className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" />
-                {createNotif.isPending ? "发送中..." : "模拟通知"}
-              </span>
-            </AnimeButton>
             <AnimeButton
               onClick={() => markAllRead.mutate()}
               variant="secondary"
