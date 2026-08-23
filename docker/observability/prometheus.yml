@@ -7,9 +7,9 @@ global:
   external_labels:
     monitor: "ai-town-monitor"
 
-# 告警规则（可选，配合 Alertmanager 使用）
-# rule_files:
-#   - /etc/prometheus/rules/*.yml
+# 告警规则（核心链路可用性与成本；配合 Alertmanager 通知）
+rule_files:
+  - /etc/prometheus/rules/alerts.yml
 
 # 采集目标
 scrape_configs:

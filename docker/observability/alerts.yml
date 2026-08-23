@@ -1,0 +1,148 @@
+# AI Town 告警规则 - 核心链路可用性与成本
+#
+# 挂载方式见 docker-compose.yml prometheus 服务卷：
+#   ./docker/observability/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
+#
+# 分级约定：
+#   critical - 数据损坏 / 功能阻断（世界停摆、Redis 断连、熔断打开）
+#   warning  - 性能退化 / 需要关注的趋势（错误率上升、预算消耗过快）
+
+groups:
+  # ============================================================
+  # 世界引擎
+  # ============================================================
+  - name: world-engine
+    rules:
+      - alert: WorldTickStalled
+        expr: |
+          increase(ai_town_world_tick_total[5m]) == 0
+          and on() ai_town_redis_connected == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "World Tick 停摆超过 5 分钟"
+          description: "近 5 分钟无任何 World Tick 执行且 Redis 正常，World Engine 可能崩溃或 Leader 丢失。"
+
+      - alert: WorldTickHighErrorRate
+        expr: |
+          rate(ai_town_world_tick_errors_total[10m])
+            / clamp_min(rate(ai_town_world_tick_total[10m]), 0.001) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "World Tick 错误率超过 20%"
+          description: "过去 10 分钟 World Tick 错误占比 {{ $value | humanizePercentage }}，检查演化器日志。"
+
+  # ============================================================
+  # 角色 Tick / Action 执行
+  # ============================================================
+  - name: character-tick
+    rules:
+      - alert: CharacterTickHighFailureRate
+        expr: |
+          sum(rate(ai_town_character_tick_errors_total[10m]))
+            / clamp_min(sum(rate(ai_town_character_tick_total[10m])), 0.001) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "角色 Tick 失败率超过 30%"
+          description: "持续 10 分钟高于阈值（当前 {{ $value | humanizePercentage }}），常见原因：LLM 故障、锁竞争、PG 写入失败。"
+
+      - alert: ActionExecutionFailuresSpiking
+        expr: |
+          sum(rate(ai_town_action_execution_total{status="failed"}[10m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Action 执行失败速率异常"
+          description: "每秒失败数 {{ $value | humanize }} 持续 10 分钟，检查 executor 与 MovementSystem 校验日志。"
+
+  # ============================================================
+  # LLM 成本与可用性
+  # ============================================================
+  - name: llm-cost
+    rules:
+      - alert: LLMDailyBudgetNearExhausted
+        expr: |
+          increase(ai_town_llm_cost_total_usd[24h]) > 8
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "24 小时 LLM 花费超过 $8（默认日预算 $10）"
+          description: "当前滚动 24h 花费 ${{ $value | humanize }}；预算管理器即将触发熔断，Tick 会开始跳过。"
+
+      - alert: LLMCallFailureRateHigh
+        expr: |
+          sum(rate(ai_town_llm_call_total{status="failed"}[10m]))
+            / clamp_min(sum(rate(ai_town_llm_call_total[10m])), 0.001) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM 调用失败率超过 30%"
+          description: "多模型备用源可能全部进入冷却；检查 LLM_FALLBACK_SOURCES 各源状态与余额。"
+
+      - alert: CircuitBreakerStuckSuspect
+        expr: |
+          sum(increase(ai_town_llm_call_total[15m])) == 0
+          and on() ai_town_active_characters > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "有活跃角色但 15 分钟内零 LLM 调用"
+          description: "疑似熔断器卡在 OPEN 或预算已打满，角色 Tick 全部跳过中。"
+
+  # ============================================================
+  # 状态一致性（对账）
+  # ============================================================
+  - name: state-consistency
+    rules:
+      - alert: ReconcileDriftDetected
+        expr: |
+          increase(ai_town_reconcile_drift_total[30m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "对账发现 Redis/PG 状态漂移（已自动修复）"
+          description: "过去 30 分钟发现 {{ $value }} 次漂移。偶发属双写失败的正常修复；频繁出现说明双写路径有问题，检查 reconcile_drift_detected 日志中的 character_id 与字段。"
+
+      - alert: RedisDisconnected
+        expr: ai_town_redis_connected == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis 连接断开"
+          description: "实时状态真相源不可用，所有状态写入静默丢失中。"
+
+  # ============================================================
+  # HTTP 服务健康
+  # ============================================================
+  - name: http-health
+    rules:
+      - alert: HTTP5xxRateHigh
+        expr: |
+          sum(rate(ai_town_http_request_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(ai_town_http_request_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx 错误率超过 5%"
+          description: "过去 5 分钟 5xx 占比 {{ $value | humanizePercentage }}。"
+
+      - alert: BackendScrapeDown
+        expr: up{job="ai-town-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "后端 /metrics 抓取失败超过 2 分钟"
+          description: "后端进程可能已退出或端口不通。"
