@@ -183,6 +183,16 @@ _ENABLED_CACHE_TTL_SECONDS = 5.0
 _enabled_cache: tuple[float, frozenset[str]] | None = None
 
 
+def invalidate_enabled_cache() -> None:
+    """清空工具启用状态缓存
+
+    管理端切换开关后调用，使 get_enabled_tools 下次读取绕过 5s TTL
+    立即生效（审查二轮 N8）。
+    """
+    global _enabled_cache
+    _enabled_cache = None
+
+
 async def get_enabled_tools() -> set[str]:
     """从 Redis 读取已启用的工具全名集合（带 5 秒 TTL 缓存）
 

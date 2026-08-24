@@ -15,7 +15,7 @@ from structlog import get_logger
 from src.auth.rbac import require_role
 from src.runtime import get_redis
 from src.tools import TOOL_REGISTRY, get_enabled_tools
-from src.tools.registry import TOOLS_ENABLED_KEY
+from src.tools.registry import TOOLS_ENABLED_KEY, invalidate_enabled_cache
 
 router = APIRouter(prefix="/api/v1/tools", tags=["tools"])
 logger = get_logger(__name__)
@@ -208,6 +208,8 @@ async def toggle_tool_server(
     mapping = {t: "true" if enabled else "false" for t in ns_tools}
     if mapping:
         await redis.hset(TOOLS_ENABLED_KEY, mapping=mapping)  # type: ignore
+    # 立即失效进程内缓存，避免决策链路最长 5s 内仍读到旧开关状态（审查二轮 N8）
+    invalidate_enabled_cache()
 
     logger.info(
         "tool_namespace_toggled",
