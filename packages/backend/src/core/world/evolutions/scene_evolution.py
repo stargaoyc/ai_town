@@ -15,14 +15,15 @@ from structlog import get_logger
 
 from src.core.world.evolutions.base import WorldEvolution
 from src.core.world.evolutions.time_evolution import TIME_KEY
+from src.modules.town.loader import SceneLoader
 from src.runtime import get_scene_loader
 
 logger = get_logger(__name__)
 
 # 场景状态在 Redis 中的 Key
 SCENES_KEY = "world:state:scenes"
-# 各场景在场角色数（scene_id → count），由 Character Tick / Action 执行维护
-VISITORS_KEY = "world:scene:visitors"
+# 各场景在场角色数（scene_id → count），由 SceneLoader.record_movement 统一维护
+VISITORS_KEY = SceneLoader.VISITORS_KEY
 
 
 def is_open(open_hours: tuple[int, int], hour: int) -> bool:

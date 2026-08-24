@@ -286,10 +286,25 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
         raise HTTPException(status_code=400, detail=result.reason)
 
     # 更新角色位置（A-1：双写——先 PG 镜像事务提交，再写 Redis 真相源）
-    from src.db.repositories import CharacterRepository
+    # 同事务写入 ActionRecord：此前 API 移动绕过审计（审查 P0-5/#5）
+    from src.db.models import ActionRecord
+    from src.db.repositories import ActionRepository, CharacterRepository
     from src.db.session import db
 
     async with db.session() as session:
+        await ActionRepository(session).add(
+            ActionRecord(
+                character_id=cid,
+                action_id="move",
+                action_name="移动",
+                params={"target_scene": to_scene, "source": "api"},
+                reason=None,
+                result=str(result.path),
+                duration_minutes=result.total_minutes,
+                location=to_scene,
+                related_characters=[],
+            )
+        )
         await CharacterRepository(session).update_state_cas(cid, location=to_scene)
     await redis.hset(f"char:{cid}:state", "location", to_scene)
 

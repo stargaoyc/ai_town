@@ -34,6 +34,9 @@ class SceneLoader:
     # Redis key 前缀
     SCENE_STATE_KEY = "scene:{scene_id}:state"
     SCENE_CHARACTERS_KEY = "scene:{scene_id}:characters"
+    # 全局在场计数缓存（scene_id → count）：SceneEvolution 拥挤度数据源。
+    # 成员名单以上面的 Set 为真相源，此 Hash 是随名单同步更新的派生计数
+    VISITORS_KEY = "world:scene:visitors"
 
     def __init__(self, redis: Redis):
         self.redis = redis
@@ -215,3 +218,16 @@ class SceneLoader:
         chars_key = self.SCENE_CHARACTERS_KEY.format(scene_id=scene_id)
         members = await self.redis.smembers(chars_key)
         return [str(m) for m in members]
+
+    async def record_movement(self, character_id: str, from_scene: str, to_scene: str) -> None:
+        """移动记账单一入口：成员名单与在场计数缓存同步更新
+
+        Tick 移动与 API 移动都必须走此方法——此前两条路径各记一套账
+        （Tick 只记 VISITORS_KEY、API 只记名单），导致拥挤度与在场名单互相矛盾。
+        """
+        if from_scene == to_scene:
+            return
+        await self.character_leave(character_id, from_scene)
+        await self.character_enter(character_id, to_scene)
+        await self.redis.hincrby(self.VISITORS_KEY, from_scene, -1)
+        await self.redis.hincrby(self.VISITORS_KEY, to_scene, 1)

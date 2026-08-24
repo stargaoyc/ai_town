@@ -1138,13 +1138,18 @@ class CharacterTickEngine:
                 mapping=encode_state_mapping(new_state),  # type: ignore[arg-type]
             )
 
-            # 位置变化时维护场景在场人数（SceneEvolution 拥挤度数据源）
+            # 位置变化时经 SceneLoader 单一入口记账（成员名单 + 在场计数缓存）
             old_location = context["state"].get("location")
             new_location = new_state.get("location")
+            scene_loader = get_scene_loader()
             if decision.action == "move" and new_location and old_location != new_location:
-                if old_location:
-                    await self.redis.hincrby(VISITORS_KEY, str(old_location), -1)
-                await self.redis.hincrby(VISITORS_KEY, str(new_location), 1)
+                if scene_loader is not None:
+                    await scene_loader.record_movement(str(character_id), str(old_location), str(new_location))
+                else:
+                    # loader 缺失时退化为仅维护计数缓存（拥挤度数据源不能断）
+                    if old_location:
+                        await self.redis.hincrby(VISITORS_KEY, str(old_location), -1)
+                    await self.redis.hincrby(VISITORS_KEY, str(new_location), 1)
 
             ACTION_EXECUTION_TOTAL.labels(action_id=decision.action, status="success").inc()
             ACTION_EXECUTION_DURATION.labels(action_id=decision.action).observe(time.perf_counter() - start_perf)

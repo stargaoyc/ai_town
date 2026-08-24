@@ -136,10 +136,8 @@ class MovementSystem:
 
         # 同场景无需更新
         if from_scene != to_scene:
-            # 离开旧场景
-            await self.scene_loader.character_leave(character_id, from_scene)
-            # 进入新场景
-            await self.scene_loader.character_enter(character_id, to_scene)
+            # 移动记账单一入口：成员名单 + 在场计数缓存同步维护（与 Tick 路径一致）
+            await self.scene_loader.record_movement(character_id, from_scene, to_scene)
 
             logger.info(
                 "角色 %s 从 %s 移动到 %s（耗时 %d 分钟）",
