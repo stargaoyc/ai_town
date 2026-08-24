@@ -8,6 +8,11 @@
 
 ### Added
 
+- **改写式记忆去重（B1）**：EmbeddingWorker 向量化时与同角色近 24h 记忆余弦比对（≥0.95 判定重复），重复行不落向量且检索/反思排除；迁移新增 `is_duplicate` 标记列。配置 `MEMORY_DEDUP_ENABLED` / `MEMORY_DEDUP_SIMILARITY_THRESHOLD` / `MEMORY_DEDUP_WINDOW_HOURS`。
+- **daily 计划滚动过期（B2）**：创建超 TTL 的 active 当日计划随世界时间检查自动置 `expired`。配置 `DAILY_PLAN_TTL_HOURS`。
+- **LLM 新建计划（B3）**：决策输出新增 `createPlanChanges`（title 必填、类型白名单、优先级钳制、单次最多 3 条），服务端绑定 character_id 落库。
+- **传闻行为化表达（B4）**：最近听说的传闻注入决策 Prompt「听说的消息」段，角色可在对话中自然提起八卦而非沉默存档。
+- **群活动（B5）**：新 Action `group_activity`——同场景 ≥3 人可触发临时小聚，单次 LLM 生成集体叙事并为全体参与者写共同经历记忆（related_characters 互指）、两两关系 +2（上限 100）。
 - **数据库定时备份**：新增 `db-backup` 服务（`--profile backup` 启用）——pg_dump | gzip 按间隔写入 `./data/backups`（.part 临时文件原子改名防半成品），按保留天数自动清理；配置 `BACKUP_INTERVAL_HOURS` / `BACKUP_RETENTION_DAYS`。
 - **冷启动恢复演练脚本**：`packages/backend/scripts/cold_start_drill.py`——清空 Redis 世界/角色状态键后执行与启动路径一致的 `rehydrate_states()`，校验快照 tick_id/weather 回灌、角色镜像全量恢复与字段抽查；本地实跑 5/5 通过。
 - **容器日志轮转**：compose 全部服务统一 `json-file` 驱动 + 单文件 10MB×3 份上限（YAML 锚点一处定义），防止日志无限增长吃满磁盘。
