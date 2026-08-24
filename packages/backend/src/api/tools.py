@@ -54,12 +54,17 @@ _NAMESPACES: list[dict[str, Any]] = [
     {
         "name": "world",
         "type": "read-only",
-        "description": "世界状态查询（虚拟时间/天气/场景/角色查找）",
+        "description": "世界状态查询（世界时间/天气/资源/角色查找）",
     },
     {
         "name": "self_info",
         "type": "read-only",
-        "description": "角色自省（关系查询/记忆搜索）",
+        "description": "角色自查（关系查询/记忆搜索）",
+    },
+    {
+        "name": "media",
+        "type": "self-developed",
+        "description": "创意生成（根据描述生成图片，可分享到会话）",
     },
 ]
 

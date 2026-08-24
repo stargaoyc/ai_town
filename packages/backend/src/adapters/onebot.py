@@ -252,6 +252,32 @@ def _strip_at_prefix(event: dict[str, Any], self_id: str | None, text: str) -> s
     return cleaned.strip()
 
 
+# 出站图片 URL（生成→QQ 链路）：仅 http(s) 且以常见图片扩展名结尾的地址
+_IMAGE_URL_RE = re.compile(
+    r"https?://[^\s\]]+?\.(?:png|jpe?g|gif|webp)(?:\?[^\s\]]*)?",
+    re.IGNORECASE,
+)
+# 其余全部 CQ 码一律剥离——防止提示注入伪造 at/reply/JSON 等动作
+_CQ_CODE_RE = re.compile(r"\[CQ:[^\]]*\]")
+
+
+def sanitize_outbound_qq_text(text: str) -> str:
+    """出站消息净化：剥离其余 CQ 码，正文中的图片直链转为 CQ 图片
+
+    顺序关键：先剥离全部 CQ 码（连同其内部参数一起移除，
+    防止提示注入伪造 at/reply/JSON 等动作或夹带恶意 URL），再从
+    剩余正文中提取图片直链转 [CQ:image]。
+
+    全部剥空时返回空串（send_message 对空串直接跳过发送）。
+    """
+    cleaned = _CQ_CODE_RE.sub("", text)
+    images = _IMAGE_URL_RE.findall(cleaned)
+    cleaned = cleaned.strip()
+    if images:
+        cleaned = (cleaned + "\n" if cleaned else "") + "\n".join(f"[CQ:image,file={u}]" for u in images)
+    return cleaned
+
+
 def _split_message(text: str) -> list[str]:
     """将长回复拆分为多段消息
 
@@ -854,6 +880,12 @@ class OneBotAdapter:
             message: 待发送的纯文本消息（可能含多段）
         """
         # 拆分为多段
+        # 出站净化（生成→QQ 链路安全边界）：
+        # 1) 正文中的图片 URL 转为 [CQ:image] 使 QQ 渲染为图片
+        # 2) 剥离其余全部 CQ 码——防止提示注入伪造 at/reply/JSON 等动作
+        message = sanitize_outbound_qq_text(message)
+
+        # 分段发送
         segments = _split_message(message)
         if not segments:
             return

@@ -20,7 +20,7 @@ from typing import Any
 
 from structlog import get_logger
 
-from src.tools import knowledge, self_info, shop, social, world
+from src.tools import knowledge, media, self_info, shop, social, world
 
 logger = get_logger(__name__)
 
@@ -161,9 +161,20 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "self_info.search_memories": {
         "func": self_info.search_memories,
-        "description": "按关键词搜索自己的记忆（文本匹配，非向量检索）",
-        "llm_params": {"keyword": "搜索关键词", "limit": "返回数量（默认 5）"},
+        "description": "按关键词搜索自己的记忆片段（文本匹配，非向量检索）",
+        "llm_params": {"keyword": "搜索关键词", "limit": "返回数量，默认 5"},
         "injected_params": {"character_id": "_character_id"},
+        "state_mutating": False,
+    },
+    # ---------- 创意生成工具（media）----------
+    "media.draw_image": {
+        "func": media.draw_image,
+        "description": "生成一张图片（根据画面描述创作插画，成功后可在回复中分享给用户）",
+        "llm_params": {
+            "prompt": "画面描述（具体、含风格与氛围）",
+            "ratio": "可选画面比例 1:1/3:4/4:3/16:9 等，默认 1:1",
+        },
+        "injected_params": {},
         "state_mutating": False,
     },
 }
