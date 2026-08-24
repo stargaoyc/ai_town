@@ -1482,12 +1482,116 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionRecordOut */
+        ActionRecordOut: {
+            /** Id */
+            id: string;
+            /** Action Id */
+            action_id: string;
+            /** Action Name */
+            action_name: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Reason */
+            reason?: string | null;
+            /** Result */
+            result?: string | null;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /** Location */
+            location?: string | null;
+            /** Related Characters */
+            related_characters?: unknown[] | null;
+            /** Timestamp */
+            timestamp: string;
+        };
+        /** ActionsOut */
+        ActionsOut: {
+            /** Data */
+            data: components["schemas"]["ActionRecordOut"][];
+            /** Total */
+            total: number;
+        };
         /** Body_send_message_api_v1_messages_send_post */
         Body_send_message_api_v1_messages_send_post: {
             /** Character Id */
             character_id: string;
             /** User Id */
             user_id: string;
+        };
+        /** CharacterDetail */
+        CharacterDetail: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Age */
+            age?: number | null;
+            /** Occupation */
+            occupation?: string | null;
+            /** Personality */
+            personality?: string[] | null;
+            /** Traits */
+            traits?: {
+                [key: string]: unknown;
+            } | null;
+            /** Backstory */
+            backstory?: string | null;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** CharacterDetailOut */
+        CharacterDetailOut: {
+            character: components["schemas"]["CharacterDetail"];
+            state: components["schemas"]["CharacterStateOut"];
+        };
+        /**
+         * CharacterItem
+         * @description 角色列表项
+         */
+        CharacterItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Age */
+            age?: number | null;
+            /** Occupation */
+            occupation?: string | null;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** CharacterListOut */
+        CharacterListOut: {
+            /** Data */
+            data: components["schemas"]["CharacterItem"][];
+            /** Total */
+            total: number;
+        };
+        /** CharacterStateOut */
+        CharacterStateOut: {
+            /** Location */
+            location?: string | null;
+            /** Stamina */
+            stamina?: number | null;
+            /** Satiety */
+            satiety?: number | null;
+            /** Mood */
+            mood?: string | null;
+            /** Money */
+            money?: number | null;
+            /** Phone Battery */
+            phone_battery?: number | null;
+            /** Social Energy */
+            social_energy?: number | null;
+            /** Current Action */
+            current_action?: {
+                [key: string]: unknown;
+            } | null;
+            /** Version */
+            version?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1517,6 +1621,52 @@ export interface components {
             current_world_time?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** PlanOut */
+        PlanOut: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Status */
+            status: string;
+            /** Priority */
+            priority: number;
+            /** Progress */
+            progress: number;
+            /** Deadline */
+            deadline?: string | null;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** PlansOut */
+        PlansOut: {
+            /** Data */
+            data: components["schemas"]["PlanOut"][];
+            /** Total */
+            total: number;
+        };
+        /** ReflectionOut */
+        ReflectionOut: {
+            /** Id */
+            id: string;
+            /** Content */
+            content: string;
+            /** Created At */
+            created_at: string;
+        };
+        /** ReflectionsOut */
+        ReflectionsOut: {
+            /** Data */
+            data: components["schemas"]["ReflectionOut"][];
+            /** Total */
+            total: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -2268,9 +2418,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CharacterListOut"];
                 };
             };
             /** @description Validation Error */
@@ -2301,9 +2449,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CharacterDetailOut"];
                 };
             };
             /** @description Validation Error */
@@ -2336,9 +2482,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ReflectionsOut"];
                 };
             };
             /** @description Validation Error */
@@ -2369,9 +2513,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PlansOut"];
                 };
             };
             /** @description Validation Error */
@@ -2404,9 +2546,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ActionsOut"];
                 };
             };
             /** @description Validation Error */

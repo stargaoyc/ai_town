@@ -27,13 +27,20 @@ from src.db.repositories import (
 from src.db.session import db
 from src.modules import RelationGraph
 from src.runtime import get_movement_system, get_redis, get_schedule_system
+from src.schemas.characters import (
+    ActionsOut,
+    CharacterDetailOut,
+    CharacterListOut,
+    PlansOut,
+    ReflectionsOut,
+)
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["characters"])
 
 
-@router.get("/characters")
+@router.get("/characters", response_model=CharacterListOut)
 async def list_characters(limit: int = 20, active_only: bool = False) -> dict[str, Any]:
     """获取角色列表
 
@@ -66,7 +73,7 @@ async def list_characters(limit: int = 20, active_only: bool = False) -> dict[st
     }
 
 
-@router.get("/characters/{character_id}")
+@router.get("/characters/{character_id}", response_model=CharacterDetailOut)
 async def get_character(character_id: str) -> dict[str, Any]:
     """获取角色详情
 
@@ -115,7 +122,7 @@ async def get_character(character_id: str) -> dict[str, Any]:
     }
 
 
-@router.get("/characters/{character_id}/reflections")
+@router.get("/characters/{character_id}/reflections", response_model=ReflectionsOut)
 async def get_reflections(character_id: str, limit: int = 10) -> dict[str, Any]:
     """获取角色反思记录
 
@@ -148,7 +155,7 @@ async def get_reflections(character_id: str, limit: int = 10) -> dict[str, Any]:
     }
 
 
-@router.get("/characters/{character_id}/plans")
+@router.get("/characters/{character_id}/plans", response_model=PlansOut)
 async def get_plans(character_id: str) -> dict[str, Any]:
     """获取角色进行中的计划
 
@@ -187,7 +194,7 @@ async def get_plans(character_id: str) -> dict[str, Any]:
     }
 
 
-@router.get("/characters/{character_id}/actions")
+@router.get("/characters/{character_id}/actions", response_model=ActionsOut)
 async def get_action_history(character_id: str, limit: int = 50) -> dict[str, Any]:
     """获取角色行为历史
 
