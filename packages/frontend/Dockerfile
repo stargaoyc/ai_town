@@ -24,12 +24,18 @@ FROM nginx:alpine
 # 复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# 复制 Nginx 配置（支持 SPA 路由 + API 反代）
+# 复制 Nginx 配置（主配置重定向 pid/临时目录到非 root 可写路径；server 配置支持 SPA + 反代）
+COPY nginx.main.conf /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+# 非 root 用户运行（nginx uid 101）：静态目录授予读权限
+RUN chown -R nginx:nginx /usr/share/nginx/html
+
+USER nginx
+
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

@@ -11,6 +11,12 @@ global:
 rule_files:
   - /etc/prometheus/rules/alerts.yml
 
+# Alertmanager 通知路由（docker/observability/alertmanager.yml）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 # 采集目标
 scrape_configs:
   # AI Town 后端 - FastAPI /metrics 端点

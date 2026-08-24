@@ -112,7 +112,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "80:8080" # 容器内 nginx 以非 root 用户监听 8080（审查 §10.1）
     logging: *default-logging
     networks:
       - aitown-net
@@ -153,6 +153,21 @@ services:
       - ./data/prometheus:/prometheus
     ports:
       - "9090:9090"
+    environment:
+      TZ: Asia/Shanghai
+    logging: *default-logging
+    networks:
+      - aitown-net
+    profiles: [observability]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: aitown-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./docker/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
     environment:
       TZ: Asia/Shanghai
     logging: *default-logging

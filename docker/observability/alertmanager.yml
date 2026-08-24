@@ -1,0 +1,27 @@
+# Alertmanager 配置 - AI Town 告警通知路由
+#
+# 此前 alerts.yml 规则已挂载但无 Alertmanager 服务，告警只能在 Grafana UI 查看。
+# 默认 receiver 为空（仅 UI 可见）；接入实际通知渠道时取消下方注释并填写地址。
+
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: default
+
+# 接入通知渠道示例：
+# receivers:
+#   - name: default
+#     webhook_configs:
+#       - url: http://your-notification-service/alerts
+#   - name: critical-email
+#     email_configs:
+#       - to: ops@example.com
+#         from: alertmanager@example.com
+#         smarthost: smtp.example.com:587
+#         auth_username: alertmanager@example.com
+#         auth_password: ${SMTP_PASSWORD}
