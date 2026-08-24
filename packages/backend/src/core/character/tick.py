@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import json
 import time
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -65,6 +66,35 @@ _ACTIVITY_LABELS = {
     "active": "活跃",
     "peak": "高峰",
 }
+
+
+def _schema_example(schema: dict[str, Any]) -> str:
+    """从决策 JSON Schema 生成输出格式示例（单一真相源，审查 P3）
+
+    decision.yaml 不再手写 JSON 骨架——schema 变更时示例自动同步。
+    """
+
+    def example(prop: dict[str, Any]) -> Any:
+        t = prop.get("type")
+        if t == "string":
+            desc = str(prop.get("description", "")).strip()
+            enum = prop.get("enum")
+            return f"<{enum[0]}|...>" if enum else f"<{desc}>" if desc else "<字符串>"
+        if t == "integer":
+            return 0
+        if t == "number":
+            return 0
+        if t == "boolean":
+            return False
+        if t == "array":
+            items = prop.get("items", {})
+            return [example(items)] if items else []
+        if t == "object":
+            return {k: example(v) for k, v in prop.get("properties", {}).items()}
+        return None
+
+    stub = {k: example(v) for k, v in schema.get("properties", {}).items()}
+    return json.dumps(stub, ensure_ascii=False)
 
 
 def _parse_world_hour(raw: str | None) -> int | None:
@@ -636,46 +666,7 @@ class CharacterTickEngine:
                 activities_text = "、".join(scene.activities) if scene.activities else "无"
                 scenes_text = f"{scene.name}（容量{scene.capacity}人，开放{open_hours}，可做：{activities_text}）"
 
-        # 渲染决策 Prompt
-        prompt = self.prompts.render(
-            "decision",
-            name=character.name,
-            personality=", ".join(character.traits.get("personality", [])) or "无",
-            backstory=character.backstory or "无",
-            location=state.get("location", "未知"),
-            energy=state.get("stamina", 50),
-            hunger=state.get("satiety", 50),
-            mood=state.get("mood", "平静"),
-            world_time=world.get("world_time", datetime.now(UTC).isoformat()),
-            weather=world.get("weather", "sunny"),
-            scenes=scenes_text,
-            schedule=schedule_text,
-            memories=memories_text,
-            reflections=context.get("reflections", "暂无高层认知"),
-            diary=context.get("diary", "暂无日记"),
-            gossips=context.get("recent_gossip", "暂无听说的消息"),
-            world_events=context.get("world_events", "暂无近期世界动态"),
-            plans=plans_text,
-            candidates=candidates_text,
-            nearby_characters=nearby_text,
-            person_memory=context.get("known_users", "（暂无认识的用户）"),
-        )
-
-        # 追加工具信息到 Prompt
-        prompt += self.prompts.render("decision_tools", tools_text=tools_text)
-
-        # ReAct 模式：如果有前序工具调用结果，加入 Prompt 让 LLM 基于结果推理
-        if tool_observations:
-            obs_lines = []
-            for i, obs in enumerate(tool_observations, 1):
-                success_tag = "成功" if obs.get("success") else "失败"
-                result_str = str(obs.get("result", ""))[:800]
-                obs_lines.append(
-                    f"{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) [{success_tag}]\n   结果: {result_str}"
-                )
-            prompt += self.prompts.render("decision_react", observations=chr(10).join(obs_lines))
-
-        # 定义决策结果 schema
+        # 定义决策结果 schema（先于 Prompt 渲染：输出格式示例由 schema 派生，单一真相源）
         schema = {
             "type": "object",
             "properties": {
@@ -711,6 +702,46 @@ class CharacterTickEngine:
             },
             "required": ["action", "reason"],
         }
+
+        # 渲染决策 Prompt
+        prompt = self.prompts.render(
+            "decision",
+            name=character.name,
+            personality=", ".join(character.traits.get("personality", [])) or "无",
+            backstory=character.backstory or "无",
+            location=state.get("location", "未知"),
+            energy=state.get("stamina", 50),
+            hunger=state.get("satiety", 50),
+            mood=state.get("mood", "平静"),
+            world_time=world.get("world_time", datetime.now(UTC).isoformat()),
+            weather=world.get("weather", "sunny"),
+            scenes=scenes_text,
+            schedule=schedule_text,
+            memories=memories_text,
+            reflections=context.get("reflections", "暂无高层认知"),
+            diary=context.get("diary", "暂无日记"),
+            gossips=context.get("recent_gossip", "暂无听说的消息"),
+            world_events=context.get("world_events", "暂无近期世界动态"),
+            plans=plans_text,
+            candidates=candidates_text,
+            nearby_characters=nearby_text,
+            person_memory=context.get("known_users", "（暂无认识的用户）"),
+            output_json_example=_schema_example(schema),
+        )
+
+        # 追加工具信息到 Prompt
+        prompt += self.prompts.render("decision_tools", tools_text=tools_text)
+
+        # ReAct 模式：如果有前序工具调用结果，加入 Prompt 让 LLM 基于结果推理
+        if tool_observations:
+            obs_lines = []
+            for i, obs in enumerate(tool_observations, 1):
+                success_tag = "成功" if obs.get("success") else "失败"
+                result_str = str(obs.get("result", ""))[:800]
+                obs_lines.append(
+                    f"{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) [{success_tag}]\n   结果: {result_str}"
+                )
+            prompt += self.prompts.render("decision_react", observations=chr(10).join(obs_lines))
 
         # 调用 LLM
         result = await self.llm.structured_output(prompt, schema, model="chat")

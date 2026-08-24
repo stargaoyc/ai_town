@@ -11,7 +11,7 @@ import structlog
 import yaml
 from redis.asyncio import Redis
 
-from src.modules.town.schema import Scene, SceneRuntimeState, WorldMap
+from src.modules.town.schema import Scene, SceneRuntimeState, WorldMap, is_open_hours
 
 logger = structlog.get_logger(__name__)
 
@@ -163,13 +163,7 @@ class SceneLoader:
         if scene.workday_only and not is_workday:
             return False
 
-        # 营业时间
-        start, end = scene.open_hours
-        if end == 0:
-            end = 24
-        if start == 0 and end == 24:
-            return True
-        return start <= hour < end
+        return is_open_hours(tuple(scene.open_hours), hour)
 
     async def get_crowdedness(self, scene_id: str) -> float:
         """获取场景拥挤度（0.0-1.0）

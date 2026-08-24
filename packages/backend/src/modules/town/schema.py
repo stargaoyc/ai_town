@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -95,3 +96,24 @@ class SceneRuntimeState(BaseModel):
     active_events: list[str] = Field(default_factory=list, description="当前事件")
 
     model_config = ConfigDict(extra="forbid")
+
+
+def is_open_hours(open_hours: Sequence[int], hour: int) -> bool:
+    """判断 hour 是否落在营业时段内（场景开放时间判断的唯一实现，审查 P3 双实现收敛）
+
+    兼容两种时段约定：
+    - configs/scenes.yaml：end=0 表示 24 点
+    - 历史数据：end>24 表示跨午夜（如 18 → 次日 02 记作 26）
+    """
+    start, end = int(open_hours[0]), int(open_hours[1])
+    h = hour % 24
+    if end == 0:
+        # yaml 约定：结束时间为 0 表示 24 点；若直接取模会使全天场景恒为关闭
+        end = 24
+    if start == 0 and end == 24:
+        return True
+    start %= 24
+    end %= 24
+    if start <= end:
+        return start <= h < end
+    return h >= start or h < end
