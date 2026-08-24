@@ -313,6 +313,12 @@ class WorldEngine:
                 if not self.is_leader:
                     continue
 
+                # Fencing：写路径前确认锁仍归本实例（旧 leader 停顿苏醒防护）
+                if not await self._is_still_leader():
+                    logger.warning("world_fencing_lost_leadership", tick_id=self.tick_id)
+                    self.is_leader = False
+                    continue
+
                 self.tick_id += 1
                 await self._execute_tick()
 
@@ -328,6 +334,22 @@ class WorldEngine:
         调用方必须先确认本实例持有 Leader 锁（is_leader）。
         """
         await self._execute_tick()
+
+    async def _is_still_leader(self) -> bool:
+        """Fencing 校验：Redis 锁的值仍等于本实例 token 才允许推进世界
+
+        防止旧 leader 因 GC/网络停顿超过锁 TTL 后苏醒，与新 leader 双写
+        世界状态（fencing check-then-act 模式；检查与写入非原子，
+        但将双写窗口从「整个停顿时长」收窄到「单次检查之后」）。
+        """
+        if not self.is_leader or not self._leader_token:
+            return False
+        try:
+            current = await self.redis.get(self.LOCK_KEY)
+        except Exception as e:
+            logger.warning("world_fencing_check_failed_skip_tick", error=str(e))
+            return False
+        return current == self._leader_token
 
     async def _execute_tick(self) -> None:
         """执行一次 World Tick
