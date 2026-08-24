@@ -177,6 +177,16 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "injected_params": {},
         "state_mutating": False,
     },
+    "media.generate_video": {
+        "func": media.generate_video_clip,
+        "description": "生成一段短视频（⚠️ 较慢约 1-3 分钟，仅在用户明确要求视频时使用）",
+        "llm_params": {
+            "prompt": "视频内容描述（具体、含镜头与氛围）",
+            "frames": "目标帧数（默认 25，约 1 秒；越大越长越慢）",
+        },
+        "injected_params": {},
+        "state_mutating": False,
+    },
 }
 
 

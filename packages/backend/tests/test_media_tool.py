@@ -71,3 +71,42 @@ class TestDrawImage:
 
         assert result["success"] is True
         assert result["cq_code"] == ""
+
+
+class TestGenerateVideoClip:
+    async def test_success_returns_url_and_cq(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[dict[str, Any]] = []
+
+        class VideoLLM:
+            async def generate_video(self, **kwargs: Any) -> str:
+                calls.append(kwargs)
+                return "https://cdn.example.com/out/clip.mp4"
+
+        _patch_llm(monkeypatch, VideoLLM())
+
+        result = await media.generate_video_clip("猫追蝴蝶", frames=30)
+
+        assert result["success"] is True
+        assert result["url"] == "https://cdn.example.com/out/clip.mp4"
+        assert result["cq_code"] == "[CQ:video,file=https://cdn.example.com/out/clip.mp4]"
+        # 30 对齐到 8n+1 -> 33
+        assert calls[0]["num_frames"] == 33
+
+    async def test_failure_returns_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class FailLLM:
+            async def generate_video(self, **kwargs: Any) -> str:
+                raise TimeoutError("video_poll_timeout")
+
+        _patch_llm(monkeypatch, FailLLM())
+
+        result = await media.generate_video_clip("测试", frames=25)
+
+        assert result["success"] is False
+        assert "video_poll_timeout" in result["error"]
+
+    async def test_llm_not_initialized(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch_llm(monkeypatch, None)
+
+        result = await media.generate_video_clip("测试", frames=25)
+
+        assert result["success"] is False

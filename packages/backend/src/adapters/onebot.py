@@ -261,20 +261,36 @@ _IMAGE_URL_RE = re.compile(
 _CQ_CODE_RE = re.compile(r"\[CQ:[^\]]*\]")
 
 
+# 出站图片 URL（生成→QQ 链路）：仅 http(s) 且以常见图片扩展名结尾的地址
+_IMAGE_URL_RE = re.compile(
+    r"https?://[^\s\]]+?\.(?:png|jpe?g|gif|webp)(?:\?[^\s\]]*)?",
+    re.IGNORECASE,
+)
+# 出站视频 URL（media.generate_video 产物）
+_VIDEO_URL_RE = re.compile(
+    r"https?://[^\s\]]+?\.(?:mp4|mov|webm)(?:\?[^\s\]]*)?",
+    re.IGNORECASE,
+)
+# 其余全部 CQ 码一律剥离——防止提示注入伪造 at/reply/JSON 等动作
+_CQ_CODE_RE = re.compile(r"\[CQ:[^\]]*\]")
+
+
 def sanitize_outbound_qq_text(text: str) -> str:
-    """出站消息净化：剥离其余 CQ 码，正文中的图片直链转为 CQ 图片
+    """出站消息净化：剥离其余 CQ 码，正文中的媒体直链转为对应 CQ
 
     顺序关键：先剥离全部 CQ 码（连同其内部参数一起移除，
     防止提示注入伪造 at/reply/JSON 等动作或夹带恶意 URL），再从
-    剩余正文中提取图片直链转 [CQ:image]。
+    剩余正文中提取图片/视频直链转 [CQ:image]/[CQ:video]。
 
     全部剥空时返回空串（send_message 对空串直接跳过发送）。
     """
     cleaned = _CQ_CODE_RE.sub("", text)
     images = _IMAGE_URL_RE.findall(cleaned)
+    videos = _VIDEO_URL_RE.findall(cleaned)
     cleaned = cleaned.strip()
-    if images:
-        cleaned = (cleaned + "\n" if cleaned else "") + "\n".join(f"[CQ:image,file={u}]" for u in images)
+    cq_suffix = "\n".join([f"[CQ:image,file={u}]" for u in images] + [f"[CQ:video,file={u}]" for u in videos])
+    if cq_suffix:
+        cleaned = (cleaned + "\n" if cleaned else "") + cq_suffix
     return cleaned
 
 

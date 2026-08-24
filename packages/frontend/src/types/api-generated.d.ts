@@ -2217,10 +2217,11 @@ export interface components {
             /** Source */
             source?: string | null;
         };
-        /** StateHistoryPointOut */
+        /**
+         * StateHistoryPointOut
+         * @description 状态历史点（与端点实际返回对齐：时间戳字段为 updated_at）
+         */
         StateHistoryPointOut: {
-            /** Recorded At */
-            recorded_at: string;
             /** Location */
             location?: string | null;
             /** Stamina */

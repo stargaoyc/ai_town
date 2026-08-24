@@ -22,6 +22,51 @@ logger = structlog.get_logger()
 _RATIOS = {"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"}
 
 
+def _snap_frames(frames: int) -> int:
+    """帧数约束为 8n+1（agnes-video 要求），最小 25"""
+    if frames < 25:
+        return 25
+    snapped = ((frames - 1 + 7) // 8) * 8 + 1
+    return max(25, snapped)
+
+
+async def generate_video_clip(prompt: str, frames: int = 25) -> dict[str, Any]:
+    """根据文字描述生成一段短视频
+
+    ⚠️ 同步轮询直至生成完成，耗时约 1-3 分钟——会占用当前角色 Tick 槽位，
+    其他角色不受影响。完成后返回视频 URL 与 CQ 码。
+
+    Args:
+        prompt: 视频内容的文字描述
+        frames: 目标帧数（自动对齐到 8n+1，越大越长越慢）
+
+    Returns:
+        成功：{"success": True, "url": ..., "cq_code": "[CQ:video,file=<URL>]", ...}
+    """
+    llm = get_llm()
+    if llm is None:
+        return {"success": False, "error": "LLM 未初始化，无法生成视频"}
+
+    snapped = _snap_frames(frames)
+    try:
+        url = await llm.generate_video(prompt=prompt, num_frames=snapped)
+    except Exception as exc:
+        logger.warning("generate_video_failed", error=str(exc))
+        return {"success": False, "error": f"视频生成失败: {exc}"}
+
+    if not url.startswith("http"):
+        return {"success": False, "error": "video url invalid"}
+
+    logger.info("generate_video_ok", frames=snapped)
+    return {
+        "success": True,
+        "url": url,
+        "cq_code": f"[CQ:video,file={url}]",
+        "prompt": prompt,
+        "frames": snapped,
+    }
+
+
 async def draw_image(prompt: str, ratio: str = "1:1") -> dict[str, Any]:
     """根据文字描述生成一张图片
 
