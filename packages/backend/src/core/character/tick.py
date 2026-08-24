@@ -398,115 +398,110 @@ class CharacterTickEngine:
             )
 
         # 检索近期反思（高层认知）注入决策——认知产物必须回流上下文（审查 §五-P0）
+        # 反思/日记/传闻/关系/同场景角色均为纯读且相邻，合并为单会话
+        # （审查 §三坏味道 #5：此前每类数据独立开 session，往返开销随角色数放大）
         reflections_text = "暂无高层认知"
-        try:
-            async with db.session() as session:
-                ref_repo = ReflectionRepository(session)
-                refs = await ref_repo.get_by_character(character_id, limit=5)
-                if refs:
-                    reflections_text = "\n".join(f"- {r.content}" for r in refs)
-        except Exception as e:
-            logger.warning(
-                "reflections_load_failed_continue",
-                character_id=str(character_id),
-                error=str(e),
-            )
-
-        # 检索最近一篇日报注入决策——角色带着"今天经历过什么"的叙事做决策（审查 §五-P0）
         diary_text = "暂无日记"
-        try:
-            async with db.session() as session:
-                diary_repo = DiaryRepository(session)
-                latest_diary = await diary_repo.get_latest(character_id, period="day")
-                if latest_diary and latest_diary.content:
-                    diary_text = latest_diary.content[:300]
-        except Exception as e:
-            logger.warning(
-                "diary_load_failed_continue",
-                character_id=str(character_id),
-                error=str(e),
-            )
-
-        # 检索最近听说的传闻（群体动力学 B4：作为社交话题提示注入，
-        # 让角色在 chat_with 中自然提起听来的消息，而非只沉默存档）
         gossips_text = "暂无听说的消息"
-        try:
-            async with db.session() as session:
-                mem_repo = MemoryRepository(session)
-                gossips = await mem_repo.fetch_recent_gossip(character_id, hours=24, limit=2)
-                if gossips:
-                    gossips_text = "\n".join(f"- {g}" for g in gossips)
-        except Exception as e:
-            logger.warning(
-                "gossip_context_load_failed_continue",
-                character_id=str(character_id),
-                error=str(e),
-            )
-
-        # 加载角色全部出向关系（一次查询，供工具注入与同场景角色感知复用）
         relations_map: dict[str, int] = {}
         relation_types: dict[str, str] = {}
-        try:
-            async with db.session() as session:
-                rel_repo = RelationRepository(session)
-                rels = await rel_repo.get_relations(character_id)
-                relations_map = {str(r.target_id): r.strength for r in rels}
-                relation_types = {str(r.target_id): r.relationship_type for r in rels}
-        except Exception as e:
-            logger.warning(
-                "relations_load_failed_continue",
-                character_id=str(character_id),
-                error=str(e),
-            )
-
-        # 感知同场景其他角色（多智能体交互关键）
-        # 提供角色名、性格、当前动作、关系强度，供 LLM 决策是否发起社交
         nearby_characters: list[dict[str, Any]] = []
         current_location = state.get("location")
-        if current_location:
+        async with db.session() as session:
             try:
-                async with db.session() as session:
-                    char_repo = CharacterRepository(session)
-                    others = await char_repo.get_characters_by_location(
+                refs = await ReflectionRepository(session).get_by_character(character_id, limit=5)
+                if refs:
+                    reflections_text = "\n".join(f"- {r.content}" for r in refs)
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "reflections_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+            # 检索最近一篇日报注入决策——角色带着"今天经历过什么"的叙事做决策（审查 §五-P0）
+            try:
+                latest_diary = await DiaryRepository(session).get_latest(character_id, period="day")
+                if latest_diary and latest_diary.content:
+                    diary_text = latest_diary.content[:300]
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "diary_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+            # 检索最近听说的传闻（群体动力学 B4：作为社交话题提示注入，
+            # 让角色在 chat_with 中自然提起听来的消息，而非只沉默存档）
+            try:
+                gossips = await MemoryRepository(session).fetch_recent_gossip(character_id, hours=24, limit=2)
+                if gossips:
+                    gossips_text = "\n".join(f"- {g}" for g in gossips)
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "gossip_context_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+            # 加载角色全部出向关系（一次查询，供工具注入与同场景角色感知复用）
+            try:
+                rels = await RelationRepository(session).get_relations(character_id)
+                relations_map = {str(r.target_id): r.strength for r in rels}
+                relation_types = {str(r.target_id): r.relationship_type for r in rels}
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "relations_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+            # 感知同场景其他角色（多智能体交互关键）
+            # 提供角色名、性格、当前动作、关系强度，供 LLM 决策是否发起社交
+            if current_location:
+                try:
+                    others = await CharacterRepository(session).get_characters_by_location(
                         location=current_location,
                         exclude_id=character_id,
                     )
 
-                # 查询关系（批量读取，避免 N+1）
+                    # 关系信息直接复用上方一次性加载的出向关系，避免逐角色查询（N+1）
+                    for other_char, other_state in others:
+                        oid = str(other_char.id)
+                        rel_type = relation_types.get(oid, "stranger")
+                        rel_strength = relations_map.get(oid, 0)
 
-                # 关系信息直接复用上方一次性加载的出向关系，避免逐角色查询（N+1）
+                        personality = (other_char.traits or {}).get("personality", [])
+                        if isinstance(personality, list):
+                            personality_text = "、".join(personality)
+                        else:
+                            personality_text = str(personality)
 
-                for other_char, other_state in others:
-                    oid = str(other_char.id)
-                    rel_type = relation_types.get(oid, "stranger")
-                    rel_strength = relations_map.get(oid, 0)
-
-                    personality = (other_char.traits or {}).get("personality", [])
-                    if isinstance(personality, list):
-                        personality_text = "、".join(personality)
-                    else:
-                        personality_text = str(personality)
-
-                    nearby_characters.append(
-                        {
-                            "id": oid,
-                            "name": other_char.name,
-                            "personality": personality_text,
-                            "mood": other_state.mood,
-                            "relationship_type": rel_type,
-                            "strength": rel_strength,
-                            "current_action": (other_state.current_action or {}).get("action_name")
-                            if other_state.current_action
-                            else None,
-                        }
+                        nearby_characters.append(
+                            {
+                                "id": oid,
+                                "name": other_char.name,
+                                "personality": personality_text,
+                                "mood": other_state.mood,
+                                "relationship_type": rel_type,
+                                "strength": rel_strength,
+                                "current_action": (other_state.current_action or {}).get("action_name")
+                                if other_state.current_action
+                                else None,
+                            }
+                        )
+                except Exception as e:
+                    await session.rollback()
+                    logger.warning(
+                        "nearby_characters_query_failed_continue",
+                        character_id=str(character_id),
+                        location=current_location,
+                        error=str(e),
                     )
-            except Exception as e:
-                logger.warning(
-                    "nearby_characters_query_failed_continue",
-                    character_id=str(character_id),
-                    location=current_location,
-                    error=str(e),
-                )
 
         # 用户记忆摘要（按热度 top-N）：让陪伴关系影响镇内决策（审查 §4.4 断层）
         # 失败降级为占位文本，不阻断 Tick
