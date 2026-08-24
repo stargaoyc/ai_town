@@ -22,9 +22,10 @@ services:
     container_name: aitown-postgres
     restart: unless-stopped
     environment:
+      # 凭据经变量插值（compose 自动读根目录 .env），默认值仅保证一键启动可用（审查二轮 N3）
       POSTGRES_DB: ai_town
       POSTGRES_USER: ai_town
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       TZ: Asia/Shanghai
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -72,7 +73,8 @@ services:
       - path: .env # 根目录 .env（生产部署）；本地仅起基础设施时可以没有
         required: false
     environment:
-      DATABASE_URL: postgresql+asyncpg://ai_town:password@postgres:5432/ai_town
+      # 与 postgres 服务共用 POSTGRES_PASSWORD 变量，消除 .env/compose 双真相源（审查二轮 N3）
+      DATABASE_URL: postgresql+asyncpg://ai_town:${POSTGRES_PASSWORD:-password}@postgres:5432/ai_town
       REDIS_URL: redis://redis:6379/0
       TZ: Asia/Shanghai
     depends_on:
@@ -178,7 +180,7 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_INSTALL_PLUGINS: ""
       TZ: Asia/Shanghai
