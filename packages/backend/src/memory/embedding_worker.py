@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.db.repositories.memory_repo import MemoryRepository
 from src.llm.client import LLMClient
+from src.observability.tracing import trace_span
 
 logger = structlog.get_logger(__name__)
 
@@ -85,12 +87,16 @@ class EmbeddingWorker:
         self._running = False
         logger.info("embedding_worker_stopped")
 
+    @trace_span("embedding.batch")
     async def _process_batch(self) -> int:
         """处理一批未向量化的记忆
 
         Returns:
             本批处理的记忆数量
         """
+        from src.observability.metrics import EMBEDDING_BATCH_DURATION, EMBEDDING_EPISODES_TOTAL
+
+        start = time.perf_counter()
         async with self.session_factory() as session:
             repo = MemoryRepository(session)
             episodes = await repo.fetch_unmaterialized(limit=self.batch_size)
@@ -151,6 +157,11 @@ class EmbeddingWorker:
                     )
 
             await session.commit()
+
+            EMBEDDING_EPISODES_TOTAL.labels(status="success").inc(success_count)
+            EMBEDDING_EPISODES_TOTAL.labels(status="failed").inc(failed_count)
+            EMBEDDING_EPISODES_TOTAL.labels(status="deduped").inc(dedup_count)
+            EMBEDDING_BATCH_DURATION.observe(time.perf_counter() - start)
 
             logger.info(
                 "embedding_batch_done",

@@ -138,6 +138,24 @@ RECONCILE_REPAIR_TOTAL = Counter(
     ["direction"],  # direction: pg_to_redis / redis_to_pg
 )
 
+# === Embedding Worker 指标（此前只进日志，无指标观测，审查 §八盲区 5）===
+EMBEDDING_EPISODES_TOTAL = Counter(
+    "ai_town_embedding_episodes_total",
+    "Embedding Worker 处理的记忆条数",
+    ["status"],  # status: success / failed / deduped
+)
+EMBEDDING_BATCH_DURATION = Histogram(
+    "ai_town_embedding_batch_duration_seconds",
+    "Embedding 批处理耗时",
+)
+
+# === Redis Streams 队列深度（积压与死信可观测）===
+REDIS_STREAM_MESSAGES = Gauge(
+    "ai_town_redis_stream_messages",
+    "Redis Streams 队列长度（含死信流）",
+    ["stream"],
+)
+
 # === HTTP 请求指标（供 PrometheusMiddleware 使用） ===
 HTTP_REQUEST_DURATION = Histogram(
     "ai_town_http_request_duration_seconds",

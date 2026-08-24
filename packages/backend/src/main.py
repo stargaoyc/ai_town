@@ -76,6 +76,7 @@ from src.scheduler.loops import (
     person_memory_compaction_loop,
     person_memory_heat_decay_loop,
     reconciliation_loop,
+    redis_health_loop,
 )
 from src.security.rate_limiter import RateLimiter
 from src.security.startup_checks import check_default_secrets
@@ -340,6 +341,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("reconciliation_loop_start_failed", error=str(e), exc_info=True)
 
+    # 5.65 启动 Redis 周期探活循环（连接状态 gauge + Streams 队列深度）
+    redis_health_task: asyncio.Task[None] | None = None
+    try:
+        redis_health_task = asyncio.create_task(redis_health_loop())
+        logger.info("redis_health_loop_started")
+    except Exception as e:
+        logger.error("redis_health_loop_start_failed", error=str(e), exc_info=True)
+
     # 5.6 启动时同步活跃角色数指标（避免重启后指标面板显示 0）
     try:
         from src.db.session import db as _db
@@ -469,6 +478,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reconcile_task.cancel()
         try:
             await reconcile_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消 Redis 探活循环
+    if redis_health_task:
+        redis_health_task.cancel()
+        try:
+            await redis_health_task
         except asyncio.CancelledError:
             pass
 

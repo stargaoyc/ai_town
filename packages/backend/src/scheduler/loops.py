@@ -265,6 +265,44 @@ async def reconciliation_loop() -> None:
             # 继续循环，不中断
 
 
+async def redis_health_loop() -> None:
+    """Redis 周期探活 + Streams 队列深度采集
+
+    REDIS_CONNECTED 此前只在启动和 World Tick 成功时置 1：两次 Tick 之间断连时
+    gauge 保持陈旧值，RedisDisconnected 告警可能漏报（审查 §八盲区 4）。
+    本循环每 15 秒 ping 一次刷新连接状态，并采集 onebot Streams 积压/死信深度。
+    """
+    from src.messaging.event_queue import DLQ_STREAM, STREAM
+    from src.observability.metrics import REDIS_CONNECTED, REDIS_STREAM_MESSAGES
+
+    interval = 15
+    logger.info("redis_health_loop_started", interval=interval)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+
+            redis = runtime.get_redis()
+            if not redis:
+                continue
+
+            try:
+                await redis.ping()
+            except Exception as e:
+                REDIS_CONNECTED.set(0)
+                logger.warning("redis_health_ping_failed", error=str(e))
+                continue
+            REDIS_CONNECTED.set(1)
+
+            for stream in (STREAM, DLQ_STREAM):
+                REDIS_STREAM_MESSAGES.labels(stream=stream).set(await redis.xlen(stream))
+        except asyncio.CancelledError:
+            logger.info("redis_health_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("redis_health_loop_error", error=str(e), exc_info=True)
+
+
 async def person_memory_heat_decay_loop() -> None:
     """Person Memory 热度衰减后台循环
 

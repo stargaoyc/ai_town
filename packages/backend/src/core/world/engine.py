@@ -41,6 +41,7 @@ from src.observability.metrics import (
     WORLD_TICK_ID,
     WORLD_TICK_TOTAL,
 )
+from src.observability.tracing import trace_span
 
 logger = get_logger(__name__)
 
@@ -351,6 +352,7 @@ class WorldEngine:
             return False
         return current == self._leader_token
 
+    @trace_span("world.tick")
     async def _execute_tick(self) -> None:
         """执行一次 World Tick
 

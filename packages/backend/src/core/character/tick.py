@@ -52,6 +52,7 @@ from src.observability.metrics import (
     CHARACTER_TICK_DURATION,
     CHARACTER_TICK_TOTAL,
 )
+from src.observability.tracing import trace_span
 from src.runtime import get_movement_system, get_proactive_share_handler, get_scene_loader, get_schedule_system
 from src.tools import ToolRegistry
 
@@ -139,6 +140,7 @@ class CharacterTickEngine:
 
         self._ensure_semaphore()
 
+    @trace_span("character.tick")
     async def tick_character(self, character_id: UUID) -> None:
         """执行单个角色的 Tick
 
