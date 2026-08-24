@@ -658,3 +658,28 @@ HTTP 轮询仅作为断连兜底（30s）。聊天与通知的详细协议见 [�
 | 数据模型        | [data-model.md](data-model.md)             |
 | 配置参考        | [config-reference.md](config-reference.md) |
 | 可观测性端点    | [observability.md](observability.md)       |
+
+---
+
+## 附：类型收敛专项手册（2026-08-24 启动）
+
+目标：删除前端 28 个手写 interface，全部改用 `pnpm gen:api` 生成的 OpenAPI 契约类型。
+
+**前置条件**：端点必须挂载命名 `response_model`（裸 dict 无法生成结构）。
+
+**已完成试点**：`GET /world`（WorldStateOut）、`GET /world/events/{tick_id}`、
+`GET /world/events`（WorldEventsRangeOut）、`/health`（HealthOut）——
+后端模型见 `src/schemas/world.py`；前端 `WorldState` 已切换为生成引用。
+
+**剩余端点推进模式**（每域三步）：
+
+1. 后端：`src/schemas/<域>.py` 定义 Out 模型（形状以现返回 dict 为准，
+   参考 `src/schemas/characters.py` 已备好的角色域模型），端点挂 `response_model=`
+   并将 return dict 改为模型构造；
+2. `uv run python scripts/export_openapi.py && pnpm gen:api`；
+3. 前端 `lib/api.ts` 对应 interface 改为 `components["schemas"]["XxxOut"]` 别名并删除手写体。
+
+**待推进域清单**：characters（12 端点，模型已备好）、memory、messages、admin、tools、
+notifications、town、actions、modules。
+
+**CI 守护**：frontend job 的 "API type contract guard" 步骤会在后端契约变更未同步时失败。
