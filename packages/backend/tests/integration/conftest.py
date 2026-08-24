@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-import socket
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import asyncpg
 import pytest
 import pytest_asyncio
 from alembic.config import Config
@@ -44,13 +44,43 @@ _REDIS_URL = os.environ.get("IT_REDIS_URL", "redis://localhost:6379/15")
 
 
 def _services_reachable() -> bool:
-    for port in {int(_PG_PORT), 6379}:
-        try:
-            with socket.create_connection((_PG_HOST, port), timeout=1):
-                pass
-        except OSError:
-            return False
+    """真实握手探测：PG 执行 SELECT 1、Redis 执行 PING
+
+    仅做 TCP 端口检查会把「端口开着但服务坏了」误判为可用，
+    导致集成测试以 error 而非 skip 收场（审查二轮 N1）。
+    """
+    try:
+        asyncio.run(_pg_handshake())
+    except Exception:
+        return False
+    try:
+        asyncio.run(_redis_ping())
+    except Exception:
+        return False
     return True
+
+
+async def _pg_handshake() -> None:
+    conn = await asyncpg.connect(
+        host=_PG_HOST,
+        port=int(_PG_PORT),
+        user=_PG_USER,
+        password=_PG_PASSWORD,
+        database="postgres",
+        timeout=3,
+    )
+    try:
+        await conn.fetchval("SELECT 1")
+    finally:
+        await conn.close()
+
+
+async def _redis_ping() -> None:
+    r = AsyncRedis.from_url(_REDIS_URL, socket_connect_timeout=3, socket_timeout=3)
+    try:
+        await r.ping()
+    finally:
+        await r.aclose()
 
 
 def _skip_if_unreachable() -> None:
