@@ -203,3 +203,45 @@ class TestSearchHybrid:
 
         scores = {r["content"]: float(r["final_score"]) for r in rows}
         assert scores["新且重要"] > scores["旧且不重要"]
+
+
+class TestExistsRecentDuplicate:
+    async def test_exact_normalized_match_detected(self, it_session: AsyncSession, memory_character: Character) -> None:
+        it_session.add(MemoryEpisode(character_id=memory_character.id, content="今天  在咖啡店  和艾莉丝聊天"))
+        await it_session.flush()
+
+        repo = MemoryRepository(it_session)
+        assert await repo.exists_recent_duplicate(memory_character.id, "今天 在咖啡店 和艾莉丝聊天") is True
+
+    async def test_paraphrase_not_detected_documents_limitation(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        """改写式复述当前不拦截——pg_trgm 对中文实测无效（真实改写对仅 0.3-0.4），
+        正确方案是 embedding worker 落向量后余弦比对（复审 N7 待办）。
+        本测试钉住现状语义，防止误以为已覆盖 paraphrase。"""
+        it_session.add(MemoryEpisode(character_id=memory_character.id, content="今天在咖啡店和艾莉丝聊了新上线的拿铁"))
+        await it_session.flush()
+
+        repo = MemoryRepository(it_session)
+        assert await repo.exists_recent_duplicate(memory_character.id, "今天在咖啡馆跟艾莉丝聊起新推出的拿铁") is False
+
+    async def test_unrelated_content_not_flagged(self, it_session: AsyncSession, memory_character: Character) -> None:
+        it_session.add(MemoryEpisode(character_id=memory_character.id, content="在图书馆读完了一本哲学书"))
+        await it_session.flush()
+
+        repo = MemoryRepository(it_session)
+        assert await repo.exists_recent_duplicate(memory_character.id, "去公园跑了五公里") is False
+
+    async def test_old_duplicate_outside_window_ignored(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        stale = MemoryEpisode(
+            character_id=memory_character.id,
+            content="今天在咖啡店和艾莉丝聊天",
+            timestamp=datetime.now(UTC) - timedelta(hours=48),
+        )
+        it_session.add(stale)
+        await it_session.flush()
+
+        repo = MemoryRepository(it_session)
+        assert await repo.exists_recent_duplicate(memory_character.id, "今天在咖啡店和艾莉丝聊天", hours=24) is False

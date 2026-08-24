@@ -143,7 +143,11 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         """检查近 N 小时内是否已存在归一化后相同的记忆（写入去重）
 
         归一化规则与调用方一致：折叠全部空白字符为单个空格。
-        命中返回 True，调用方跳过写入，抑制重复行为产生的近似重复记忆。
+        命中返回 True，调用方跳过写入，抑制重复行为产生的重复记忆。
+
+        已知局限：只能拦精确重复，拦不住改写式复述。曾试验 pg_trgm
+        相似度补充，中文文本实测相似度过低（真实改写对仅 0.3-0.4）不可用；
+        正确方案是 embedding worker 落向量后做余弦比对（待办，见复审文档 N7）。
         """
         cutoff = datetime.now(UTC) - timedelta(hours=hours)
         stmt = (
