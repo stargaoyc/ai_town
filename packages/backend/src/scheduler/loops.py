@@ -11,14 +11,16 @@
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, false, func, select, true, update
 from structlog import get_logger
 
 from src import runtime
 from src.config import settings
-from src.db.models import MemoryEpisode, PersonMemory
-from src.db.repositories import CharacterRepository
+from src.db.models import MemoryEpisode, PersonMemory, PersonMemoryEntry
+from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService
 
@@ -301,16 +303,135 @@ async def person_memory_heat_decay_loop() -> None:
             logger.error("person_memory_heat_decay_loop_error", error=str(e), exc_info=True)
 
 
+async def person_memory_compaction_loop() -> None:
+    """Person Memory 主档压缩循环（两层结构，审查清单 #4）
+
+    每 6 小时执行一次：未压缩事实条目 >= 阈值的 (角色, 用户) 对，
+    由 LLM 把条目合并进 person_memories.content 主档并标记 compacted。
+    条目只追加不修改（append-only），压缩后软归档保留可追溯。
+    """
+
+    interval = 6 * 3600
+    logger.info("person_memory_compaction_loop_started", interval=interval)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await run_person_memory_compaction()
+        except asyncio.CancelledError:
+            logger.info("person_memory_compaction_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("person_memory_compaction_loop_error", error=str(e), exc_info=True)
+
+
+async def run_person_memory_compaction(session_factory: Any | None = None) -> int:
+    """单次主档压缩周期（可测试入口）；返回压缩的 (角色, 用户) 对数
+
+    Args:
+        session_factory: 会话上下文工厂；缺省用全局 db.session
+    """
+    from src.config import settings as _settings
+
+    llm = runtime.get_llm()
+    prompts = runtime.get_prompts()
+    if llm is None or prompts is None:
+        return 0
+
+    threshold = _settings.person_memory_compact_threshold
+    compacted_pairs = 0
+    factory = session_factory or db.session
+    async with factory() as session:
+        # 找出未压缩条目达到阈值的 (角色, 用户) 对
+        count_stmt = (
+            select(
+                PersonMemoryEntry.character_id,
+                PersonMemoryEntry.user_id,
+                func.count().label("cnt"),
+            )
+            .where(PersonMemoryEntry.compacted.is_(False))
+            .group_by(PersonMemoryEntry.character_id, PersonMemoryEntry.user_id)
+            .having(func.count() >= threshold)
+        )
+        pairs = list((await session.execute(count_stmt)).all())
+
+        for character_id, user_id, _cnt in pairs:
+            entries = list(
+                (
+                    await session.execute(
+                        select(PersonMemoryEntry)
+                        .where(
+                            PersonMemoryEntry.character_id == character_id,
+                            PersonMemoryEntry.user_id == user_id,
+                            PersonMemoryEntry.compacted.is_(False),
+                        )
+                        .order_by(PersonMemoryEntry.created_at.asc())
+                    )
+                ).scalars()
+            )
+            profile = await session.scalar(
+                select(PersonMemory.content).where(
+                    PersonMemory.character_id == character_id,
+                    PersonMemory.user_id == user_id,
+                )
+            )
+            merged = await _merge_profile(
+                prompts,
+                llm,
+                profile=profile or "",
+                entries=[e.content for e in entries],
+            )
+            if not merged:
+                continue
+            await session.execute(
+                update(PersonMemory)
+                .where(
+                    PersonMemory.character_id == character_id,
+                    PersonMemory.user_id == user_id,
+                )
+                .values(content=merged, updated_at=func.now())
+            )
+            for entry in entries:
+                entry.compacted = True
+            await session.commit()
+            compacted_pairs += 1
+
+    if compacted_pairs:
+        logger.info("person_memory_compacted", pairs=compacted_pairs)
+    return compacted_pairs
+
+
+async def _merge_profile(prompts: Any, llm: Any, *, profile: str, entries: list[str]) -> str | None:
+    """LLM 把未压缩事实合并进主档；失败返回 None（本周期跳过）"""
+    try:
+        prompt = prompts.render(
+            "person_memory_compact",
+            existing_content=profile or "（暂无主档）",
+            facts_text="\n".join(f"- {fact}" for fact in entries),
+        )
+        response = await llm.chat(prompt, model="chat")
+        text = response.strip()
+        if text.startswith("```"):
+            text = "\n".join(ln for ln in text.split("\n") if not ln.startswith("```")).strip()
+        start, end = text.find("{"), text.rfind("}") + 1
+        parsed = json.loads(text[start:end])
+        content = parsed.get("content")
+        return content.strip() if isinstance(content, str) and content.strip() else None
+    except Exception as e:
+        logger.warning("person_memory_merge_failed", error=str(e))
+        return None
+
+
 async def memory_retention_loop() -> None:
     """记忆生命周期治理后台循环（审查 §七-P1）
 
-    每 24 小时执行一次，按重要性分级清理老记忆：
-    - importance <= 3：超过 low_importance_days（默认 90 天）删除
-    - importance 4-6：超过 mid_importance_days（默认 180 天）删除
-    - importance >= 7：永久保留
+    每 24 小时执行一次，两阶段：
+    1. 压缩归档：到期低价值记忆按角色×月份 LLM 压缩成归档行（source_type='archive'）
+    2. 分级删除：importance<=3 超 low_importance_days、4-6 超 mid_importance_days；
+       importance>=7 永久保留；归档行豁免删除
 
     memory_episodes 为 HASH 分区表，无法像 RANGE 分区那样按时间 drop，
-    膨胀治理只能在应用层定期删除。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
+    膨胀治理只能在应用层定期处理。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
     """
     from src.config import settings as _settings
 
@@ -320,45 +441,171 @@ async def memory_retention_loop() -> None:
     while True:
         try:
             await asyncio.sleep(interval)
-
-            if not _settings.memory_retention_enabled:
-                continue
-
-            now = datetime.now(UTC)
-            async with db.session() as session:
-                low_cutoff = now - timedelta(days=_settings.memory_retention_low_importance_days)
-                mid_cutoff = now - timedelta(days=_settings.memory_retention_mid_importance_days)
-
-                low_stmt = (
-                    delete(MemoryEpisode)
-                    .where(
-                        MemoryEpisode.importance <= 3,
-                        MemoryEpisode.timestamp < low_cutoff,
-                    )
-                    .returning(MemoryEpisode.id)
-                )
-                low_deleted = list((await session.execute(low_stmt)).scalars())
-
-                mid_stmt = (
-                    delete(MemoryEpisode)
-                    .where(
-                        MemoryEpisode.importance >= 4,
-                        MemoryEpisode.importance <= 6,
-                        MemoryEpisode.timestamp < mid_cutoff,
-                    )
-                    .returning(MemoryEpisode.id)
-                )
-                mid_deleted = list((await session.execute(mid_stmt)).scalars())
-                await session.commit()
-
-            logger.info(
-                "memory_retention_completed",
-                deleted_low=len(low_deleted),
-                deleted_mid=len(mid_deleted),
-            )
-
+            await run_memory_retention_cycle()
         except asyncio.CancelledError:
             logger.info("memory_retention_loop_cancelled")
             raise
         except Exception as e:
             logger.error("memory_retention_loop_error", error=str(e), exc_info=True)
+
+
+async def run_memory_retention_cycle(
+    session_factory: Any | None = None,
+) -> tuple[int, int]:
+    """单次保留周期：压缩归档 + 分级删除（可测试入口）
+
+    Args:
+        session_factory: 会话上下文工厂；缺省用全局 db.session（测试可注入共享会话）
+
+    Returns:
+        (archived_groups, deleted_rows)
+    """
+    from src.config import settings as _settings
+
+    if not _settings.memory_retention_enabled:
+        return (0, 0)
+
+    factory = session_factory or db.session
+    now = datetime.now(UTC)
+    low_cutoff = now - timedelta(days=_settings.memory_retention_low_importance_days)
+    mid_cutoff = now - timedelta(days=_settings.memory_retention_mid_importance_days)
+
+    archived_groups = 0
+    deleted_rows = 0
+    async with factory() as session:
+        repo = MemoryRepository(session)
+
+        # 阶段一：压缩归档（LLM 失败的组原样保留，下周期重试）
+        compression_active = False
+        deletable_small_ids: list[UUID] = []
+        if _settings.memory_compression_enabled:
+            llm = runtime.get_llm()
+            if llm is not None:
+                compression_active = True
+                candidates = await repo.fetch_retention_candidates(
+                    low_cutoff,
+                    mid_cutoff,
+                    limit=_settings.memory_compression_batch_limit,
+                )
+                archived_groups, deletable_small_ids = await _compress_candidates(session, repo, llm, candidates)
+
+        # 阶段二：分级删除（归档行豁免）
+        # 压缩激活时只删「低于最小批的小组」——大组必须先压缩成功才允许删除；
+        # 压缩关闭/无 LLM 时保持旧直删行为
+        scope: Any = (
+            (MemoryEpisode.id.in_(deletable_small_ids) if deletable_small_ids else false())
+            if compression_active
+            else true()
+        )
+        low_stmt = (
+            delete(MemoryEpisode)
+            .where(
+                scope,
+                MemoryEpisode.importance <= 3,
+                MemoryEpisode.timestamp < low_cutoff,
+                MemoryEpisode.source_type != "archive",
+            )
+            .returning(MemoryEpisode.id)
+        )
+        low_deleted = list((await session.execute(low_stmt)).scalars())
+
+        mid_stmt = (
+            delete(MemoryEpisode)
+            .where(
+                scope,
+                MemoryEpisode.importance >= 4,
+                MemoryEpisode.importance <= 6,
+                MemoryEpisode.timestamp < mid_cutoff,
+                MemoryEpisode.source_type != "archive",
+            )
+            .returning(MemoryEpisode.id)
+        )
+        mid_deleted = list((await session.execute(mid_stmt)).scalars())
+        await session.commit()
+        deleted_rows = len(low_deleted) + len(mid_deleted)
+
+    logger.info(
+        "memory_retention_completed",
+        archived_groups=archived_groups,
+        deleted_low=len(low_deleted),
+        deleted_mid=len(mid_deleted),
+    )
+    return (archived_groups, deleted_rows)
+
+
+async def _compress_candidates(
+    session: Any,
+    repo: MemoryRepository,
+    llm: Any,
+    candidates: list[MemoryEpisode],
+) -> tuple[int, list[UUID]]:
+    """把到期候选按角色×月份分组压缩为归档行
+
+    Returns:
+        (成功压缩的组数, 低于最小批可直接删除的小组成员 ID)
+
+    不变量：LLM 摘要失败（或解析失败）时整组跳过、原始行保留——绝不未压缩先删除。
+    """
+    from src.config import settings as _settings
+
+    groups: dict[tuple[UUID, str], list[MemoryEpisode]] = {}
+    for episode in candidates:
+        key = (episode.character_id, episode.timestamp.strftime("%Y-%m"))
+        groups.setdefault(key, []).append(episode)
+
+    prompts = runtime.get_prompts()
+    archived = 0
+    small_ids: list[UUID] = []
+    for (character_id, month), episodes in groups.items():
+        if len(episodes) < _settings.memory_compression_min_batch:
+            # 小组无需摘要（收益低于成本），标记为可直删
+            small_ids.extend(e.id for e in episodes)
+            continue
+        digest = await _summarize_group(prompts, llm, character_id, month, episodes)
+        if not digest:
+            continue
+        archive = MemoryEpisode(
+            character_id=character_id,
+            content=f"[归档] {month}：{digest}",
+            importance=3,
+            timestamp=episodes[-1].timestamp,
+            source_type="archive",
+            materialized=False,
+        )
+        await repo.add(archive)
+        await repo.delete_by_ids([e.id for e in episodes])
+        archived += 1
+    await session.commit()
+    return (archived, small_ids)
+
+
+async def _summarize_group(
+    prompts: Any,
+    llm: Any,
+    character_id: UUID,
+    month: str,
+    episodes: list[MemoryEpisode],
+) -> str | None:
+    """LLM 生成单组月度摘要；任何失败返回 None（调用方跳过该组）"""
+    if prompts is None:
+        logger.warning("memory_compression_prompts_unavailable")
+        return None
+    memories_text = "\n".join(f"- [{e.timestamp:%d %H:%M}] {e.content}" for e in episodes)
+    prompt = prompts.render(
+        "memory_compress",
+        character_name=str(character_id),
+        month=month,
+        memories_text=memories_text,
+    )
+    try:
+        response = await llm.chat(prompt, model="chat")
+        text = response.strip()
+        if text.startswith("```"):
+            text = "\n".join(ln for ln in text.split("\n") if not ln.startswith("```")).strip()
+        start, end = text.find("{"), text.rfind("}") + 1
+        parsed = json.loads(text[start:end])
+        digest = parsed.get("digest")
+        return digest.strip() if isinstance(digest, str) and digest.strip() else None
+    except Exception as e:
+        logger.warning("memory_compression_llm_failed", error=str(e))
+        return None

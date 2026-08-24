@@ -73,6 +73,7 @@ from src.scheduler.loops import (
     character_tick_loop,
     diary_scheduler_loop,
     memory_retention_loop,
+    person_memory_compaction_loop,
     person_memory_heat_decay_loop,
     reconciliation_loop,
 )
@@ -332,6 +333,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("memory_retention_start_failed", error=str(e), exc_info=True)
 
+    # 5.59 启动 Person Memory 主档压缩循环（后台任务）
+    pm_compact_task: asyncio.Task[None] | None = None
+    try:
+        pm_compact_task = asyncio.create_task(person_memory_compaction_loop())
+        logger.info("person_memory_compaction_started")
+    except Exception as e:
+        logger.error("person_memory_compaction_start_failed", error=str(e), exc_info=True)
+
     # 5.6 启动 Redis vs PG 状态对账循环（后台任务）
     reconcile_task: asyncio.Task[None] | None = None
     try:
@@ -469,6 +478,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reconcile_task.cancel()
         try:
             await reconcile_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消 Person Memory 主档压缩循环
+    if pm_compact_task:
+        pm_compact_task.cancel()
+        try:
+            await pm_compact_task
         except asyncio.CancelledError:
             pass
 

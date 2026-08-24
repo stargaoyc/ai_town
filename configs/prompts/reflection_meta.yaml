@@ -1,0 +1,15 @@
+name: reflection_meta
+# 跨期元反思：对既有反思再做归纳，沉淀长期倾向与价值观（tier=2）
+template: |
+  [近期反思]
+  {reflections_text}
+
+  [任务]
+  以上是角色近期的多条反思。请站在更长时间尺度上归纳 1-2 条「跨期元认知」：
+  - 提炼反复出现的倾向、稳定的价值观或情感基调，而不是复述单条反思
+  - 每条 meta_summary 一句话，meta_detail 用 2-3 句说明它如何从各条反思中浮现
+
+  输出格式（严格 JSON）：
+  {{ "metas": [
+    {{ "meta_summary": "<长期倾向>", "meta_detail": "<展开>" }}
+  ] }}

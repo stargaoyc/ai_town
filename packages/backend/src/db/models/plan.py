@@ -1,7 +1,8 @@
-"""计划模型 - 角色的长期/短期规划
+"""计划模型 - 角色的长期/短期/当日规划
 
 LLM 决策时可返回 planChanges，更新此表。
-计划会影响候选 Action 的 precondition 评估。
+计划经决策 Prompt 的 [当前计划] 段注入影响 LLM 权重（软引导），
+不做 precondition 硬过滤——硬门禁会阻断角色的自主行为空间。
 """
 
 from datetime import datetime
@@ -21,6 +22,7 @@ class Plan(Base):
     type:
     - long_term: 长期目标（如"适应新学校"），数周-数月
     - short_term: 短期计划（如"交一个新朋友"），数天-数周
+    - daily: 当日计划（如"下午去图书馆还书"），当天有效
 
     status:
     - active: 进行中

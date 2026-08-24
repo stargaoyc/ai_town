@@ -74,6 +74,15 @@ class Settings(BaseSettings):
     memory_retention_low_importance_days: int = 90  # importance<=3 保留天数
     memory_retention_mid_importance_days: int = 180  # importance 4-6 保留天数；importance>=7 永久保留
 
+    # 记忆压缩归档（retention 删除前先按角色×月份 LLM 压缩成归档行，
+    # 压缩失败则整组跳过留待下周期——绝不未压缩先删除）
+    memory_compression_enabled: bool = True
+    memory_compression_min_batch: int = 5  # 单组少于该条数不压缩（摘要收益低于成本）
+    memory_compression_batch_limit: int = 300  # 单周期最多处理的候选条数
+
+    # Person Memory 两层结构：未压缩事实条目达到阈值后合并进主档
+    person_memory_compact_threshold: int = 20
+
     # World Engine
     world_tick_seconds: int = 30
     world_tick_minutes: float = 10.0

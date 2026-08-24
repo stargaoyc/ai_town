@@ -9,7 +9,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
@@ -34,4 +34,7 @@ class Reflection(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid7)
     character_id: Mapped[UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), comment="所属角色")
     content: Mapped[str] = mapped_column(Text, comment="反思内容")
+    tier: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", comment="反思层级：1=批次主题反思，2=跨期元反思"
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")

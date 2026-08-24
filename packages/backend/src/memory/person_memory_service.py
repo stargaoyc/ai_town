@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from structlog import get_logger
 
-from src.db.models import PersonMemory
+from src.db.models import PersonMemory, PersonMemoryEntry
 from src.runtime import get_llm
 
 logger = get_logger(__name__)
@@ -71,14 +71,16 @@ class PersonMemoryService:
         user_message: str,
         character_reply: str,
     ) -> dict[str, Any] | None:
-        """交互后更新角色对用户的记忆
+        """交互后更新角色对用户的记忆（两层结构·抽取式）
 
-        LLM 按 person_memory.yaml 输出增量合并后的 JSON：
-        {"content": "...", "preferences": {...}}；
-        解析失败时回退将原文作为 content、不更新 preferences。
+        LLM 按 person_memory.yaml 从对话中抽取**新事实**（不做全文重写）：
+        {"facts": [...], "preferences": {...}}；
+        事实逐条追加到 person_memory_entries（append-only），
+        主档 content 由后台压缩任务定期合并生成。
+        解析失败时回退将用户消息截断作为单条事实，不丢交互痕迹。
 
         Returns:
-            更新后的记忆数据，或 None（LLM 不可用/失败）
+            {"appended": 追加条数}，或 None（LLM 不可用/失败）
         """
         llm = self._llm or get_llm()
         if not llm:
@@ -104,16 +106,22 @@ class PersonMemoryService:
 
         try:
             response = await llm.chat(prompt, model="chat")
-            new_content, preferences = self._parse_memory_response(response)
+            facts, preferences = self._parse_memory_response(response)
 
-            await self._upsert_memory(character_id, user_id, platform, new_content, preferences)
+            if not facts:
+                # 抽取为空也要留下交互痕迹：回退单条事实（截断防膨胀）
+                facts = [f"用户提到：{user_message[:120]}"]
+
+            await self._append_entries(character_id, user_id, platform, facts)
+            await self._upsert_memory(character_id, user_id, platform, preferences)
             logger.info(
                 "person_memory_updated",
                 character_id=str(character_id),
                 user_id=user_id,
+                appended=len(facts),
                 has_preferences=bool(preferences),
             )
-            return {"content": new_content}
+            return {"appended": len(facts)}
 
         except Exception as e:
             logger.error(
@@ -124,10 +132,10 @@ class PersonMemoryService:
             return None
 
     @staticmethod
-    def _parse_memory_response(raw: str) -> tuple[str, dict[str, Any]]:
-        """解析 LLM 记忆更新输出
+    def _parse_memory_response(raw: str) -> tuple[list[str], dict[str, Any]]:
+        """解析 LLM 抽取输出
 
-        优先解析 JSON {"content", "preferences"}；失败回退纯文本作为 content。
+        优先解析 JSON {"facts": [...], "preferences": {...}}；失败回退整段文本作为单条事实。
         """
         text = raw.strip()
         if text.startswith("```"):
@@ -138,25 +146,48 @@ class PersonMemoryService:
             start = text.index("{")
             end = text.rindex("}") + 1
             parsed = json.loads(text[start:end])
-            if isinstance(parsed, dict) and isinstance(parsed.get("content"), str):
-                preferences = parsed.get("preferences")
-                return (
-                    parsed["content"].strip(),
-                    preferences if isinstance(preferences, dict) else {},
+            if isinstance(parsed, dict):
+                facts_raw = parsed.get("facts")
+                facts = (
+                    [f.strip() for f in facts_raw if isinstance(f, str) and f.strip()]
+                    if isinstance(facts_raw, list)
+                    else []
                 )
+                preferences = parsed.get("preferences")
+                return facts, preferences if isinstance(preferences, dict) else {}
         except (ValueError, json.JSONDecodeError):
             pass
-        return text, {}
+        # 解析失败：返回空事实，由调用方回退为「用户提到：<消息>」，不丢交互痕迹
+        return [], {}
+
+    async def _append_entries(
+        self,
+        character_id: UUID,
+        user_id: str,
+        platform: str,
+        facts: list[str],
+    ) -> None:
+        """追加事实条目（append-only，只写不改）"""
+        async with self.session_factory() as session:
+            for fact in facts:
+                session.add(
+                    PersonMemoryEntry(
+                        character_id=character_id,
+                        user_id=user_id,
+                        platform=platform,
+                        content=fact,
+                    )
+                )
+            await session.commit()
 
     async def _upsert_memory(
         self,
         character_id: UUID,
         user_id: str,
         platform: str,
-        content: str,
         preferences: dict[str, Any] | None = None,
     ) -> None:
-        """插入或更新记忆（热度 +1，刷新交互时间）"""
+        """确保主档行存在并累积热度（content 由压缩任务维护，此处不写）"""
         async with self.session_factory() as session:
             stmt = (
                 update(PersonMemory)
@@ -165,7 +196,6 @@ class PersonMemoryService:
                     PersonMemory.user_id == user_id,
                 )
                 .values(
-                    content=content,
                     heat=PersonMemory.heat + 1,
                     last_interaction_at=func.now(),
                     updated_at=func.now(),
@@ -179,7 +209,7 @@ class PersonMemoryService:
                         character_id=character_id,
                         user_id=user_id,
                         platform=platform,
-                        content=content,
+                        content="",
                         heat=1,
                         preferences=preferences,
                     )
@@ -187,9 +217,30 @@ class PersonMemoryService:
             await session.commit()
 
     async def get_relevant_context(self, character_id: UUID, user_id: str) -> str:
-        """获取角色对用户的记忆上下文（用于注入对话 system prompt）"""
+        """获取角色对用户的记忆上下文，注入对话 system prompt（两层组装）
+
+        = 主档 content（后台压缩合并的稳定认知）
+          + 最近未压缩事实条目（最多 8 条，时间倒序——最新交互的细节）
+        """
         memory = await self.get_memory(character_id, user_id)
-        if not memory:
-            return "（初次与该用户交流）"
-        content = str(memory.get("content") or "").strip()
-        return content if content else "（无记忆）"
+        profile = str(memory.get("content") or "").strip() if memory else ""
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(PersonMemoryEntry.content)
+                .where(
+                    PersonMemoryEntry.character_id == character_id,
+                    PersonMemoryEntry.user_id == user_id,
+                    PersonMemoryEntry.compacted.is_(False),
+                )
+                .order_by(PersonMemoryEntry.created_at.desc())
+                .limit(8)
+            )
+            recent = [row[0] for row in (await session.execute(stmt)).all()]
+
+        parts = []
+        if profile:
+            parts.append(profile)
+        if recent:
+            parts.append("最近了解到的：\n" + "\n".join(f"- {fact}" for fact in recent))
+        return "\n".join(parts) if parts else "（初次与该用户交流）"

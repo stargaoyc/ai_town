@@ -10,6 +10,7 @@ from src.db.models.conversation import Conversation, Message
 from src.db.models.diary import CharacterDiary
 from src.db.models.memory_episode import MemoryEpisode
 from src.db.models.person_memory import PersonMemory
+from src.db.models.person_memory_entry import PersonMemoryEntry
 from src.db.models.plan import Plan
 from src.db.models.reflection import Reflection
 from src.db.models.reflection_source import ReflectionSource
@@ -32,5 +33,6 @@ __all__ = [
     "Message",
     "CharacterDiary",
     "PersonMemory",
+    "PersonMemoryEntry",
     "CharacterStateHistory",
 ]

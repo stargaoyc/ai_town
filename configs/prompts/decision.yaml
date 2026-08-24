@@ -31,6 +31,9 @@ template: |
   [最近日记]
   {diary}
 
+  [作息节奏]
+  {schedule}
+
   [当前计划]
   {plans}
 

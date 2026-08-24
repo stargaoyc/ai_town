@@ -35,14 +35,18 @@ class PlanRepository(BaseRepository[Plan]):
         return plan
 
     async def get_active_plans(self, character_id: UUID) -> list[Plan]:
-        """获取角色进行中（status='active'）的计划"""
+        """获取角色进行中（status='active'）的计划
+
+        排序：优先级降序 -> 截止时间升序（无截止靠后）——
+        越紧急越靠前，注入决策 Prompt 时截断保留的是最要紧的计划。
+        """
         stmt = (
             select(Plan)
             .where(
                 Plan.character_id == character_id,
                 Plan.status == "active",
             )
-            .order_by(Plan.priority.desc())
+            .order_by(Plan.priority.desc(), Plan.deadline.asc().nulls_last())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars())

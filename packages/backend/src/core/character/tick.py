@@ -50,10 +50,44 @@ from src.observability.metrics import (
     CHARACTER_TICK_DURATION,
     CHARACTER_TICK_TOTAL,
 )
-from src.runtime import get_movement_system, get_proactive_share_handler, get_scene_loader
+from src.runtime import get_movement_system, get_proactive_share_handler, get_scene_loader, get_schedule_system
 from src.tools import ToolRegistry
 
 logger = get_logger(__name__)
+
+_ACTIVITY_LABELS = {
+    "sleeping": "睡眠",
+    "drowsy": "低耗（准备入睡）",
+    "active": "活跃",
+    "peak": "高峰",
+}
+
+
+def _world_hour(world: dict[str, Any]) -> int:
+    """从世界状态解析虚拟小时；解析失败回退现实小时"""
+    raw = str(world.get("world_time") or "")
+    for part in raw.replace("T", " ").split():
+        try:
+            return int(part.split(":")[0])
+        except (IndexError, ValueError):
+            continue
+    return datetime.now(UTC).hour
+
+
+def _build_schedule_text(character: Any, world: dict[str, Any]) -> str:
+    """作息节奏文本（ScheduleSystem 桥接）：时段档位 + 睡眠约束提示"""
+    system = get_schedule_system()
+    if system is None:
+        return "（无作息档案）"
+    traits = character.traits or {}
+    schedule_name = system.get_schedule_from_traits(traits)
+    hour = _world_hour(world)
+    level = str(system.get_activity_level(schedule_name, hour))
+    label = _ACTIVITY_LABELS.get(level, level)
+    text = f"当前为「{label}」时段"
+    if system.is_sleeping(schedule_name, hour):
+        text += "（睡眠时间：应休息/睡眠，不宜外出或社交）"
+    return text
 
 
 class CharacterTickEngine:
@@ -485,12 +519,17 @@ class CharacterTickEngine:
             else "暂无相关记忆"
         )
 
-        # 构建计划文本
-        plans_text = (
-            "\n".join([f"- {p.title}（进度{p.progress}%）" for p in context["plans"]])
-            if context["plans"]
-            else "暂无计划"
-        )
+        # 构建计划文本（类型/优先级/截止日全量注入，供 LLM 权衡取舍）
+        _TYPE_LABEL = {"long_term": "长期", "short_term": "短期", "daily": "今日"}
+        plan_lines = []
+        for p in context["plans"][:6]:
+            type_label = _TYPE_LABEL.get(p.type, p.type)
+            deadline_tag = f"，截止 {p.deadline:%m-%d}" if p.deadline else ""
+            plan_lines.append(f"- [{type_label}] {p.title}（进度{p.progress}%，优先级{p.priority}{deadline_tag}）")
+        plans_text = "\n".join(plan_lines) if plan_lines else "暂无计划"
+
+        # 构建作息节奏文本（ScheduleSystem 桥接：让 LLM 感知当前时段档位与睡眠约束）
+        schedule_text = _build_schedule_text(character, world)
 
         # 构建同场景其他角色文本（多智能体交互核心）
         # 让 LLM 知道谁在身边、性格如何、关系如何，决策是否发起 chat_with
@@ -531,6 +570,7 @@ class CharacterTickEngine:
             world_time=world.get("world_time", datetime.now(UTC).isoformat()),
             weather=world.get("weather", "sunny"),
             scenes=scenes_text,
+            schedule=schedule_text,
             memories=memories_text,
             reflections=context.get("reflections", "暂无高层认知"),
             diary=context.get("diary", "暂无日记"),

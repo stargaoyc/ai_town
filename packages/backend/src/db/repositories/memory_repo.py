@@ -26,7 +26,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
@@ -124,6 +124,48 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars())
+
+    async def fetch_retention_candidates(
+        self,
+        low_cutoff: datetime,
+        mid_cutoff: datetime,
+        limit: int = 300,
+    ) -> list[MemoryEpisode]:
+        """拉取达到删除标准的记忆（压缩归档候选，跨角色）
+
+        - importance<=3 且早于 low_cutoff（默认 90 天）
+        - importance 4-6 且早于 mid_cutoff（默认 180 天）
+        - 归档行（source_type='archive'）豁免：其本身已是压缩形态
+        """
+        stmt = (
+            select(MemoryEpisode)
+            .where(
+                or_(
+                    and_(
+                        MemoryEpisode.importance <= 3,
+                        MemoryEpisode.timestamp < low_cutoff,
+                    ),
+                    and_(
+                        MemoryEpisode.importance >= 4,
+                        MemoryEpisode.importance <= 6,
+                        MemoryEpisode.timestamp < mid_cutoff,
+                    ),
+                ),
+                MemoryEpisode.source_type != "archive",
+            )
+            .order_by(MemoryEpisode.timestamp.asc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
+    async def delete_by_ids(self, episode_ids: list[UUID]) -> None:
+        """按 ID 批量删除记忆（压缩归档成功后清理原始行）"""
+        if not episode_ids:
+            return
+        stmt = delete(MemoryEpisode).where(MemoryEpisode.id.in_(episode_ids))
+        await self.session.execute(stmt)
+        await self.session.flush()
 
     async def mark_reflected(self, episode_ids: list[UUID]) -> None:
         """将指定记忆批量标记为已反思（ORM 批量 UPDATE）"""
