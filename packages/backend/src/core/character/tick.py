@@ -208,6 +208,18 @@ class CharacterTickEngine:
         # 5. 记忆沉淀
         await self._memorize(character_id, decision, context)
 
+        # 5.5 群体动力学·传闻传播（好友的显著经历 -> 第二手记忆）
+        try:
+            await self._propagate_gossip(character_id)
+        except Exception as e:
+            # 传闻失败不影响 Tick 主流程
+            logger.warning(
+                "gossip_tick_failed",
+                character_id=str(character_id),
+                error=str(e),
+                exc_info=True,
+            )
+
         # 6. 主动分享（若 LLM 决策产生分享意图）
         if decision.proactive_share_intent:
             try:
@@ -1308,6 +1320,11 @@ class CharacterTickEngine:
                 base_importance = min(10, base_importance + 2)
             importance = max(1, min(10, base_importance))
 
+            # 群体动力学·共同经历：同场景在场者写入 related_characters，
+            # 激活预留字段供「共同经历查询/传闻溯源」使用
+            nearby = context.get("nearby_characters") or []
+            related_ids = [UUID(n["id"]) for n in nearby if n.get("id")]
+
             await episode_service.create_episode(
                 character_id,
                 memory_content,
@@ -1317,6 +1334,7 @@ class CharacterTickEngine:
                 character_name=character.name,
                 reason=decision.reason,
                 mood=state.get("mood"),
+                related_characters=related_ids,
             )
 
             # 检查反思
@@ -1327,6 +1345,21 @@ class CharacterTickEngine:
             character_id=str(character_id),
             action=decision.action,
         )
+
+    async def _propagate_gossip(self, character_id: UUID) -> None:
+        """群体动力学·传闻传播 - 好友的显著经历以第二手记忆扩散
+
+        独立 db session：传闻写入与主 Tick 事务解耦，失败仅告警。
+        内容取自源记忆原文模板拼接（非 LLM 编造），importance 减半递减；
+        每好友每窗口最多一条，经既有检索管线回流后续决策。
+        """
+        from src.memory.gossip_service import GossipService
+
+        async with db.session() as session:
+            mem_repo = MemoryRepository(session)
+            episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
+            gossip = GossipService(session, episode_service)
+            await gossip.propagate_from_friends(character_id)
 
     async def _maybe_proactive_share(
         self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
