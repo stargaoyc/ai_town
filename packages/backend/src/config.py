@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # 多模型备用源（JSON 数组，按顺序尝试；失败冷却 5 分钟后仍可作末位兜底）
     # 每项: {"api_key": "...", "base_url": "...", "model": "可选，缺省用 model_chat"}
     llm_fallback_sources: str = "[]"
+
+    # LLM 单价（USD / 1M tokens）。默认为 agnes-2.0-flash 价格；
+    # 更换模型供应商时必须同步修改，否则成本指标与日预算控制失真（审查 §八）
+    llm_price_input_per_mtoken: float = 0.5
+    llm_price_output_per_mtoken: float = 1.5
+    # 按模型单价覆盖（USD / 1M tokens）：
+    # {"gpt-4o-mini": {"input": 0.15, "output": 0.6}, "gpt-4o": {"input": 2.5, "output": 10.0}}
+    # chat/strong/flash 常配不同价位模型，仅设全局单价时成本统计必然失真
+    llm_model_prices: str = ""
+
     # 与迁移 0005 的物理列 halfvec(2048) 对齐；改此值必须同步新迁移重建列与 HNSW 索引
     embedding_dim: int = 2048
 

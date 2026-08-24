@@ -95,12 +95,16 @@ def trace_llm_call(
     prompt: str,
     response: str,
     tokens: int = 0,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    cost_usd: float = 0.0,
     latency_ms: int,
 ) -> None:
     """记录一次 LLM 生成调用到 Langfuse
 
     存在 Tick 根 trace 时作为其子 generation 挂载（父子层级）；
     否则独立成 trace（兼容非 Tick 链路调用，如消息服务）。
+    usage 拆分 prompt/completion 并记录 per-call 成本（审查 §八盲区 3）。
     """
     client = get_langfuse()
     if client is None:
@@ -111,11 +115,22 @@ def trace_llm_call(
             "latency_ms": latency_ms,
             "tokens": tokens,
         }
+        if cost_usd > 0:
+            metadata["cost_usd"] = cost_usd
         if character_id:
             metadata["character_id"] = character_id
         otel_trace_id = _otel_trace_id()
         if otel_trace_id:
             metadata["otel_trace_id"] = otel_trace_id
+
+        usage: dict[str, int | float] | None = None
+        if tokens:
+            usage = {"total_tokens": tokens}
+            if prompt_tokens or completion_tokens:
+                usage["prompt_tokens"] = prompt_tokens
+                usage["completion_tokens"] = completion_tokens
+            if cost_usd > 0:
+                usage["cost_usd"] = cost_usd
 
         parent_trace_id = _tick_trace_id.get()
         if parent_trace_id:
@@ -125,7 +140,7 @@ def trace_llm_call(
                 model=model,
                 input=_truncate(prompt),
                 output=_truncate(response),
-                usage={"total_tokens": tokens} if tokens else None,
+                usage=usage,
                 metadata=metadata,
             )
             return
@@ -139,7 +154,7 @@ def trace_llm_call(
             model=model,
             input=_truncate(prompt),
             output=_truncate(response),
-            usage={"total_tokens": tokens} if tokens else None,
+            usage=usage,
             metadata=metadata,
         )
     except Exception:

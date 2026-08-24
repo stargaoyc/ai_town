@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -39,15 +40,54 @@ _VIDEO_POLL_INTERVAL = 5
 # 视频生成最大轮询次数
 _VIDEO_MAX_POLLS = 120
 
-# 单价表（USD / token）：agnes-2.0-flash 约 $0.5/M input, $1.5/M output。
-# 全库唯一的费用计算入口，禁止调用方各自硬编码单价
-PRICE_INPUT_PER_TOKEN = 0.0000005
-PRICE_OUTPUT_PER_TOKEN = 0.0000015
+# 全库唯一的费用计算入口（见 estimate_cost / get_model_price），
+# 禁止调用方各自硬编码单价。
+# 单价来源：settings.llm_model_prices 按模型覆盖 → settings.llm_price_*_per_mtoken 全局回退。
+# 默认全局单价为 agnes-2.0-flash 价格（$0.5/M input, $1.5/M output）
 
 
-def estimate_cost(prompt_tokens: int, completion_tokens: int) -> float:
+def _parse_model_prices(raw: str) -> dict[str, dict[str, float]]:
+    """解析按模型单价表（USD / 1M tokens）；非法 JSON 或结构不符的条目跳过"""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("llm_model_prices_parse_failed", hint='应为 {"model": {"input": x, "output": y}}')
+        return {}
+    if not isinstance(data, dict):
+        logger.warning("llm_model_prices_parse_failed", hint="顶层必须是对象")
+        return {}
+    prices: dict[str, dict[str, float]] = {}
+    for model, entry in data.items():
+        if not isinstance(entry, dict) or "input" not in entry or "output" not in entry:
+            continue
+        try:
+            prices[model] = {"input": float(entry["input"]), "output": float(entry["output"])}
+        except (TypeError, ValueError):
+            continue
+    return prices
+
+
+def get_model_price(model: str | None) -> tuple[float, float]:
+    """返回模型的 (input, output) 单价（USD / token）
+
+    优先查按模型单价表，未命中回退全局默认单价。
+    """
+    if model:
+        entry = _parse_model_prices(settings.llm_model_prices).get(model)
+        if entry:
+            return entry["input"] / 1_000_000, entry["output"] / 1_000_000
+    return (
+        settings.llm_price_input_per_mtoken / 1_000_000,
+        settings.llm_price_output_per_mtoken / 1_000_000,
+    )
+
+
+def estimate_cost(prompt_tokens: int, completion_tokens: int, model: str | None = None) -> float:
     """按统一单价表计算单次调用费用（USD）"""
-    return prompt_tokens * PRICE_INPUT_PER_TOKEN + completion_tokens * PRICE_OUTPUT_PER_TOKEN
+    input_price, output_price = get_model_price(model)
+    return prompt_tokens * input_price + completion_tokens * output_price
 
 
 @dataclass(frozen=True)
@@ -238,7 +278,7 @@ class LLMClient:
             prompt_tokens = int(token_usage.get("prompt_tokens", 0))
             completion_tokens = int(token_usage.get("completion_tokens", 0))
             total_tokens = prompt_tokens + completion_tokens
-            estimated_cost = estimate_cost(prompt_tokens, completion_tokens)
+            estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=model)
             usage = LLMUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
@@ -257,6 +297,9 @@ class LLMClient:
                 prompt=prompt,
                 response=content if isinstance(content, str) else str(content),
                 tokens=total_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=estimated_cost,
                 latency_ms=int(elapsed * 1000),
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
@@ -325,8 +368,10 @@ class LLMClient:
             if total_tokens > 0:
                 LLM_TOKENS_USED.labels(model=effective_model, type="prompt").inc(prompt_tokens)
                 LLM_TOKENS_USED.labels(model=effective_model, type="completion").inc(completion_tokens)
-                estimated_cost = prompt_tokens * 0.0000005 + completion_tokens * 0.0000015
+                estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=effective_model)
                 LLM_COST_TOTAL.inc(estimated_cost)
+            else:
+                estimated_cost = 0.0
             from src.observability.langfuse_tracing import trace_llm_call
 
             trace_llm_call(
@@ -334,6 +379,9 @@ class LLMClient:
                 prompt=str(content),
                 response=resp_content if isinstance(resp_content, str) else str(resp_content),
                 tokens=total_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=estimated_cost,
                 latency_ms=int(elapsed * 1000),
             )
             return resp_content if isinstance(resp_content, str) else str(resp_content)
@@ -605,7 +653,7 @@ class LLMClient:
             prompt_tokens = int(token_usage.get("prompt_tokens", 0))
             completion_tokens = int(token_usage.get("completion_tokens", 0))
             total_tokens = prompt_tokens + completion_tokens
-            estimated_cost = estimate_cost(prompt_tokens, completion_tokens)
+            estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=model)
             usage = LLMUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
@@ -623,6 +671,9 @@ class LLMClient:
                 prompt=prompt,
                 response=result_str,
                 tokens=total_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=estimated_cost,
                 latency_ms=int(elapsed * 1000),
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
