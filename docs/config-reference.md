@@ -347,3 +347,29 @@ scenes:
 | 模块系统             | [module-system.md](module-system.md)                        |
 | 世界引擎参数         | [world-engine.md](world-engine.md#六配置参数)               |
 | 记忆系统（LLM 评分） | [memory-system.md](memory-system.md#九llm-记忆重要程度评分) |
+
+### 1.10 群体动力学与认知深化（2026-08-24 新增）
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| GOSSIP_ENABLED | true | 传闻传播开关 |
+| GOSSIP_IMPORTANCE_THRESHOLD | 7 | 源记忆重要性门槛 |
+| GOSSIP_WINDOW_HOURS | 24 | 源记忆与去重回窗（小时） |
+| GOSSIP_MAX_PER_TICK | 1 | 单次 Tick 最多传播条数 |
+| GOSSIP_RELATION_MIN | 20 | 好友关系强度门槛 |
+| MEMORY_DEDUP_ENABLED | true | 改写式记忆去重（向量化余弦比对） |
+| MEMORY_DEDUP_SIMILARITY_THRESHOLD | 0.95 | 判定重复的相似度阈值 |
+| MEMORY_DEDUP_WINDOW_HOURS | 24 | 去重回窗（小时） |
+| MEMORY_COMPRESSION_ENABLED | true | retention 删除前压缩归档 |
+| MEMORY_COMPRESSION_MIN_BATCH | 5 | 单组最少条数（低于则直删） |
+| MEMORY_COMPRESSION_BATCH_LIMIT | 300 | 单周期候选上限 |
+| PERSON_MEMORY_COMPACT_THRESHOLD | 20 | PM 主档压缩的未压缩条目阈值 |
+| DAILY_PLAN_TTL_HOURS | 24 | 当日计划滚动过期时长 |
+| HNSW_EF_SEARCH | 100 | HNSW 检索 ef_search 参数 |
+
+### 1.11 备份
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| BACKUP_INTERVAL_HOURS | 6 | db-backup 服务备份间隔（--profile backup） |
+| BACKUP_RETENTION_DAYS | 14 | 备份保留天数 |

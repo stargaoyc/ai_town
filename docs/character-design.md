@@ -321,3 +321,14 @@ python -m cli.import_character configs/characters/yuina.yaml
 | 记忆系统 | [memory-system.md](memory-system.md) |
 | 数据模型 | [data-model.md](data-model.md) |
 | 配置参考 | [config-reference.md](config-reference.md) |
+
+---
+
+## 附：2026-08-24 计划体系增补
+
+- 计划类型扩展 `daily`（当日计划），创建超 `DAILY_PLAN_TTL_HOURS`(24h) 自动置 `expired`；
+- LLM 双通道：`planChanges`（变更既有）+ `createPlanChanges`（新建，最多 3 条有效条目，服务端绑定角色）；
+- 决策 Prompt 注入计划全量信息（类型/优先级/截止日）与作息档位（ScheduleSystem 桥接）；
+- 修正历史注释：计划经 Prompt 软引导影响行为，不做 precondition 硬过滤。
+
+详见 [认知深化与群体动力学](cognition-and-group-dynamics.md)。

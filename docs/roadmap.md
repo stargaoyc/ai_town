@@ -457,14 +457,14 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 | 管理 API 无鉴权  | 高     | 任何人可调用 /admin/* | JWT + API Key      | Phase 3.5 |
 | ~~MCP 通信未加密~~   | ~~中~~ | ~~内网抓包可篡改~~    | ~~mTLS~~（已迁移为本地工具，无网络通信） | ✅ 已解决 |
 | 用户消息明文存储 | 中     | DB 泄露暴露隐私       | 敏感字段 AES 加密  | Phase 3.5 |
-| CORS 配置过宽    | 低     | 跨站请求伪造          | 限制 origin 白名单 | Phase 3.5 |
+| ~~CORS 配置过宽~~    | ~~低~~     | ~~跨站请求伪造~~          | 可配置 origin 白名单（main.py CORSMiddleware） | ✅ 已解决 |
 
 ### 10.5 前端
 
 | 问题              | 严重度 | 影响             | 解决方案           | 阶段    |
 | ----------------- | ------ | ---------------- | ------------------ | ------- |
-| WebSocket 无重连  | 高     | 断线后数据不更新 | 指数退避重连       | Phase 5 |
-| 无全局错误边界    | 中     | 组件崩溃白屏     | ErrorBoundary 组件 | Phase 5 |
+| ~~WebSocket 无重连~~  | ~~高~~     | ~~断线后数据不更新~~ | useDashboardSocket 指数退避重连       | ✅ 已解决 |
+| ~~无全局错误边界~~    | ~~中~~     | ~~组件崩溃白屏~~     | ErrorBoundary.tsx 兜底 | ✅ 已解决 |
 | 无 loading 骨架屏 | 低     | 用户体验差       | Skeleton 组件      | Phase 5 |
 
 ### 10.6 运维
@@ -543,8 +543,8 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 4. ~~**LLM 记忆重要程度评分**：`MEMORY_LLM_SCORING_ENABLED` 开关~~ ✅ 已完成
 5. ~~**前端监控页面集成**：`/monitoring` + `/admin/logs` + `/admin/metrics-detail`~~ ✅ 已完成
 6. **告警规则**：5xx 错误率 / Tick 延迟 / LLM 失败率 → 飞书通知
-7. **Docker 日志轮转**：json-file + max-size 防磁盘撑满
-8. **数据库备份自动化**：pg_cron + WAL 归档
+~~**Docker 日志轮转**：json-file + max-size 防磁盘撑爆~~ ✅ 已完成（compose x-default-logging 锚点，20260824）
+8. **数据库备份自动化**：pg_cron + WAL 归档 → 部分完成：db-backup 定时 pg_dump 服务已上线，WAL 归档待做
 9. **world_events 按月分区**：待数据量达标后实施
 10. **跨角色全局向量检索**：维护全局非分区向量索引（未来需求）
 
@@ -560,3 +560,15 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 | 部署         | [deployment.md](deployment.md)               |
 | Docker 部署  | [docker-deployment.md](docker-deployment.md) |
 | 项目不足审查 | [gap-analysis.md](archive/gap-analysis.md)           |
+
+---
+
+## 附：2026-08-24 完成纪要（第二轮复审后功能批）
+
+- ✅ 群体动力学 Phase 1：传闻传播 + 共同经历标记 + 群活动（group_activity）
+- ✅ 认知深化：反思分层（tier=2 元反思）、Person Memory 两层结构、记忆压缩归档、
+  改写式记忆去重（is_duplicate）、计划层级（daily + createPlanChanges + 作息桥接）
+- ✅ 运维：容器日志轮转、db-backup 定时备份服务、冷启动恢复演练脚本
+- ✅ 文档：新增 [认知深化与群体动力学](cognition-and-group-dynamics.md)
+
+详见 CHANGELOG Unreleased 段。

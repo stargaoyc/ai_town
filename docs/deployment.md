@@ -442,3 +442,13 @@ curl -X POST http://localhost:8000/api/v1/admin/partitions/precreate \
 | 可观测性        | [observability.md](observability.md)         |
 | 数据模型        | [data-model.md](data-model.md)               |
 | 开发指南        | [development-guide.md](development-guide.md) |
+
+---
+
+## 附：2026-08-24 运维增补
+
+- **数据库定时备份**：`docker compose --profile backup up -d` 启用 db-backup 服务
+  （pg_dump|gzip 每 BACKUP_INTERVAL_HOURS 写入 ./data/backups，保留 BACKUP_RETENTION_DAYS 天）；
+- **容器日志轮转**：compose 全服务 json-file 10MB x 3（锚点 x-default-logging）；
+- **冷启动恢复演练**：`cd packages/backend && uv run python scripts/cold_start_drill.py`
+  （清空 Redis 世界/角色键 -> rehydrate_states() -> 校验回灌；--world-only 仅世界层）。

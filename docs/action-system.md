@@ -521,3 +521,17 @@ async def decide(state, candidates, memories) -> Decision:
 | 记忆系统            | [memory-system.md](memory-system.md)       |
 | 模块与本地工具      | [module-system.md](module-system.md)       |
 | 数据模型            | [data-model.md](data-model.md)             |
+
+---
+
+## 附：2026-08-24 新增 Action
+
+### group_activity（群聚，SOCIAL）
+
+同场景 >=3 人可触发的临时小聚。要点：
+
+- precondition 仅做体力检查；**人数门槛在 Tick 侧候选过滤执行**
+  （precondition 只见 state 字典，拿不到在场名单）；
+- 单次 LLM 调用生成集体叙事（group_activity.yaml），失败退化为模板叙事并照常结算；
+- 为全体参与者写共同经历记忆（related_characters 互指）并两两关系 +2（上限 100）；
+- 失败降级路径与 chat_with 一致：回退 wait。

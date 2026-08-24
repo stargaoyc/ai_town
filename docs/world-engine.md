@@ -329,3 +329,13 @@ await engine.pause_character(character_id)
 | Action 系统与执行闭环 | [action-system.md](action-system.md) |
 | 记忆系统 | [memory-system.md](memory-system.md) |
 | 数据模型 | [data-model.md](data-model.md) |
+
+---
+
+## 附：2026-08-24 Tick 流程增补
+
+Character Tick 在「记忆沉淀」后新增两步（详见 [认知深化与群体动力学](cognition-and-group-dynamics.md)）：
+
+- **5.5 传闻传播**：好友高重要性经历 -> 听者第二手记忆（GossipService，失败不阻断）；
+- **群活动分支**：Action `group_activity` 命中且同场景 >=3 人时生成集体叙事，
+  为全体参与者写共同经历记忆并两两关系 +2；人数门槛在候选过滤阶段执行。

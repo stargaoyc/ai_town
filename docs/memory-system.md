@@ -443,3 +443,15 @@ LLM 基于以下四个维度综合评分（1-10）：
 | 数据模型 DDL | [data-model.md](data-model.md) |
 | Action 系统 | [action-system.md](action-system.md) |
 | 世界引擎 | [world-engine.md](world-engine.md) |
+
+---
+
+## 八、2026-08-24 认知深化增补
+
+本日实现（详见 [认知深化与群体动力学](cognition-and-group-dynamics.md)）：
+
+- **反思分层**：reflections.tier（1=批次主题 / 2=跨期元反思），元反思注入优先；
+- **Person Memory 两层结构**：person_memory_entries 条目层（append-only）+ 主档压缩；
+- **记忆压缩归档**：retention 两阶段，archive 行豁免删除；
+- **改写式去重**：is_duplicate 标记列，向量化时余弦比对（pg_trgm 中文无效已证伪）；
+- **传闻传播与共同经历**：related_characters 激活、source_type=gossip 第二手记忆。
