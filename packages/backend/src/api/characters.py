@@ -33,6 +33,9 @@ from src.schemas.characters import (
     CharacterListOut,
     PlansOut,
     ReflectionsOut,
+    RelationsOut,
+    ScheduleOut,
+    StateHistoryOut,
 )
 
 logger = get_logger(__name__)
@@ -289,7 +292,7 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
     }
 
 
-@router.get("/characters/{character_id}/schedule")
+@router.get("/characters/{character_id}/schedule", response_model=ScheduleOut)
 async def get_character_schedule(character_id: str, hour: int | None = None) -> dict[str, Any]:
     """获取角色作息状态
 
@@ -339,7 +342,7 @@ async def get_character_schedule(character_id: str, hour: int | None = None) -> 
     }
 
 
-@router.get("/characters/{character_id}/relations")
+@router.get("/characters/{character_id}/relations", response_model=RelationsOut)
 async def get_character_relations(character_id: str) -> dict[str, Any]:
     """获取角色的所有关系"""
     redis = get_redis()
@@ -514,7 +517,7 @@ async def record_interaction(
     }
 
 
-@router.get("/characters/{character_id}/state-history")
+@router.get("/characters/{character_id}/state-history", response_model=StateHistoryOut)
 async def get_character_state_history(character_id: UUID, limit: int = 50) -> dict[str, Any]:
     """获取角色状态历史记录（用于状态图表）
 

@@ -58,6 +58,16 @@ from src.runtime import (
     get_schedule_system,
     get_world_engine,
 )
+from src.schemas.api_out import (
+    AdminStatusOut,
+    FlexibleOut,
+    LogsListOut,
+    MetricsDetailOut,
+    OnebotMessagesListOut,
+    SharesListOut,
+    SnapshotsListOut,
+    VectorSearchOut,
+)
 from src.security.rate_limit_dep import rate_limit
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -80,7 +90,7 @@ Admin = Annotated[dict[str, Any], Depends(require_role("admin"))]
 BodyDict = Annotated[dict[str, Any], Body(...)]
 
 
-@router.post("/tick")
+@router.post("/tick", response_model=FlexibleOut)
 async def force_tick(
     user: AdminOrOperator,
     character_id: str | None = None,
@@ -139,7 +149,7 @@ async def force_tick(
     }
 
 
-@router.post("/world/tick")
+@router.post("/world/tick", response_model=FlexibleOut)
 async def force_world_tick(user: AdminOrOperator) -> dict[str, Any]:
     """强制触发 World Tick（管理接口）
 
@@ -168,7 +178,7 @@ async def force_world_tick(user: AdminOrOperator) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"World tick failed: {str(e)}") from e
 
 
-@router.post("/world/reset-time")
+@router.post("/world/reset-time", response_model=FlexibleOut)
 async def reset_world_time(
     user: Admin,
     new_time: str | None = None,
@@ -237,7 +247,7 @@ async def reset_world_time(
     }
 
 
-@router.get("/status")
+@router.get("/status", response_model=AdminStatusOut)
 async def get_admin_status(user: Admin) -> dict[str, Any]:
     """获取系统状态（管理接口）
 
@@ -372,7 +382,7 @@ async def import_character_card(
     }
 
 
-@router.post("/characters/import-batch")
+@router.post("/characters/import-batch", response_model=FlexibleOut)
 async def import_characters_batch(
     payload: BodyDict,
     user: Admin,
@@ -432,7 +442,7 @@ async def import_characters_batch(
     }
 
 
-@router.delete("/characters/{character_id}")
+@router.delete("/characters/{character_id}", response_model=FlexibleOut)
 async def delete_character(
     character_id: UUID,
     user: Admin,
@@ -476,7 +486,7 @@ async def delete_character(
     }
 
 
-@router.get("/onebot/messages")
+@router.get("/onebot/messages", response_model=OnebotMessagesListOut)
 async def get_onebot_messages(user: Admin, limit: int = 50) -> dict[str, Any]:
     """获取 QQ 消息记录（用于 QQ 消息监控）
 
@@ -516,7 +526,7 @@ async def get_onebot_messages(user: Admin, limit: int = 50) -> dict[str, Any]:
     }
 
 
-@router.get("/proactive-shares")
+@router.get("/proactive-shares", response_model=SharesListOut)
 async def get_proactive_shares(user: Admin, limit: int = 50) -> dict[str, Any]:
     """获取主动分享历史记录
 
@@ -568,7 +578,7 @@ async def get_proactive_shares(user: Admin, limit: int = 50) -> dict[str, Any]:
     }
 
 
-@router.post("/vector-search")
+@router.post("/vector-search", response_model=VectorSearchOut)
 async def vector_search(
     user: Admin,
     character_id: UUID,
@@ -626,7 +636,7 @@ async def vector_search(
         raise HTTPException(500, f"Vector search failed: {e}") from e
 
 
-@router.get("/world/snapshots")
+@router.get("/world/snapshots", response_model=SnapshotsListOut)
 async def get_world_snapshots(user: Admin, limit: int = 20) -> dict[str, Any]:
     """获取世界快照列表（用于冷启动恢复管理）
 
@@ -662,7 +672,7 @@ async def get_world_snapshots(user: Admin, limit: int = 20) -> dict[str, Any]:
     }
 
 
-@router.get("/logs")
+@router.get("/logs", response_model=LogsListOut)
 async def get_recent_logs(
     user: Admin,
     lines: int = 100,
@@ -718,7 +728,7 @@ async def get_recent_logs(
         raise HTTPException(500, f"Failed to read logs: {e}") from e
 
 
-@router.get("/metrics-detail")
+@router.get("/metrics-detail", response_model=MetricsDetailOut)
 async def get_detailed_metrics(user: Admin) -> dict[str, Any]:
     """获取详细的系统指标（解析 Prometheus 格式，返回结构化数据）
 
@@ -896,7 +906,7 @@ _CONFIG_LABELS = {
 }
 
 
-@router.get("/config")
+@router.get("/config", response_model=FlexibleOut)
 async def get_runtime_config(user: Admin) -> dict[str, Any]:
     """获取运行时配置（环境变量默认值 + Redis 覆盖值）
 
@@ -927,7 +937,7 @@ async def get_runtime_config(user: Admin) -> dict[str, Any]:
     return {"data": result, "total": len(result)}
 
 
-@router.put("/config")
+@router.put("/config", response_model=FlexibleOut)
 async def update_runtime_config(
     updates: BodyDict,
     user: Admin,
@@ -960,7 +970,7 @@ async def update_runtime_config(
     }
 
 
-@router.delete("/config/{key}")
+@router.delete("/config/{key}", response_model=FlexibleOut)
 async def reset_config_item(key: str, user: Admin) -> dict[str, Any]:
     """重置单个配置项为默认值（删除 Redis 覆盖）
 

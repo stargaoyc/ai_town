@@ -1,8 +1,8 @@
 """API 响应模型 - 全域 Out 模型（类型收敛专项）
 
 命名约定：<前端接口名>Out，前端经 components["schemas"]["XxxOut"] 引用。
-字段形状以各端点实际返回 dict 为准（镜像 lib/api.ts 手写接口）；
-嵌套载荷尚未稳定的以 dict[str, Any] 过渡，后续逐域收紧。
+字段形状以各端点实际返回 dict 为准；嵌套载荷尚未稳定的以 dict[str, Any] 过渡，
+透传模型（extra=allow）用于形状动态的端点，避免 response_model 过滤丢数据。
 """
 
 from __future__ import annotations
@@ -11,7 +11,27 @@ from typing import Any
 
 from pydantic import BaseModel
 
+
+class FlexibleOut(BaseModel):
+    """透传响应模型：保留全部字段（形状未命名化端点的过渡声明）"""
+
+    model_config = {"extra": "allow"}
+
+
 # ===== 角色（characters.py）=====
+
+
+class CharacterListItemOut(BaseModel):
+    id: str
+    name: str
+    age: int | None = None
+    occupation: str | None = None
+    is_active: bool
+
+
+class CharacterListOut(BaseModel):
+    data: list[CharacterListItemOut]
+    total: int
 
 
 class CharacterStateOut(BaseModel):
@@ -40,19 +60,6 @@ class CharacterDetail(BaseModel):
 class CharacterDetailOut(BaseModel):
     character: CharacterDetail
     state: CharacterStateOut
-
-
-class CharacterListItemOut(BaseModel):
-    id: str
-    name: str
-    age: int | None = None
-    occupation: str | None = None
-    is_active: bool
-
-
-class CharacterListOut(BaseModel):
-    data: list[CharacterListItemOut]
-    total: int
 
 
 class ReflectionEntryOut(BaseModel):
@@ -84,7 +91,7 @@ class PlansListOut(BaseModel):
     total: int
 
 
-class ActionEntryOut(BaseModel):
+class ActionRecordOut(BaseModel):
     id: str
     action_id: str
     action_name: str
@@ -98,7 +105,7 @@ class ActionEntryOut(BaseModel):
 
 
 class ActionsListOut(BaseModel):
-    data: list[ActionEntryOut]
+    data: list[ActionRecordOut]
     total: int
 
 
@@ -106,7 +113,6 @@ class RelationEntryOut(BaseModel):
     target_id: str
     target_name: str | None = None
     relation_type: str | None = None
-    relationship_type: str | None = None
     trust: int | None = None
     intimacy: int | None = None
     strength: int | None = None
@@ -155,6 +161,14 @@ class StateHistoryListOut(BaseModel):
 # ===== 世界（world.py）=====
 
 
+class WorldStateOut(BaseModel):
+    tick_id: int
+    world_time: str
+    weather: str
+    temperature: int | None = None
+    active_characters: int
+
+
 class WorldEventEntryOut(BaseModel):
     id: str
     tick_id: int
@@ -169,17 +183,6 @@ class WorldEventsRangeOut(BaseModel):
     total: int
 
 
-class WorldStateOut(BaseModel):
-    tick_id: int
-    world_time: str
-    weather: str
-    temperature: int | None = None
-    active_characters: int
-
-
-# ===== 系统（system.py）=====
-
-
 class HealthOut(BaseModel):
     status: str
     world_tick: int
@@ -189,21 +192,59 @@ class HealthOut(BaseModel):
     current_world_time: dict[str, Any] | None = None
 
 
-class LoginOut(BaseModel):
-    token: str
-    user_id: str
+# ===== 记忆（memory.py）=====
 
 
-class ModuleEntryOut(BaseModel):
-    name: str
-    type: str
-    status: str
-    description: str
+class DiaryOut(BaseModel):
+    id: str | None = None
+    character_id: str | None = None
+    period: str
+    diary_date: str
+    diary_end_date: str | None = None
+    title: str
+    content: str
+    mood: str | None = None
+    generated_at: str | None = None
 
 
-class ModulesListOut(BaseModel):
-    data: list[ModuleEntryOut]
+class DiariesListOut(BaseModel):
+    data: list[DiaryOut]
     total: int
+
+
+class DiaryGeneratedOut(BaseModel):
+    data: DiaryOut
+
+
+class PersonMemoryRecordOut(BaseModel):
+    id: str | None = None
+    character_id: str | None = None
+    user_id: str
+    platform: str | None = None
+    content: str
+    heat: int = 0
+    last_interaction_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class PersonMemoryGetOut(BaseModel):
+    data: PersonMemoryRecordOut | None
+    exists: bool
+
+
+class PersonMemoriesListOut(BaseModel):
+    data: list[PersonMemoryRecordOut]
+    total: int
+
+
+class MemoriesListOut(BaseModel):
+    """角色记忆片段列表（字段随来源多样，暂透传）"""
+
+    model_config = {"extra": "allow"}
+
+    data: list[dict[str, Any]] = []
+    total: int = 0
 
 
 # ===== 消息（messages.py）=====
@@ -220,6 +261,11 @@ class MessageOut(BaseModel):
 
 
 class MessagesListOut(BaseModel):
+    data: list[MessageOut]
+    total: int
+
+
+class MessageHistoryListOut(BaseModel):
     data: list[MessageOut]
     total: int
 
@@ -276,21 +322,26 @@ class NotificationsListOut(BaseModel):
     unread: int
 
 
-class NotificationOut(BaseModel):
+class NotificationCreatedOut(BaseModel):
     data: AppNotificationOut
 
 
-class SuccessIdOut(BaseModel):
+class NotificationMarkedOut(BaseModel):
     success: bool
     id: str
 
 
-class SuccessUpdatedOut(BaseModel):
+class NotificationsMarkedAllOut(BaseModel):
     success: bool
     updated: int
 
 
-class SuccessOut(BaseModel):
+class NotificationDeletedOut(BaseModel):
+    success: bool
+    id: str
+
+
+class NotificationsClearedOut(BaseModel):
     success: bool
 
 
@@ -321,8 +372,6 @@ class ActionDefOut(BaseModel):
     description: str | None = None
     category: str | None = None
     duration_minutes: int | None = None
-    scene: str | None = None
-    precondition_met: bool | None = None
 
 
 class ActionDefsListOut(BaseModel):
@@ -330,7 +379,41 @@ class ActionDefsListOut(BaseModel):
     total: int
 
 
+# ===== 系统（system.py）=====
+
+
+class LoginOut(BaseModel):
+    token: str
+    user_id: str
+
+
+class ModuleEntryOut(BaseModel):
+    name: str
+    type: str
+    status: str
+    description: str
+
+
+class ModulesListOut(BaseModel):
+    data: list[ModuleEntryOut]
+    total: int
+
+
+class DurationCalculateOut(BaseModel):
+    """动态耗时计算结果（结构随移动矩阵输出，暂透传）"""
+
+    model_config = {"extra": "allow"}
+
+
 # ===== 管理（admin.py）=====
+
+
+class AdminStatusOut(BaseModel):
+    redis: str
+    world_engine: dict[str, Any]
+    character_engine: dict[str, Any]
+    action_registry: dict[str, Any]
+    llm: dict[str, Any]
 
 
 class OnebotMessageEntryOut(BaseModel):
@@ -397,6 +480,8 @@ class SnapshotsListOut(BaseModel):
 
 
 class LogEntryOut(BaseModel):
+    """日志条目（structlog 键值对不定长，透传保留）"""
+
     model_config = {"extra": "allow"}
 
     timestamp: str | None = None
@@ -410,7 +495,75 @@ class LogsListOut(BaseModel):
     source: str
 
 
+class MetricsDetailOut(BaseModel):
+    """详细指标聚合（嵌套结构随指标扩展，透传保留）"""
+
+    model_config = {"extra": "allow"}
+
+
+class ConfigEntriesOut(BaseModel):
+    """运行时配置条目列表（键值形状动态，透传保留）"""
+
+    model_config = {"extra": "allow"}
+
+    data: list[dict[str, Any]] = []
+    total: int = 0
+
+
+class ConfigUpdateOut(BaseModel):
+    model_config = {"extra": "allow"}
+
+    success: bool
+
+
+class ConfigResetOut(BaseModel):
+    model_config = {"extra": "allow"}
+
+    success: bool
+
+
 class DeleteCharacterOut(BaseModel):
     success: bool
     message: str
     character_id: str
+
+
+# ===== 工具（tools.py）=====
+
+
+class ServerDetailOut(BaseModel):
+    """工具命名空间详情（tools 列表动态，透传保留）"""
+
+    model_config = {"extra": "allow"}
+
+
+class ServerToggleOut(BaseModel):
+    success: bool
+    server: str
+    enabled: bool
+
+
+class ToolInvokeOut(BaseModel):
+    """工具调用结果（result 结构随工具各异，透传保留）"""
+
+    model_config = {"extra": "allow"}
+
+    success: bool
+    endpoint: str
+
+
+class ServersListOut(BaseModel):
+    data: list[dict[str, Any]]
+    total: int
+
+
+class ServersHealthOut(BaseModel):
+    data: list[dict[str, Any]]
+    total: int
+    online: int
+    offline: int
+
+
+class ToolsListOut(BaseModel):
+    data: list[dict[str, Any]]
+    total: int

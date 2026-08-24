@@ -9,6 +9,14 @@ from structlog import get_logger
 from src.auth import get_current_user
 from src.runtime import create_notification as create_notification_record
 from src.runtime import get_redis, notification_key
+from src.schemas.api_out import (
+    NotificationCreatedOut,
+    NotificationDeletedOut,
+    NotificationMarkedOut,
+    NotificationsClearedOut,
+    NotificationsListOut,
+    NotificationsMarkedAllOut,
+)
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 logger = get_logger(__name__)
@@ -18,7 +26,7 @@ CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
 BodyDict = Annotated[dict[str, Any], Body(...)]
 
 
-@router.get("")
+@router.get("", response_model=NotificationsListOut)
 async def list_notifications(
     user: CurrentUser,
     limit: int = 50,
@@ -58,7 +66,7 @@ async def list_notifications(
     }
 
 
-@router.post("")
+@router.post("", response_model=NotificationCreatedOut)
 async def create_notification(
     payload: BodyDict,
     user: CurrentUser,
@@ -79,7 +87,7 @@ async def create_notification(
     return {"data": notif}
 
 
-@router.put("/{notif_id}/read")
+@router.put("/{notif_id}/read", response_model=NotificationMarkedOut)
 async def mark_notification_read(
     notif_id: str,
     user: CurrentUser,
@@ -103,7 +111,7 @@ async def mark_notification_read(
     raise HTTPException(404, f"Notification {notif_id} not found")
 
 
-@router.put("/read-all")
+@router.put("/read-all", response_model=NotificationsMarkedAllOut)
 async def mark_all_notifications_read(
     user: CurrentUser,
 ) -> dict[str, Any]:
@@ -127,7 +135,7 @@ async def mark_all_notifications_read(
     return {"success": True, "updated": updated}
 
 
-@router.delete("/{notif_id}")
+@router.delete("/{notif_id}", response_model=NotificationDeletedOut)
 async def delete_notification(
     notif_id: str,
     user: CurrentUser,
@@ -151,7 +159,7 @@ async def delete_notification(
     raise HTTPException(404, f"Notification {notif_id} not found")
 
 
-@router.delete("")
+@router.delete("", response_model=NotificationsClearedOut)
 async def clear_all_notifications(
     user: CurrentUser,
 ) -> dict[str, Any]:

@@ -21,6 +21,7 @@ from src.db.repositories import ConversationRepository, MessageRepository
 from src.db.session import db
 from src.messaging import MessageService
 from src.runtime import get_llm, get_prompts, get_redis
+from src.schemas.api_out import ConversationsListOut, MessageHistoryListOut, MessageStatsOut, SendMessageOut
 from src.security.rate_limit_dep import rate_limit
 
 logger = get_logger(__name__)
@@ -34,7 +35,7 @@ CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
 # === Phase 3 API：消息服务 ===
 
 
-@router.post("/messages/send", dependencies=[Depends(rate_limit("msg_send", 60, 60))])
+@router.post("/messages/send", response_model=SendMessageOut, dependencies=[Depends(rate_limit("msg_send", 60, 60))])
 async def send_message(
     character_id: Annotated[str, Body(...)],
     user_id: Annotated[str, Body(...)],
@@ -111,7 +112,7 @@ async def send_message(
     }
 
 
-@router.get("/messages/history")
+@router.get("/messages/history", response_model=MessageHistoryListOut)
 async def get_message_history(
     conversation_id: str,
     user: CurrentUser,
@@ -178,7 +179,7 @@ async def get_message_history(
     }
 
 
-@router.get("/conversations")
+@router.get("/conversations", response_model=ConversationsListOut)
 async def list_conversations(
     current_user: CurrentUser,
     character_id: str | None = None,
@@ -257,7 +258,7 @@ async def list_conversations(
     }
 
 
-@router.get("/messages/stats")
+@router.get("/messages/stats", response_model=MessageStatsOut)
 async def get_message_stats(
     character_id: str | None = None,
     start_date: str | None = None,

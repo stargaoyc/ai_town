@@ -42,9 +42,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Notifications Api V1 Notifications Get"
+                  "$ref": "#/components/schemas/NotificationsListOut"
                 }
               }
             }
@@ -86,9 +84,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Create Notification Api V1 Notifications Post"
+                  "$ref": "#/components/schemas/NotificationCreatedOut"
                 }
               }
             }
@@ -118,9 +114,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Clear All Notifications Api V1 Notifications Delete"
+                  "$ref": "#/components/schemas/NotificationsClearedOut"
                 }
               }
             }
@@ -153,9 +147,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Mark Notification Read Api V1 Notifications  Notif Id  Read Put"
+                  "$ref": "#/components/schemas/NotificationMarkedOut"
                 }
               }
             }
@@ -187,9 +179,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Mark All Notifications Read Api V1 Notifications Read All Put"
+                  "$ref": "#/components/schemas/NotificationsMarkedAllOut"
                 }
               }
             }
@@ -222,9 +212,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Notification Api V1 Notifications  Notif Id  Delete"
+                  "$ref": "#/components/schemas/NotificationDeletedOut"
                 }
               }
             }
@@ -256,9 +244,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response List Tool Servers Api V1 Tools Servers Get"
+                  "$ref": "#/components/schemas/ServersListOut"
                 }
               }
             }
@@ -280,9 +266,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Check Tool Servers Health Api V1 Tools Servers Health Get"
+                  "$ref": "#/components/schemas/ServersHealthOut"
                 }
               }
             }
@@ -315,9 +299,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Tool Server Detail Api V1 Tools Servers  Server Name  Get"
+                  "$ref": "#/components/schemas/ServerDetailOut"
                 }
               }
             }
@@ -349,9 +331,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response List All Tools Api V1 Tools Tools Get"
+                  "$ref": "#/components/schemas/ToolsListOut"
                 }
               }
             }
@@ -396,9 +376,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Toggle Tool Server Api V1 Tools Servers  Server Name  Enabled Put"
+                  "$ref": "#/components/schemas/ServerToggleOut"
                 }
               }
             }
@@ -475,9 +453,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Invoke Tool Api V1 Tools Tools  Tool Name  Invoke Post"
+                  "$ref": "#/components/schemas/ToolInvokeOut"
                 }
               }
             }
@@ -554,9 +530,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Diaries Api V1 Characters  Character Id  Diaries Get"
+                  "$ref": "#/components/schemas/DiariesListOut"
                 }
               }
             }
@@ -625,9 +599,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Generate Diary Api V1 Characters  Character Id  Diaries Generate Post"
+                  "$ref": "#/components/schemas/DiaryGeneratedOut"
                 }
               }
             }
@@ -681,9 +653,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Person Memory Api V1 Characters  Character Id  Person Memory Get"
+                  "$ref": "#/components/schemas/PersonMemoryGetOut"
                 }
               }
             }
@@ -738,9 +708,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Person Memories Api V1 Characters  Character Id  Person Memory List Get"
+                  "$ref": "#/components/schemas/PersonMemoriesListOut"
                 }
               }
             }
@@ -793,9 +761,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Memories Api V1 Memories  Character Id  Get"
+                  "$ref": "#/components/schemas/MemoriesListOut"
                 }
               }
             }
@@ -861,9 +827,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Login Api V1 Auth Login Post"
+                  "$ref": "#/components/schemas/LoginOut"
                 }
               }
             }
@@ -895,9 +859,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response List Modules Api V1 Modules Get"
+                  "$ref": "#/components/schemas/ModulesListOut"
                 }
               }
             }
@@ -980,9 +942,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Calculate Duration Api V1 Duration Calculate Get"
+                  "$ref": "#/components/schemas/DurationCalculateOut"
                 }
               }
             }
@@ -1357,9 +1317,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Character Schedule Api V1 Characters  Character Id  Schedule Get"
+                  "$ref": "#/components/schemas/ScheduleOut"
                 }
               }
             }
@@ -1402,9 +1360,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Character Relations Api V1 Characters  Character Id  Relations Get"
+                  "$ref": "#/components/schemas/RelationsOut"
                 }
               }
             }
@@ -1583,9 +1539,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Character State History Api V1 Characters  Character Id  State History Get"
+                  "$ref": "#/components/schemas/StateHistoryOut"
                 }
               }
             }
@@ -1818,9 +1772,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response List Actions Api V1 Actions Get"
+                  "$ref": "#/components/schemas/ActionDefsListOut"
                 }
               }
             }
@@ -1853,9 +1805,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Action Api V1 Actions  Action Id  Get"
+                  "$ref": "#/components/schemas/ActionDefOut"
                 }
               }
             }
@@ -1887,9 +1837,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response List Scenes Api V1 Town Scenes Get"
+                  "$ref": "#/components/schemas/ScenesListOut"
                 }
               }
             }
@@ -1922,9 +1870,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Scene Detail Api V1 Town Scenes  Scene Id  Get"
+                  "$ref": "#/components/schemas/SceneOut"
                 }
               }
             }
@@ -1988,9 +1934,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Send Message Api V1 Messages Send Post"
+                  "$ref": "#/components/schemas/SendMessageOut"
                 }
               }
             }
@@ -2059,9 +2003,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Message History Api V1 Messages History Get"
+                  "$ref": "#/components/schemas/MessageHistoryListOut"
                 }
               }
             }
@@ -2137,9 +2079,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Conversations Api V1 Conversations Get"
+                  "$ref": "#/components/schemas/ConversationsListOut"
                 }
               }
             }
@@ -2221,9 +2161,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Message Stats Api V1 Messages Stats Get"
+                  "$ref": "#/components/schemas/MessageStatsOut"
                 }
               }
             }
@@ -2273,9 +2211,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Force Tick Api V1 Admin Tick Post"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2307,9 +2243,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Force World Tick Api V1 Admin World Tick Post"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2349,9 +2283,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Reset World Time Api V1 Admin World Reset Time Post"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2383,9 +2315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Admin Status Api V1 Admin Status Get"
+                  "$ref": "#/components/schemas/AdminStatusOut"
                 }
               }
             }
@@ -2465,9 +2395,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Import Characters Batch Api V1 Admin Characters Import Batch Post"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2511,9 +2439,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Character Api V1 Admin Characters  Character Id  Delete"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2557,9 +2483,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Onebot Messages Api V1 Admin Onebot Messages Get"
+                  "$ref": "#/components/schemas/OnebotMessagesListOut"
                 }
               }
             }
@@ -2603,9 +2527,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Proactive Shares Api V1 Admin Proactive Shares Get"
+                  "$ref": "#/components/schemas/SharesListOut"
                 }
               }
             }
@@ -2668,9 +2590,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Vector Search Api V1 Admin Vector Search Post"
+                  "$ref": "#/components/schemas/VectorSearchOut"
                 }
               }
             }
@@ -2714,9 +2634,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get World Snapshots Api V1 Admin World Snapshots Get"
+                  "$ref": "#/components/schemas/SnapshotsListOut"
                 }
               }
             }
@@ -2782,9 +2700,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Recent Logs Api V1 Admin Logs Get"
+                  "$ref": "#/components/schemas/LogsListOut"
                 }
               }
             }
@@ -2816,9 +2732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Detailed Metrics Api V1 Admin Metrics Detail Get"
+                  "$ref": "#/components/schemas/MetricsDetailOut"
                 }
               }
             }
@@ -2840,9 +2754,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Runtime Config Api V1 Admin Config Get"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2874,9 +2786,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Update Runtime Config Api V1 Admin Config Put"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2919,9 +2829,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Reset Config Item Api V1 Admin Config  Key  Delete"
+                  "$ref": "#/components/schemas/FlexibleOut"
                 }
               }
             }
@@ -2942,6 +2850,78 @@
   },
   "components": {
     "schemas": {
+      "ActionDefOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ActionDefOut"
+      },
+      "ActionDefsListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ActionDefOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ActionDefsListOut"
+      },
       "ActionRecordOut": {
         "properties": {
           "id": {
@@ -3052,6 +3032,81 @@
           "total"
         ],
         "title": "ActionsOut"
+      },
+      "AdminStatusOut": {
+        "properties": {
+          "redis": {
+            "type": "string",
+            "title": "Redis"
+          },
+          "world_engine": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "World Engine"
+          },
+          "character_engine": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Character Engine"
+          },
+          "action_registry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Action Registry"
+          },
+          "llm": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Llm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "redis",
+          "world_engine",
+          "character_engine",
+          "action_registry",
+          "llm"
+        ],
+        "title": "AdminStatusOut"
+      },
+      "AppNotificationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "title",
+          "content",
+          "created_at",
+          "read"
+        ],
+        "title": "AppNotificationOut"
       },
       "Body_send_message_api_v1_messages_send_post": {
         "properties": {
@@ -3342,6 +3397,190 @@
         "type": "object",
         "title": "CharacterStateOut"
       },
+      "ConversationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "character_id": {
+            "type": "string",
+            "title": "Character Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "last_message_at": {
+            "type": "string",
+            "title": "Last Message At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "character_id",
+          "user_id",
+          "platform",
+          "last_message_at"
+        ],
+        "title": "ConversationOut"
+      },
+      "ConversationsListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ConversationsListOut"
+      },
+      "DiariesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DiaryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "DiariesListOut"
+      },
+      "DiaryGeneratedOut": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DiaryOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "DiaryGeneratedOut"
+      },
+      "DiaryOut": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Id"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "diary_date": {
+            "type": "string",
+            "title": "Diary Date"
+          },
+          "diary_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diary End Date"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period",
+          "diary_date",
+          "title",
+          "content"
+        ],
+        "title": "DiaryOut"
+      },
+      "DurationCalculateOut": {
+        "properties": {},
+        "additionalProperties": true,
+        "type": "object",
+        "title": "DurationCalculateOut",
+        "description": "动态耗时计算结果（结构随移动矩阵输出，暂透传）"
+      },
+      "FlexibleOut": {
+        "properties": {},
+        "additionalProperties": true,
+        "type": "object",
+        "title": "FlexibleOut",
+        "description": "透传响应模型：保留全部字段（形状未命名化端点的过渡声明）"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3406,6 +3645,617 @@
         ],
         "title": "HealthOut",
         "description": "健康检查（api/system.py /health）"
+      },
+      "LogEntryOut": {
+        "properties": {
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "LogEntryOut",
+        "description": "日志条目（structlog 键值对不定长，透传保留）"
+      },
+      "LoginOut": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "user_id"
+        ],
+        "title": "LoginOut"
+      },
+      "LogsListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/LogEntryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "source"
+        ],
+        "title": "LogsListOut"
+      },
+      "MemoriesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Data",
+            "default": []
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "MemoriesListOut",
+        "description": "角色记忆片段列表（字段随来源多样，暂透传）"
+      },
+      "MessageHistoryListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MessageOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "MessageHistoryListOut"
+      },
+      "MessageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "sender",
+          "content",
+          "created_at"
+        ],
+        "title": "MessageOut"
+      },
+      "MessageStatsOut": {
+        "properties": {
+          "total_messages": {
+            "type": "integer",
+            "title": "Total Messages"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "by_character": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By Character"
+          },
+          "by_day": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By Day"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_messages",
+          "total_tokens",
+          "total_cost"
+        ],
+        "title": "MessageStatsOut"
+      },
+      "MetricsDetailOut": {
+        "properties": {},
+        "additionalProperties": true,
+        "type": "object",
+        "title": "MetricsDetailOut",
+        "description": "详细指标聚合（嵌套结构随指标扩展，透传保留）"
+      },
+      "ModuleEntryOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "status",
+          "description"
+        ],
+        "title": "ModuleEntryOut"
+      },
+      "ModulesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleEntryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ModulesListOut"
+      },
+      "NotificationCreatedOut": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AppNotificationOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NotificationCreatedOut"
+      },
+      "NotificationDeletedOut": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "id"
+        ],
+        "title": "NotificationDeletedOut"
+      },
+      "NotificationMarkedOut": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "id"
+        ],
+        "title": "NotificationMarkedOut"
+      },
+      "NotificationsClearedOut": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "NotificationsClearedOut"
+      },
+      "NotificationsListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AppNotificationOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "unread": {
+            "type": "integer",
+            "title": "Unread"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "unread"
+        ],
+        "title": "NotificationsListOut"
+      },
+      "NotificationsMarkedAllOut": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "updated": {
+            "type": "integer",
+            "title": "Updated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "updated"
+        ],
+        "title": "NotificationsMarkedAllOut"
+      },
+      "OnebotMessageEntryOut": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "character_id": {
+            "type": "string",
+            "title": "Character Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "conversation_id",
+          "character_id",
+          "user_id",
+          "sender",
+          "content",
+          "created_at"
+        ],
+        "title": "OnebotMessageEntryOut"
+      },
+      "OnebotMessagesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OnebotMessageEntryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "OnebotMessagesListOut"
+      },
+      "PersonMemoriesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PersonMemoryRecordOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "PersonMemoriesListOut"
+      },
+      "PersonMemoryGetOut": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonMemoryRecordOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "exists"
+        ],
+        "title": "PersonMemoryGetOut"
+      },
+      "PersonMemoryRecordOut": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "heat": {
+            "type": "integer",
+            "title": "Heat",
+            "default": 0
+          },
+          "last_interaction_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Interaction At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "content"
+        ],
+        "title": "PersonMemoryRecordOut"
       },
       "PlanOut": {
         "properties": {
@@ -3548,6 +4398,683 @@
         ],
         "title": "ReflectionsOut"
       },
+      "RelationOut": {
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Name"
+          },
+          "strength": {
+            "type": "integer",
+            "title": "Strength"
+          },
+          "relationship_type": {
+            "type": "string",
+            "title": "Relationship Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_id",
+          "strength",
+          "relationship_type"
+        ],
+        "title": "RelationOut"
+      },
+      "RelationsOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RelationOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "RelationsOut"
+      },
+      "SceneOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "capacity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity"
+          },
+          "crowdedness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crowdedness"
+          },
+          "characters_present": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Characters Present"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SceneOut"
+      },
+      "ScenesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SceneOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ScenesListOut"
+      },
+      "ScheduleBlockOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "start_hour": {
+            "type": "integer",
+            "title": "Start Hour"
+          },
+          "end_hour": {
+            "type": "integer",
+            "title": "End Hour"
+          },
+          "activity_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "start_hour",
+          "end_hour"
+        ],
+        "title": "ScheduleBlockOut"
+      },
+      "ScheduleOut": {
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "title": "Character Id"
+          },
+          "schedule_type": {
+            "type": "string",
+            "title": "Schedule Type"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleBlockOut"
+            },
+            "type": "array",
+            "title": "Blocks",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_id",
+          "schedule_type"
+        ],
+        "title": "ScheduleOut"
+      },
+      "SendMessageDataOut": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "content"
+        ],
+        "title": "SendMessageDataOut"
+      },
+      "SendMessageOut": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SendMessageDataOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SendMessageOut"
+      },
+      "ServerDetailOut": {
+        "properties": {},
+        "additionalProperties": true,
+        "type": "object",
+        "title": "ServerDetailOut",
+        "description": "工具命名空间详情（tools 列表动态，透传保留）"
+      },
+      "ServerToggleOut": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "server": {
+            "type": "string",
+            "title": "Server"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "server",
+          "enabled"
+        ],
+        "title": "ServerToggleOut"
+      },
+      "ServersHealthOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "online": {
+            "type": "integer",
+            "title": "Online"
+          },
+          "offline": {
+            "type": "integer",
+            "title": "Offline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "online",
+          "offline"
+        ],
+        "title": "ServersHealthOut"
+      },
+      "ServersListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ServersListOut"
+      },
+      "ShareEntryOut": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Id"
+          },
+          "character_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Name"
+          },
+          "share_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Id"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "conversation_id",
+          "sender",
+          "content",
+          "created_at"
+        ],
+        "title": "ShareEntryOut"
+      },
+      "SharesListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ShareEntryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "SharesListOut"
+      },
+      "SnapshotEntryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "tick_id": {
+            "type": "integer",
+            "title": "Tick Id"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tick_id",
+          "created_at"
+        ],
+        "title": "SnapshotEntryOut"
+      },
+      "SnapshotsListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotEntryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "SnapshotsListOut"
+      },
+      "StateHistoryOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/StateHistoryPointOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "StateHistoryOut"
+      },
+      "StateHistoryPointOut": {
+        "properties": {
+          "recorded_at": {
+            "type": "string",
+            "title": "Recorded At"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "stamina": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stamina"
+          },
+          "satiety": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Satiety"
+          },
+          "money": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Money"
+          },
+          "social_energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Energy"
+          },
+          "phone_battery": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Battery"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recorded_at"
+        ],
+        "title": "StateHistoryPointOut"
+      },
+      "ToolInvokeOut": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "success",
+          "endpoint"
+        ],
+        "title": "ToolInvokeOut",
+        "description": "工具调用结果（result 结构随工具各异，透传保留）"
+      },
+      "ToolsListOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ToolsListOut"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -3587,6 +5114,75 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VectorSearchOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/VectorSearchResultOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "query"
+        ],
+        "title": "VectorSearchOut"
+      },
+      "VectorSearchResultOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "importance": {
+            "type": "integer",
+            "title": "Importance"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          },
+          "is_reflected": {
+            "type": "boolean",
+            "title": "Is Reflected"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content",
+          "importance",
+          "timestamp",
+          "similarity",
+          "is_reflected",
+          "source_type"
+        ],
+        "title": "VectorSearchResultOut"
       },
       "WorldEventEntryOut": {
         "properties": {

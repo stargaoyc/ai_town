@@ -31,6 +31,7 @@ from src.runtime import (
     get_schedule_system,
     get_world_engine,
 )
+from src.schemas.api_out import DurationCalculateOut, LoginOut, ModulesListOut
 from src.schemas.world import HealthOut
 from src.security.rate_limit_dep import rate_limit
 
@@ -94,7 +95,9 @@ def _get_current_world_time() -> dict[str, Any] | None:
     return None
 
 
-@router.post("/api/v1/auth/login", dependencies=[Depends(rate_limit("login", 5, 60, fail_closed=True))])
+@router.post(
+    "/api/v1/auth/login", response_model=LoginOut, dependencies=[Depends(rate_limit("login", 5, 60, fail_closed=True))]
+)
 async def login(body: dict[str, Any]) -> dict[str, Any]:
     """登录接口 - 账号密码换取 JWT Token
 
@@ -124,7 +127,7 @@ async def login(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/api/v1/modules")
+@router.get("/api/v1/modules", response_model=ModulesListOut)
 async def list_modules() -> dict[str, Any]:
     """列出所有系统模块及其运行状态
 
@@ -232,7 +235,7 @@ async def list_modules() -> dict[str, Any]:
 # === Phase 2 API：动态耗时 ===
 
 
-@router.get("/api/v1/duration/calculate")
+@router.get("/api/v1/duration/calculate", response_model=DurationCalculateOut)
 async def calculate_duration(
     base_duration: int,
     weather: str = "sunny",

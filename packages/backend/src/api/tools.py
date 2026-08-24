@@ -14,6 +14,14 @@ from structlog import get_logger
 
 from src.auth.rbac import require_role
 from src.runtime import get_redis
+from src.schemas.api_out import (
+    ServerDetailOut,
+    ServersHealthOut,
+    ServersListOut,
+    ServerToggleOut,
+    ToolInvokeOut,
+    ToolsListOut,
+)
 from src.tools import TOOL_REGISTRY, get_enabled_tools
 from src.tools.registry import TOOLS_ENABLED_KEY, invalidate_enabled_cache
 
@@ -68,7 +76,7 @@ async def _is_namespace_enabled(namespace: str) -> bool:
     return all(t in enabled for t in tools) if tools else False
 
 
-@router.get("/servers")
+@router.get("/servers", response_model=ServersListOut)
 async def list_tool_servers() -> dict[str, Any]:
     """列出所有工具命名空间
 
@@ -97,7 +105,7 @@ async def list_tool_servers() -> dict[str, Any]:
     }
 
 
-@router.get("/servers/health")
+@router.get("/servers/health", response_model=ServersHealthOut)
 async def check_tool_servers_health() -> dict[str, Any]:
     """检查所有工具命名空间的健康状态
 
@@ -122,7 +130,7 @@ async def check_tool_servers_health() -> dict[str, Any]:
     }
 
 
-@router.get("/servers/{server_name}")
+@router.get("/servers/{server_name}", response_model=ServerDetailOut)
 async def get_tool_server_detail(server_name: str) -> dict[str, Any]:
     """获取单个命名空间详情
 
@@ -147,7 +155,7 @@ async def get_tool_server_detail(server_name: str) -> dict[str, Any]:
     }
 
 
-@router.get("/tools")
+@router.get("/tools", response_model=ToolsListOut)
 async def list_all_tools() -> dict[str, Any]:
     """列出所有已启用工具
 
@@ -177,7 +185,7 @@ async def list_all_tools() -> dict[str, Any]:
     }
 
 
-@router.put("/servers/{server_name}/enabled")
+@router.put("/servers/{server_name}/enabled", response_model=ServerToggleOut)
 async def toggle_tool_server(
     server_name: str,
     payload: BodyDict,
@@ -225,7 +233,7 @@ async def toggle_tool_server(
     }
 
 
-@router.post("/tools/{tool_name}/invoke")
+@router.post("/tools/{tool_name}/invoke", response_model=ToolInvokeOut)
 async def invoke_tool(
     tool_name: str,
     user: AdminUser,

@@ -10,11 +10,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from src.runtime import get_scene_loader
+from src.schemas.api_out import SceneOut, ScenesListOut
 
 router = APIRouter(prefix="/api/v1/town", tags=["town"])
 
 
-@router.get("/scenes")
+@router.get("/scenes", response_model=ScenesListOut)
 async def list_scenes() -> dict[str, Any]:
     """获取所有场景列表"""
     scene_loader = get_scene_loader()
@@ -39,7 +40,7 @@ async def list_scenes() -> dict[str, Any]:
     }
 
 
-@router.get("/scenes/{scene_id}")
+@router.get("/scenes/{scene_id}", response_model=SceneOut)
 async def get_scene_detail(scene_id: str) -> dict[str, Any]:
     """获取场景详情（含实时状态）"""
     scene_loader = get_scene_loader()

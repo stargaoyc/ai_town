@@ -17,6 +17,13 @@ from src.db.repositories import MemoryRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService
 from src.memory.person_memory_service import PersonMemoryService
+from src.schemas.api_out import (
+    DiariesListOut,
+    DiaryGeneratedOut,
+    MemoriesListOut,
+    PersonMemoriesListOut,
+    PersonMemoryGetOut,
+)
 
 logger = get_logger(__name__)
 
@@ -36,7 +43,7 @@ def _get_person_memory_service() -> PersonMemoryService:
 # === 日记接口 ===
 
 
-@router.get("/characters/{character_id}/diaries")
+@router.get("/characters/{character_id}/diaries", response_model=DiariesListOut)
 async def list_diaries(
     character_id: str,
     period: Literal["day", "week", "month", "year"] | None = None,
@@ -59,7 +66,7 @@ async def list_diaries(
     return {"data": diaries, "total": len(diaries)}
 
 
-@router.post("/characters/{character_id}/diaries/generate")
+@router.post("/characters/{character_id}/diaries/generate", response_model=DiaryGeneratedOut)
 async def generate_diary(
     character_id: str,
     _user: AdminOrOperator,
@@ -104,7 +111,7 @@ async def generate_diary(
 # === 角色对用户的记忆接口 ===
 
 
-@router.get("/characters/{character_id}/person-memory")
+@router.get("/characters/{character_id}/person-memory", response_model=PersonMemoryGetOut)
 async def get_person_memory(
     character_id: str,
     user_id: str = Query(..., description="用户标识"),
@@ -122,7 +129,7 @@ async def get_person_memory(
     return {"data": memory, "exists": True}
 
 
-@router.get("/characters/{character_id}/person-memory/list")
+@router.get("/characters/{character_id}/person-memory/list", response_model=PersonMemoriesListOut)
 async def list_person_memories(
     character_id: str,
     limit: int = Query(50, ge=1, le=500),
@@ -160,7 +167,7 @@ async def list_person_memories(
 # === 角色记忆接口 ===
 
 
-@router.get("/memories/{character_id}")
+@router.get("/memories/{character_id}", response_model=MemoriesListOut)
 async def get_memories(character_id: str, limit: int = 20) -> dict[str, Any]:
     """获取角色记忆
 

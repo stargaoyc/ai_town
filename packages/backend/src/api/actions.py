@@ -10,11 +10,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from src.runtime import get_registry
+from src.schemas.api_out import ActionDefOut, ActionDefsListOut
 
 router = APIRouter(prefix="/api/v1", tags=["actions"])
 
 
-@router.get("/actions")
+@router.get("/actions", response_model=ActionDefsListOut)
 async def list_actions() -> dict[str, Any]:
     """获取所有 Action
 
@@ -42,7 +43,7 @@ async def list_actions() -> dict[str, Any]:
     }
 
 
-@router.get("/actions/{action_id}")
+@router.get("/actions/{action_id}", response_model=ActionDefOut)
 async def get_action(action_id: str) -> dict[str, Any]:
     """获取单个 Action 详情
 

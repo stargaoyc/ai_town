@@ -1482,6 +1482,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionDefOut */
+        ActionDefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+        };
+        /** ActionDefsListOut */
+        ActionDefsListOut: {
+            /** Data */
+            data: components["schemas"]["ActionDefOut"][];
+            /** Total */
+            total: number;
+        };
         /** ActionRecordOut */
         ActionRecordOut: {
             /** Id */
@@ -1513,6 +1533,42 @@ export interface components {
             data: components["schemas"]["ActionRecordOut"][];
             /** Total */
             total: number;
+        };
+        /** AdminStatusOut */
+        AdminStatusOut: {
+            /** Redis */
+            redis: string;
+            /** World Engine */
+            world_engine: {
+                [key: string]: unknown;
+            };
+            /** Character Engine */
+            character_engine: {
+                [key: string]: unknown;
+            };
+            /** Action Registry */
+            action_registry: {
+                [key: string]: unknown;
+            };
+            /** Llm */
+            llm: {
+                [key: string]: unknown;
+            };
+        };
+        /** AppNotificationOut */
+        AppNotificationOut: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Title */
+            title: string;
+            /** Content */
+            content: string;
+            /** Created At */
+            created_at: string;
+            /** Read */
+            read: boolean;
         };
         /** Body_send_message_api_v1_messages_send_post */
         Body_send_message_api_v1_messages_send_post: {
@@ -1593,6 +1649,72 @@ export interface components {
             /** Version */
             version?: number | null;
         };
+        /** ConversationOut */
+        ConversationOut: {
+            /** Id */
+            id: string;
+            /** Character Id */
+            character_id: string;
+            /** User Id */
+            user_id: string;
+            /** Platform */
+            platform: string;
+            /** Last Message At */
+            last_message_at: string;
+        };
+        /** ConversationsListOut */
+        ConversationsListOut: {
+            /** Data */
+            data: components["schemas"]["ConversationOut"][];
+            /** Total */
+            total: number;
+        };
+        /** DiariesListOut */
+        DiariesListOut: {
+            /** Data */
+            data: components["schemas"]["DiaryOut"][];
+            /** Total */
+            total: number;
+        };
+        /** DiaryGeneratedOut */
+        DiaryGeneratedOut: {
+            data: components["schemas"]["DiaryOut"];
+        };
+        /** DiaryOut */
+        DiaryOut: {
+            /** Id */
+            id?: string | null;
+            /** Character Id */
+            character_id?: string | null;
+            /** Period */
+            period: string;
+            /** Diary Date */
+            diary_date: string;
+            /** Diary End Date */
+            diary_end_date?: string | null;
+            /** Title */
+            title: string;
+            /** Content */
+            content: string;
+            /** Mood */
+            mood?: string | null;
+            /** Generated At */
+            generated_at?: string | null;
+        };
+        /**
+         * DurationCalculateOut
+         * @description 动态耗时计算结果（结构随移动矩阵输出，暂透传）
+         */
+        DurationCalculateOut: {
+            [key: string]: unknown;
+        };
+        /**
+         * FlexibleOut
+         * @description 透传响应模型：保留全部字段（形状未命名化端点的过渡声明）
+         */
+        FlexibleOut: {
+            [key: string]: unknown;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1621,6 +1743,226 @@ export interface components {
             current_world_time?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * LogEntryOut
+         * @description 日志条目（structlog 键值对不定长，透传保留）
+         */
+        LogEntryOut: {
+            /** Timestamp */
+            timestamp?: string | null;
+            /** Level */
+            level?: string | null;
+            /** Event */
+            event?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LoginOut */
+        LoginOut: {
+            /** Token */
+            token: string;
+            /** User Id */
+            user_id: string;
+        };
+        /** LogsListOut */
+        LogsListOut: {
+            /** Data */
+            data: components["schemas"]["LogEntryOut"][];
+            /** Total */
+            total: number;
+            /** Source */
+            source: string;
+        };
+        /**
+         * MemoriesListOut
+         * @description 角色记忆片段列表（字段随来源多样，暂透传）
+         */
+        MemoriesListOut: {
+            /**
+             * Data
+             * @default []
+             */
+            data: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** MessageHistoryListOut */
+        MessageHistoryListOut: {
+            /** Data */
+            data: components["schemas"]["MessageOut"][];
+            /** Total */
+            total: number;
+        };
+        /** MessageOut */
+        MessageOut: {
+            /** Id */
+            id: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Sender */
+            sender: string;
+            /** Content */
+            content: string;
+            /** Tokens */
+            tokens?: number | null;
+            /** Cost */
+            cost?: number | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** MessageStatsOut */
+        MessageStatsOut: {
+            /** Total Messages */
+            total_messages: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Total Cost */
+            total_cost: number;
+            /** By Character */
+            by_character?: {
+                [key: string]: unknown;
+            } | null;
+            /** By Day */
+            by_day?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * MetricsDetailOut
+         * @description 详细指标聚合（嵌套结构随指标扩展，透传保留）
+         */
+        MetricsDetailOut: {
+            [key: string]: unknown;
+        };
+        /** ModuleEntryOut */
+        ModuleEntryOut: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Description */
+            description: string;
+        };
+        /** ModulesListOut */
+        ModulesListOut: {
+            /** Data */
+            data: components["schemas"]["ModuleEntryOut"][];
+            /** Total */
+            total: number;
+        };
+        /** NotificationCreatedOut */
+        NotificationCreatedOut: {
+            data: components["schemas"]["AppNotificationOut"];
+        };
+        /** NotificationDeletedOut */
+        NotificationDeletedOut: {
+            /** Success */
+            success: boolean;
+            /** Id */
+            id: string;
+        };
+        /** NotificationMarkedOut */
+        NotificationMarkedOut: {
+            /** Success */
+            success: boolean;
+            /** Id */
+            id: string;
+        };
+        /** NotificationsClearedOut */
+        NotificationsClearedOut: {
+            /** Success */
+            success: boolean;
+        };
+        /** NotificationsListOut */
+        NotificationsListOut: {
+            /** Data */
+            data: components["schemas"]["AppNotificationOut"][];
+            /** Total */
+            total: number;
+            /** Unread */
+            unread: number;
+        };
+        /** NotificationsMarkedAllOut */
+        NotificationsMarkedAllOut: {
+            /** Success */
+            success: boolean;
+            /** Updated */
+            updated: number;
+        };
+        /** OnebotMessageEntryOut */
+        OnebotMessageEntryOut: {
+            /** Message Id */
+            message_id: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Character Id */
+            character_id: string;
+            /** User Id */
+            user_id: string;
+            /** Sender */
+            sender: string;
+            /** Content */
+            content: string;
+            /** Tokens */
+            tokens?: number | null;
+            /** Cost */
+            cost?: number | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** OnebotMessagesListOut */
+        OnebotMessagesListOut: {
+            /** Data */
+            data: components["schemas"]["OnebotMessageEntryOut"][];
+            /** Total */
+            total: number;
+        };
+        /** PersonMemoriesListOut */
+        PersonMemoriesListOut: {
+            /** Data */
+            data: components["schemas"]["PersonMemoryRecordOut"][];
+            /** Total */
+            total: number;
+        };
+        /** PersonMemoryGetOut */
+        PersonMemoryGetOut: {
+            data: components["schemas"]["PersonMemoryRecordOut"] | null;
+            /** Exists */
+            exists: boolean;
+        };
+        /** PersonMemoryRecordOut */
+        PersonMemoryRecordOut: {
+            /** Id */
+            id?: string | null;
+            /** Character Id */
+            character_id?: string | null;
+            /** User Id */
+            user_id: string;
+            /** Platform */
+            platform?: string | null;
+            /** Content */
+            content: string;
+            /**
+             * Heat
+             * @default 0
+             */
+            heat: number;
+            /** Last Interaction At */
+            last_interaction_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** PlanOut */
         PlanOut: {
@@ -1668,6 +2010,223 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** RelationOut */
+        RelationOut: {
+            /** Target Id */
+            target_id: string;
+            /** Target Name */
+            target_name?: string | null;
+            /** Strength */
+            strength: number;
+            /** Relationship Type */
+            relationship_type: string;
+        };
+        /** RelationsOut */
+        RelationsOut: {
+            /** Data */
+            data: components["schemas"]["RelationOut"][];
+            /** Total */
+            total: number;
+        };
+        /** SceneOut */
+        SceneOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Capacity */
+            capacity?: number | null;
+            /** Crowdedness */
+            crowdedness?: number | null;
+            /** Characters Present */
+            characters_present?: string[] | null;
+        };
+        /** ScenesListOut */
+        ScenesListOut: {
+            /** Data */
+            data: components["schemas"]["SceneOut"][];
+            /** Total */
+            total: number;
+        };
+        /** ScheduleBlockOut */
+        ScheduleBlockOut: {
+            /** Name */
+            name: string;
+            /** Start Hour */
+            start_hour: number;
+            /** End Hour */
+            end_hour: number;
+            /** Activity Level */
+            activity_level?: string | null;
+        };
+        /** ScheduleOut */
+        ScheduleOut: {
+            /** Character Id */
+            character_id: string;
+            /** Schedule Type */
+            schedule_type: string;
+            /**
+             * Blocks
+             * @default []
+             */
+            blocks: components["schemas"]["ScheduleBlockOut"][];
+        };
+        /** SendMessageDataOut */
+        SendMessageDataOut: {
+            /** Conversation Id */
+            conversation_id: string;
+            /** Message Id */
+            message_id?: string | null;
+            /** Content */
+            content: string;
+            /** Tokens */
+            tokens?: number | null;
+            /** Cost */
+            cost?: number | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** SendMessageOut */
+        SendMessageOut: {
+            data: components["schemas"]["SendMessageDataOut"];
+        };
+        /**
+         * ServerDetailOut
+         * @description 工具命名空间详情（tools 列表动态，透传保留）
+         */
+        ServerDetailOut: {
+            [key: string]: unknown;
+        };
+        /** ServerToggleOut */
+        ServerToggleOut: {
+            /** Success */
+            success: boolean;
+            /** Server */
+            server: string;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** ServersHealthOut */
+        ServersHealthOut: {
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            }[];
+            /** Total */
+            total: number;
+            /** Online */
+            online: number;
+            /** Offline */
+            offline: number;
+        };
+        /** ServersListOut */
+        ServersListOut: {
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            }[];
+            /** Total */
+            total: number;
+        };
+        /** ShareEntryOut */
+        ShareEntryOut: {
+            /** Message Id */
+            message_id: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Character Id */
+            character_id?: string | null;
+            /** Character Name */
+            character_name?: string | null;
+            /** Share Id */
+            share_id?: string | null;
+            /** Sender */
+            sender: string;
+            /** Content */
+            content: string;
+            /** Tokens */
+            tokens?: number | null;
+            /** Cost */
+            cost?: number | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** SharesListOut */
+        SharesListOut: {
+            /** Data */
+            data: components["schemas"]["ShareEntryOut"][];
+            /** Total */
+            total: number;
+        };
+        /** SnapshotEntryOut */
+        SnapshotEntryOut: {
+            /** Id */
+            id: string;
+            /** Tick Id */
+            tick_id: number;
+            /** State */
+            state?: {
+                [key: string]: unknown;
+            } | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** SnapshotsListOut */
+        SnapshotsListOut: {
+            /** Data */
+            data: components["schemas"]["SnapshotEntryOut"][];
+            /** Total */
+            total: number;
+        };
+        /** StateHistoryOut */
+        StateHistoryOut: {
+            /** Data */
+            data: components["schemas"]["StateHistoryPointOut"][];
+            /** Total */
+            total: number;
+        };
+        /** StateHistoryPointOut */
+        StateHistoryPointOut: {
+            /** Recorded At */
+            recorded_at: string;
+            /** Location */
+            location?: string | null;
+            /** Stamina */
+            stamina?: number | null;
+            /** Satiety */
+            satiety?: number | null;
+            /** Money */
+            money?: number | null;
+            /** Social Energy */
+            social_energy?: number | null;
+            /** Phone Battery */
+            phone_battery?: number | null;
+        };
+        /**
+         * ToolInvokeOut
+         * @description 工具调用结果（result 结构随工具各异，透传保留）
+         */
+        ToolInvokeOut: {
+            /** Success */
+            success: boolean;
+            /** Endpoint */
+            endpoint: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ToolsListOut */
+        ToolsListOut: {
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            }[];
+            /** Total */
+            total: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1680,6 +2239,32 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VectorSearchOut */
+        VectorSearchOut: {
+            /** Data */
+            data: components["schemas"]["VectorSearchResultOut"][];
+            /** Total */
+            total: number;
+            /** Query */
+            query: string;
+        };
+        /** VectorSearchResultOut */
+        VectorSearchResultOut: {
+            /** Id */
+            id: string;
+            /** Content */
+            content: string;
+            /** Importance */
+            importance: number;
+            /** Timestamp */
+            timestamp: string;
+            /** Similarity */
+            similarity: number;
+            /** Is Reflected */
+            is_reflected: boolean;
+            /** Source Type */
+            source_type: string;
         };
         /** WorldEventEntryOut */
         WorldEventEntryOut: {
@@ -1763,9 +2348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationsListOut"];
                 };
             };
             /** @description Validation Error */
@@ -1800,9 +2383,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationCreatedOut"];
                 };
             };
             /** @description Validation Error */
@@ -1831,9 +2412,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationsClearedOut"];
                 };
             };
         };
@@ -1855,9 +2434,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationMarkedOut"];
                 };
             };
             /** @description Validation Error */
@@ -1886,9 +2463,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationsMarkedAllOut"];
                 };
             };
         };
@@ -1910,9 +2485,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationDeletedOut"];
                 };
             };
             /** @description Validation Error */
@@ -1941,9 +2514,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ServersListOut"];
                 };
             };
         };
@@ -1963,9 +2534,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ServersHealthOut"];
                 };
             };
         };
@@ -1987,9 +2556,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ServerDetailOut"];
                 };
             };
             /** @description Validation Error */
@@ -2018,9 +2585,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ToolsListOut"];
                 };
             };
         };
@@ -2048,9 +2613,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ServerToggleOut"];
                 };
             };
             /** @description Validation Error */
@@ -2089,9 +2652,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ToolInvokeOut"];
                 };
             };
             /** @description Validation Error */
@@ -2125,9 +2686,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiariesListOut"];
                 };
             };
             /** @description Validation Error */
@@ -2161,9 +2720,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiaryGeneratedOut"];
                 };
             };
             /** @description Validation Error */
@@ -2197,9 +2754,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PersonMemoryGetOut"];
                 };
             };
             /** @description Validation Error */
@@ -2232,9 +2787,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PersonMemoriesListOut"];
                 };
             };
             /** @description Validation Error */
@@ -2267,9 +2820,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MemoriesListOut"];
                 };
             };
             /** @description Validation Error */
@@ -2324,9 +2875,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LoginOut"];
                 };
             };
             /** @description Validation Error */
@@ -2355,9 +2904,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ModulesListOut"];
                 };
             };
         };
@@ -2384,9 +2931,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DurationCalculateOut"];
                 };
             };
             /** @description Validation Error */
@@ -2615,9 +3160,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ScheduleOut"];
                 };
             };
             /** @description Validation Error */
@@ -2648,9 +3191,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RelationsOut"];
                 };
             };
             /** @description Validation Error */
@@ -2753,9 +3294,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["StateHistoryOut"];
                 };
             };
             /** @description Validation Error */
@@ -2904,9 +3443,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ActionDefsListOut"];
                 };
             };
         };
@@ -2928,9 +3465,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ActionDefOut"];
                 };
             };
             /** @description Validation Error */
@@ -2959,9 +3494,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ScenesListOut"];
                 };
             };
         };
@@ -2983,9 +3516,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SceneOut"];
                 };
             };
             /** @description Validation Error */
@@ -3021,9 +3552,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SendMessageOut"];
                 };
             };
             /** @description Validation Error */
@@ -3056,9 +3585,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MessageHistoryListOut"];
                 };
             };
             /** @description Validation Error */
@@ -3091,9 +3618,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ConversationsListOut"];
                 };
             };
             /** @description Validation Error */
@@ -3126,9 +3651,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MessageStatsOut"];
                 };
             };
             /** @description Validation Error */
@@ -3159,9 +3682,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
             /** @description Validation Error */
@@ -3190,9 +3711,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
         };
@@ -3214,9 +3733,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
             /** @description Validation Error */
@@ -3245,9 +3762,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminStatusOut"];
                 };
             };
         };
@@ -3310,9 +3825,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
             /** @description Validation Error */
@@ -3343,9 +3856,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
             /** @description Validation Error */
@@ -3376,9 +3887,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OnebotMessagesListOut"];
                 };
             };
             /** @description Validation Error */
@@ -3409,9 +3918,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SharesListOut"];
                 };
             };
             /** @description Validation Error */
@@ -3444,9 +3951,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["VectorSearchOut"];
                 };
             };
             /** @description Validation Error */
@@ -3477,9 +3982,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SnapshotsListOut"];
                 };
             };
             /** @description Validation Error */
@@ -3511,9 +4014,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LogsListOut"];
                 };
             };
             /** @description Validation Error */
@@ -3542,9 +4043,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MetricsDetailOut"];
                 };
             };
         };
@@ -3564,9 +4063,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
         };
@@ -3592,9 +4089,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
             /** @description Validation Error */
@@ -3625,9 +4120,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FlexibleOut"];
                 };
             };
             /** @description Validation Error */
