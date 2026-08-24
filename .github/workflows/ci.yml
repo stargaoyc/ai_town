@@ -93,6 +93,10 @@ jobs:
         run: pnpm run lint
       - name: Type check
         run: pnpm run typecheck
+      - name: API type contract guard
+        run: |
+          pnpm gen:api
+          git diff --exit-code -- src/types/api-generated.d.ts || (echo "后端契约变更未同步：请运行 pnpm gen:api 并提交" && exit 1)
       - name: Unit tests
         run: pnpm test -- --run
       - name: Build

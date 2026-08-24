@@ -31,6 +31,7 @@ from src.runtime import (
     get_schedule_system,
     get_world_engine,
 )
+from src.schemas.world import HealthOut
 from src.security.rate_limit_dep import rate_limit
 
 logger = get_logger(__name__)
@@ -38,8 +39,8 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["system"])
 
 
-@router.get("/health")
-async def health() -> dict[str, Any]:
+@router.get("/health", response_model=HealthOut)
+async def health() -> HealthOut:
     """健康检查
 
     返回服务状态、各模块运行状态、World Tick ID。
@@ -77,14 +78,14 @@ async def health() -> dict[str, Any]:
     }
     all_must_ok = all(must_modules.values())
 
-    return {
-        "status": "ok" if all_must_ok else "degraded",
-        "world_tick": world_engine.tick_id if world_engine else 0,
-        "redis": "connected" if redis_alive else "disconnected",
-        "must_modules": must_modules,
-        "optional_modules": optional_modules,
-        "current_world_time": _get_current_world_time(),
-    }
+    return HealthOut(
+        status="ok" if all_must_ok else "degraded",
+        world_tick=world_engine.tick_id if world_engine else 0,
+        redis="connected" if redis_alive else "disconnected",
+        must_modules=must_modules,
+        optional_modules=optional_modules,
+        current_world_time=_get_current_world_time(),
+    )
 
 
 def _get_current_world_time() -> dict[str, Any] | None:

@@ -1,4 +1,4 @@
-import type { paths } from "@/types/api-generated";
+import type { components, paths } from "@/types/api-generated";
 
 const BASE_URL = "/api/v1";
 
@@ -76,13 +76,9 @@ export interface CharacterState {
   version: number;
 }
 
-export interface WorldState {
-  tick_id: number;
-  world_time: string;
-  weather: string;
-  temperature?: number;
-  active_characters: number;
-}
+// 类型收敛（复审 #19）：WorldState 已由 OpenAPI 命名模型生成，
+// 后端 GET /world 挂载 response_model=WorldStateOut，pnpm gen:api 自动同步
+export type WorldState = components["schemas"]["WorldStateOut"];
 
 export interface Action {
   id: string;

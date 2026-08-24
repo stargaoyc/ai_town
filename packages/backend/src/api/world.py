@@ -7,7 +7,6 @@
 """
 
 import json
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
@@ -17,14 +16,21 @@ from src.db.models import WorldEvent
 from src.db.repositories import CharacterRepository, WorldEventRepository
 from src.db.session import db
 from src.runtime import get_redis, get_world_engine
+from src.schemas.world import (
+    WorldEventEntryOut,
+    WorldEventOut,
+    WorldEventsOut,
+    WorldEventsRangeOut,
+    WorldStateOut,
+)
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["world"])
 
 
-@router.get("/world")
-async def get_world_state() -> dict[str, Any]:
+@router.get("/world", response_model=WorldStateOut)
+async def get_world_state() -> WorldStateOut:
     """获取世界状态
 
     Returns:
@@ -56,17 +62,17 @@ async def get_world_state() -> dict[str, Any]:
     except Exception as e:
         logger.warning("world_state_active_characters_failed", error=str(e))
 
-    return {
-        "tick_id": tick_id,
-        "world_time": world_time,
-        "weather": weather,
-        "temperature": int(temperature) if temperature is not None else None,
-        "active_characters": active_characters,
-    }
+    return WorldStateOut(
+        tick_id=tick_id,
+        world_time=world_time,
+        weather=weather,
+        temperature=int(temperature) if temperature is not None else None,
+        active_characters=active_characters,
+    )
 
 
-@router.get("/world/events/{tick_id}")
-async def get_world_events(tick_id: int) -> dict[str, Any]:
+@router.get("/world/events/{tick_id}", response_model=WorldEventsOut)
+async def get_world_events(tick_id: int) -> WorldEventsOut:
     """获取指定 Tick 的世界事件
 
     Args:
@@ -82,26 +88,26 @@ async def get_world_events(tick_id: int) -> dict[str, Any]:
     if not events:
         raise HTTPException(status_code=404, detail="No events found for this tick")
 
-    return {
-        "tick_id": tick_id,
-        "events": [
-            {
-                "event_type": e.event_type,
-                "payload": e.payload,
-                "created_at": e.created_at.isoformat(),
-            }
+    return WorldEventsOut(
+        tick_id=tick_id,
+        events=[
+            WorldEventOut(
+                event_type=e.event_type,
+                payload=e.payload,
+                created_at=e.created_at.isoformat(),
+            )
             for e in events
         ],
-    }
+    )
 
 
-@router.get("/world/events")
+@router.get("/world/events", response_model=WorldEventsRangeOut)
 async def get_world_events_range(
     start_tick: int = 0,
     end_tick: int = 0,
     event_type: str | None = None,
     limit: int = 100,
-) -> dict[str, Any]:
+) -> WorldEventsRangeOut:
     """查询 Tick 区间内的所有世界事件（用于事件时间线）
 
     Args:
@@ -133,17 +139,17 @@ async def get_world_events_range(
         result = await session.execute(stmt)
         events = list(result.scalars())
 
-    return {
-        "data": [
-            {
-                "id": str(e.id),
-                "tick_id": e.tick_id,
-                "event_type": e.event_type,
-                "event_key": e.event_key,
-                "payload": e.payload,
-                "created_at": e.created_at.isoformat() if e.created_at else None,
-            }
+    return WorldEventsRangeOut(
+        data=[
+            WorldEventEntryOut(
+                id=str(e.id),
+                tick_id=e.tick_id,
+                event_type=e.event_type,
+                event_key=e.event_key,
+                payload=e.payload,
+                created_at=e.created_at.isoformat() if e.created_at else None,
+            )
             for e in events
         ],
-        "total": len(events),
-    }
+        total=len(events),
+    )

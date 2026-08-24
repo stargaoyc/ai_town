@@ -827,9 +827,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Health Health Get"
+                  "$ref": "#/components/schemas/HealthOut"
                 }
               }
             }
@@ -1685,9 +1683,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get World State Api V1 World Get"
+                  "$ref": "#/components/schemas/WorldStateOut"
                 }
               }
             }
@@ -1720,9 +1716,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get World Events Api V1 World Events  Tick Id  Get"
+                  "$ref": "#/components/schemas/WorldEventsOut"
                 }
               }
             }
@@ -1802,9 +1796,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get World Events Range Api V1 World Events Get"
+                  "$ref": "#/components/schemas/WorldEventsRangeOut"
                 }
               }
             }
@@ -2991,6 +2983,58 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HealthOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "world_tick": {
+            "type": "integer",
+            "title": "World Tick"
+          },
+          "redis": {
+            "type": "string",
+            "title": "Redis"
+          },
+          "must_modules": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Must Modules"
+          },
+          "optional_modules": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Optional Modules"
+          },
+          "current_world_time": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current World Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "world_tick",
+          "redis",
+          "must_modules",
+          "optional_modules"
+        ],
+        "title": "HealthOut",
+        "description": "健康检查（api/system.py /health）"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -3030,6 +3074,174 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WorldEventEntryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "tick_id": {
+            "type": "integer",
+            "title": "Tick Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "event_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Key"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tick_id",
+          "event_type"
+        ],
+        "title": "WorldEventEntryOut"
+      },
+      "WorldEventOut": {
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_type",
+          "created_at"
+        ],
+        "title": "WorldEventOut"
+      },
+      "WorldEventsOut": {
+        "properties": {
+          "tick_id": {
+            "type": "integer",
+            "title": "Tick Id"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WorldEventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tick_id",
+          "events"
+        ],
+        "title": "WorldEventsOut"
+      },
+      "WorldEventsRangeOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/WorldEventEntryOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "WorldEventsRangeOut"
+      },
+      "WorldStateOut": {
+        "properties": {
+          "tick_id": {
+            "type": "integer",
+            "title": "Tick Id"
+          },
+          "world_time": {
+            "type": "string",
+            "title": "World Time"
+          },
+          "weather": {
+            "type": "string",
+            "title": "Weather"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "active_characters": {
+            "type": "integer",
+            "title": "Active Characters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tick_id",
+          "world_time",
+          "weather",
+          "active_characters"
+        ],
+        "title": "WorldStateOut"
       }
     }
   }
