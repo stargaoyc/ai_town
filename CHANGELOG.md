@@ -8,6 +8,7 @@
 
 ### Added
 
+- **视频生成链路**：新增 media.generate_video_clip 工具（帧数自动对齐 8n+1、同步轮询 agnes-video-v2.0），出站净化支持视频直链转 [CQ:video]；⚠️ 同步生成较慢约 1-3 分钟，仅建议在用户明确要求时使用。
 - **改写式记忆去重（B1）**：EmbeddingWorker 向量化时与同角色近 24h 记忆余弦比对（≥0.95 判定重复），重复行不落向量且检索/反思排除；迁移新增 `is_duplicate` 标记列。配置 `MEMORY_DEDUP_ENABLED` / `MEMORY_DEDUP_SIMILARITY_THRESHOLD` / `MEMORY_DEDUP_WINDOW_HOURS`。
 - **daily 计划滚动过期（B2）**：创建超 TTL 的 active 当日计划随世界时间检查自动置 `expired`。配置 `DAILY_PLAN_TTL_HOURS`。
 - **LLM 新建计划（B3）**：决策输出新增 `createPlanChanges`（title 必填、类型白名单、优先级钳制、单次最多 3 条），服务端绑定 character_id 落库。
