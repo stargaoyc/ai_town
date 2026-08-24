@@ -51,6 +51,17 @@ class PlanRepository(BaseRepository[Plan]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def create_plan(self, character_id: UUID, **fields: Any) -> Plan:
+        """创建角色计划（LLM 新建路径，character_id 服务端绑定防越权）
+
+        调用方负责先经 _normalize_plan_creates 归一化字段。
+        """
+        plan = Plan(character_id=character_id, **fields)
+        self.session.add(plan)
+        await self.session.flush()
+        logger.info("plan_created", character_id=str(character_id), type=fields.get("type"))
+        return plan
+
     async def update_plan(self, plan_id: UUID, **fields: Any) -> None:
         """更新计划字段（status/progress/priority 等）"""
         if not fields:

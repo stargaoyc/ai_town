@@ -118,12 +118,80 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             .where(
                 MemoryEpisode.character_id == character_id,
                 MemoryEpisode.is_reflected.is_(False),
+                MemoryEpisode.is_duplicate.is_(False),
             )
             .order_by(MemoryEpisode.timestamp.asc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars())
+
+    async def find_paraphrase_duplicate(
+        self,
+        character_id: UUID,
+        embedding: list[float],
+        before_ts: datetime,
+        window_hours: int = 24,
+        similarity_threshold: float = 0.95,
+    ) -> bool:
+        """向量化时改写式去重：与同角色近窗口已向量化记忆做余弦比对
+
+        相似度 >= threshold 判定为改写式重复（复审 N7 的正确实现路径——
+        pg_trgm 对中文无效，向量比对才是可靠信号）。
+        """
+        since = before_ts - timedelta(hours=window_hours)
+        vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
+        distance_limit = 1.0 - similarity_threshold
+        connection = await self.session.connection()
+        raw_conn = await connection.get_raw_connection()
+        dbapi_conn = raw_conn.driver_connection
+        assert dbapi_conn is not None
+        row = await dbapi_conn.fetchrow(
+            """
+            SELECT id FROM memory_episodes
+            WHERE character_id = $1
+              AND materialized = TRUE
+              AND is_duplicate = FALSE
+              AND embedding IS NOT NULL
+              AND timestamp >= $2
+              AND timestamp <= $3
+              AND (embedding <=> $4::halfvec) <= $5
+            LIMIT 1
+            """,
+            character_id,
+            since,
+            before_ts,
+            vec_str,
+            distance_limit,
+        )
+        return row is not None
+
+    async def mark_duplicate(self, episode_id: UUID, character_id: UUID) -> None:
+        """标记为改写式重复：不落向量，materialized 置位防止 worker 重复拉取"""
+        stmt = (
+            update(MemoryEpisode)
+            .where(MemoryEpisode.id == episode_id, MemoryEpisode.character_id == character_id)
+            .values(is_duplicate=True, materialized=True, embedding=None)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+        logger.info("memory_marked_duplicate", episode_id=str(episode_id))
+
+    async def fetch_recent_gossip(self, character_id: UUID, hours: int = 24, limit: int = 2) -> list[str]:
+        """取角色最近听说的传闻内容（供决策 Prompt 社交话题提示）"""
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        stmt = (
+            select(MemoryEpisode.content)
+            .where(
+                MemoryEpisode.character_id == character_id,
+                MemoryEpisode.source_type == "gossip",
+                MemoryEpisode.timestamp >= cutoff,
+            )
+            .order_by(MemoryEpisode.timestamp.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.all()]
 
     async def fetch_retention_candidates(
         self,
@@ -364,6 +432,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
                        1 - (embedding <=> $2::halfvec) AS sim_score
                 FROM memory_episodes
                 WHERE character_id = $1 AND materialized = TRUE
+                  AND is_duplicate = FALSE AND embedding IS NOT NULL
                 ORDER BY embedding <=> $2::halfvec
                 LIMIT $3
             )

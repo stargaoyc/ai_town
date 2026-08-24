@@ -18,6 +18,7 @@ from contextlib import AbstractAsyncContextManager
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
 from src.db.repositories.memory_repo import MemoryRepository
 from src.llm.client import LLMClient
 
@@ -106,9 +107,23 @@ class EmbeddingWorker:
             success_count = 0
             failed_count = 0
             circuit_break_count = 0
+            dedup_count = 0
             for episode in episodes:
                 try:
                     embedding = await self.llm_client.embed(episode.content)
+                    # 改写式去重：与同角色近窗口记忆余弦比对（复审 N7 正确路径）
+                    if settings.memory_dedup_enabled:
+                        is_dup = await repo.find_paraphrase_duplicate(
+                            character_id=episode.character_id,
+                            embedding=embedding,
+                            before_ts=episode.timestamp,
+                            window_hours=settings.memory_dedup_window_hours,
+                            similarity_threshold=settings.memory_dedup_similarity_threshold,
+                        )
+                        if is_dup:
+                            await repo.mark_duplicate(episode.id, episode.character_id)
+                            dedup_count += 1
+                            continue
                     await repo.update_embedding(
                         episode_id=episode.id,
                         character_id=episode.character_id,
@@ -143,6 +158,7 @@ class EmbeddingWorker:
                 success=success_count,
                 failed=failed_count,
                 circuit_broken=circuit_break_count,
+                deduped=dedup_count,
             )
             return len(episodes)
 

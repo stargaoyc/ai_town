@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     memory_compression_min_batch: int = 5  # 单组少于该条数不压缩（摘要收益低于成本）
     memory_compression_batch_limit: int = 300  # 单周期最多处理的候选条数
 
+    # 改写式记忆去重（向量化时与同角色近窗口记忆余弦比对，
+    # pg_trgm 对中文无效已实测证伪，向量比对是可靠信号——复审 N7）
+    memory_dedup_enabled: bool = True
+    memory_dedup_similarity_threshold: float = 0.95
+    memory_dedup_window_hours: int = 24
+
+    # Plan 层级体系：当日计划滚动过期（创建超过 TTL 的 active daily 置 expired）
+    daily_plan_ttl_hours: int = 24
+
     # Person Memory 两层结构：未压缩事实条目达到阈值后合并进主档
     person_memory_compact_threshold: int = 20
 

@@ -39,8 +39,22 @@ def build_social_actions() -> list[Action]:
             category=ActionCategory.SOCIAL,
             scene=None,  # 任意场景
             duration_minutes=10,
-            # 默认 Action：始终可用，无任何状态变化
+            # 默认 Action，永远可用，无状态变化
             precondition=None,
+            executor=None,
+        ),
+        Action(
+            id="group_activity",
+            name="群聚",
+            category=ActionCategory.SOCIAL,
+            scene=None,  # 任意场景
+            duration_minutes=45,
+            energy_cost=-3,  # 活动消耗体力
+            social_cost=8,  # 群体交流恢复社交能量
+            # 前置条件：有基本体力参与集体活动；
+            # 真实人数门槛（同场景 >=2 名其他角色）由 Tick 侧候选过滤执行——
+            # precondition 仅见 state 字典，拿不到在场名单
+            precondition=lambda s: s.get("stamina", 0) >= 15,
             executor=None,
         ),
     ]

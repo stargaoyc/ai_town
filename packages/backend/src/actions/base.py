@@ -84,6 +84,7 @@ class DecisionResult(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)  # 执行参数
     duration: int | None = None  # 动态耗时（仅 allow_dynamic_duration=True 时有效）
     plan_changes: list[dict[str, Any]] = Field(default_factory=list)  # 计划变更
+    create_plan_changes: list[dict[str, Any]] = Field(default_factory=list)  # 新建计划（层级体系 B3）
     proactive_share_intent: bool = False  # 是否想主动分享
 
 

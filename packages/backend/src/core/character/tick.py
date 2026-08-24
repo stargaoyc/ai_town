@@ -42,6 +42,7 @@ from src.db.repositories import (
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
+from src.memory.group_activity_service import GroupActivityService, parse_group_narrative
 from src.modules.relation.graph import RelationGraph
 from src.observability.langfuse_tracing import trace_character_tick
 from src.observability.metrics import (
@@ -194,6 +195,11 @@ class CharacterTickEngine:
 
         # 2. 候选过滤
         candidates = self.registry.get_candidates(context["state"], scene=context["state"].get("location"))
+
+        # 群活动人数门槛：同场景至少 2 名其他角色（含自己 >=3 人）才保留候选
+        if any(a.id == "group_activity" for a in candidates):
+            if len(context.get("nearby_characters") or []) < 2:
+                candidates = [a for a in candidates if a.id != "group_activity"]
 
         if not candidates:
             logger.warn("no_candidates", character_id=str(character_id))
@@ -395,6 +401,22 @@ class CharacterTickEngine:
                 error=str(e),
             )
 
+        # 检索最近听说的传闻（群体动力学 B4：作为社交话题提示注入，
+        # 让角色在 chat_with 中自然提起听来的消息，而非只沉默存档）
+        gossips_text = "暂无听说的消息"
+        try:
+            async with db.session() as session:
+                mem_repo = MemoryRepository(session)
+                gossips = await mem_repo.fetch_recent_gossip(character_id, hours=24, limit=2)
+                if gossips:
+                    gossips_text = "\n".join(f"- {g}" for g in gossips)
+        except Exception as e:
+            logger.warning(
+                "gossip_context_load_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
         # 加载角色全部出向关系（一次查询，供工具注入与同场景角色感知复用）
         relations_map: dict[str, int] = {}
         relation_types: dict[str, str] = {}
@@ -467,6 +489,7 @@ class CharacterTickEngine:
             "memories": memories,
             "reflections": reflections_text,
             "diary": diary_text,
+            "recent_gossip": gossips_text,
             "plans": plans,
             "nearby_characters": nearby_characters,
             "relations": relations_map,
@@ -574,6 +597,7 @@ class CharacterTickEngine:
             memories=memories_text,
             reflections=context.get("reflections", "暂无高层认知"),
             diary=context.get("diary", "暂无日记"),
+            gossips=context.get("recent_gossip", "暂无听说的消息"),
             plans=plans_text,
             candidates=candidates_text,
             nearby_characters=nearby_text,
@@ -612,7 +636,20 @@ class CharacterTickEngine:
                         },
                     },
                 },
-                "proactiveShareIntent": {"type": "boolean"},
+                "createPlanChanges": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "type": {"type": "string", "enum": ["long_term", "short_term", "daily"]},
+                            "priority": {"type": "integer"},
+                            "deadline": {"type": "string"},
+                        },
+                        "required": ["title"],
+                    },
+                },
             },
             "required": ["action", "reason"],
         }
@@ -632,6 +669,9 @@ class CharacterTickEngine:
         raw_plan_changes = result.get("planChanges") or []
         plan_changes = [pc if isinstance(pc, dict) else {"description": str(pc)} for pc in raw_plan_changes]
 
+        raw_creates = result.get("createPlanChanges") or []
+        create_plan_changes = [pc for pc in raw_creates if isinstance(pc, dict)]
+
         raw_share_intent = result.get("proactiveShareIntent", False)
         proactive_share_intent = bool(raw_share_intent) if raw_share_intent is not None else False
 
@@ -641,6 +681,7 @@ class CharacterTickEngine:
             params=result.get("params") or {},
             duration=result.get("duration"),
             plan_changes=plan_changes,
+            create_plan_changes=create_plan_changes,
             proactive_share_intent=proactive_share_intent,
         )
 
@@ -880,6 +921,23 @@ class CharacterTickEngine:
                     ACTION_EXECUTION_TOTAL.labels(action_id="chat_with", status="failed").inc()
                     return
 
+        # 群体动力学·群活动：生成集体叙事并为所有参与者写共同经历记忆
+        group_narrative: str | None = None
+        if decision.action == "group_activity":
+            group_narrative = await self._handle_group_activity(character_id, decision, context)
+            if group_narrative is None:
+                logger.warning(
+                    "group_activity_failed_fallback_to_wait",
+                    character_id=str(character_id),
+                )
+                decision = decision.model_copy(update={"action": "wait", "params": {}})
+                action_def = self.registry.get(decision.action)
+                if action_def is None:
+                    logger.error("fallback_wait_action_not_found", character_id=str(character_id))
+
+                    ACTION_EXECUTION_TOTAL.labels(action_id="group_activity", status="failed").inc()
+                    return
+
         # move 决策先经 MovementSystem 校验（目标存在且连通、场景开放），失败降级为 wait。
         # LLM 幻觉的不存在场景在此被拦截，不再直接写入位置
         move_total_minutes: int | None = None
@@ -986,7 +1044,7 @@ class CharacterTickEngine:
                     action_name=action_def.name,
                     params=decision.params,
                     reason=decision.reason,
-                    result=chat_dialogue,
+                    result=chat_dialogue or group_narrative,
                     duration_minutes=duration,
                     location=new_state.get("location", "unknown"),
                     related_characters=related_ids,
@@ -1033,6 +1091,11 @@ class CharacterTickEngine:
                 if decision.plan_changes:
                     plan_repo = PlanRepository(session)
                     await self._apply_plan_changes(plan_repo, character_id, decision.plan_changes)
+
+                # 应用 LLM 新建计划（层级体系 B3：character_id 服务端绑定，天然防越权）
+                if decision.create_plan_changes:
+                    plan_repo = PlanRepository(session)
+                    await self._create_plans(plan_repo, character_id, decision.create_plan_changes)
 
             # 更新 Redis 实时状态
             await self.redis.hset(
@@ -1304,6 +1367,70 @@ class CharacterTickEngine:
             if not applied:
                 logger.warning("plan_change_target_not_found", plan_id=str(plan_id), character_id=str(character_id))
 
+    _PLAN_TYPE_WHITELIST = {"long_term", "short_term", "daily"}
+    _PLAN_CREATE_MAX_PER_DECISION = 3
+
+    @staticmethod
+    def _normalize_plan_creates(changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """归一化 LLM 新建计划条目：类型白名单/优先级钳制/标题截断/截止日解析
+
+        与 _apply_plan_changes 同样的容错哲学：非法条目跳过并告警，不抛异常。
+        """
+        normalized: list[dict[str, Any]] = []
+        for change in changes:
+            if not isinstance(change, dict):
+                continue
+            title = change.get("title")
+            if not isinstance(title, str) or not title.strip():
+                logger.warning("plan_create_invalid_title", title=str(title))
+                continue
+            plan_type = str(change.get("type") or "short_term").lower()
+            if plan_type not in CharacterTickEngine._PLAN_TYPE_WHITELIST:
+                logger.warning("plan_create_invalid_type", type=plan_type)
+                continue
+            priority = change.get("priority")
+            priority_value = (
+                max(1, min(5, priority)) if isinstance(priority, int) and not isinstance(priority, bool) else 3
+            )
+            deadline: datetime | None = None
+            raw_deadline = change.get("deadline")
+            if isinstance(raw_deadline, str) and raw_deadline.strip():
+                try:
+                    deadline = datetime.fromisoformat(raw_deadline.strip())
+                except ValueError:
+                    logger.warning("plan_create_invalid_deadline", deadline=raw_deadline)
+            description = change.get("description")
+            normalized.append(
+                {
+                    "title": title.strip()[:200],
+                    "description": description.strip()[:2000] if isinstance(description, str) else None,
+                    "type": plan_type,
+                    "priority": priority_value,
+                    "deadline": deadline,
+                }
+            )
+        # 上限作用于「有效」条目——非法条目不占名额
+        return normalized[: CharacterTickEngine._PLAN_CREATE_MAX_PER_DECISION]
+
+    @staticmethod
+    async def _create_plans(
+        plan_repo: PlanRepository,
+        character_id: UUID,
+        changes: list[dict[str, Any]],
+    ) -> int:
+        """将 LLM 决策的 createPlanChanges 落库为角色新计划（层级体系 B3）
+
+        Returns:
+            实际创建的计划数
+        """
+        created = 0
+        for fields in CharacterTickEngine._normalize_plan_creates(changes):
+            await plan_repo.create_plan(character_id, **fields)
+            created += 1
+        if created:
+            logger.info("plans_created_from_decision", character_id=str(character_id), count=created)
+        return created
+
     async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """记忆沉淀
 
@@ -1400,6 +1527,57 @@ class CharacterTickEngine:
             episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
             gossip = GossipService(session, episode_service)
             await gossip.propagate_from_friends(character_id)
+
+    async def _handle_group_activity(
+        self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
+    ) -> str | None:
+        """群体动力学·群活动 - 同场景 >=3 人临时小聚
+
+        单次 LLM 调用生成集体叙事（与 chat_with 同哲学：一次往返保证连贯），
+        为每个参与者写共同经历记忆（related_characters 互指）并两两关系 +2。
+        失败返回 None，调用方降级为 wait。
+
+        Returns:
+            集体叙事文本；失败 None
+        """
+        nearby = context.get("nearby_characters") or []
+        if len(nearby) < 2:
+            return None
+        character = context["character"]
+        location = str(context["state"].get("location") or "未知")
+        participants = [{"id": str(character_id), "name": character.name}] + [
+            {"id": n["id"], "name": n["name"]} for n in nearby[:3]
+        ]
+        names_text = "、".join(p["name"] for p in participants)
+
+        narrative: str | None = None
+        try:
+            prompt = self.prompts.render("group_activity", scene=location, participants_text=names_text)
+            response = await self.llm.chat(prompt, model="chat")
+            narrative = parse_group_narrative(response)
+        except Exception as e:
+            logger.warning("group_activity_llm_failed", character_id=str(character_id), error=str(e))
+        if not narrative:
+            # LLM 不可用/解析失败时退化为模板叙事——聚会照常发生，只是没有文采
+            narrative = f"{names_text}在{location}不期而遇，闲聊近况后各自散去。"
+
+        async with db.session() as session:
+            episode_service = EpisodeService(self.llm, MemoryRepository(session), prompts=self.prompts)
+            service = GroupActivityService(session, episode_service)
+            await service.persist(
+                initiator_id=character_id,
+                participants=participants,
+                location=location,
+                narrative=narrative,
+            )
+
+        logger.info(
+            "group_activity_completed",
+            character_id=str(character_id),
+            participants=len(participants),
+            location=location,
+        )
+        return f"{names_text}在{location}聚会：{narrative}"
 
     async def _maybe_proactive_share(
         self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]

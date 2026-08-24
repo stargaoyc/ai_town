@@ -34,6 +34,9 @@ template: |
   [作息节奏]
   {schedule}
 
+  [听说的消息]
+  {gossips}
+
   [当前计划]
   {plans}
 
@@ -59,5 +62,9 @@ template: |
   - reason 字段用自然语言简明说明为何选择该动作，不要使用 action_id 等工程概念
 
   [输出格式]
-  请输出 JSON:
-  {{ "action": "<action_id>", "reason": "<理由>", "params": {{...}}, "duration": <分钟> }}
+  输出纯 JSON:
+  {{ "action": "<action_id>", "reason": "<理由>", "params": {{...}}, "duration": <分钟>,
+     "planChanges": [{{ "planId": "<已有计划ID>", "action": "update|complete|abandon", "progress": <0-100> }}],
+     "createPlanChanges": [{{ "title": "<新计划标题>", "type": "long_term|short_term|daily", "priority": <1-5>, "deadline": "<ISO时间，可省略>" }}] }}
+  planChanges 用于调整[当前计划]中已列出的计划；createPlanChanges 用于新建计划（最多 3 条，title 必填）。
+  无相关变更时两个数组留空即可。

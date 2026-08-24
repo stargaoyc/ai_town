@@ -11,15 +11,16 @@
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import delete, false, func, select, true, update
+from sqlalchemy.engine import CursorResult
 from structlog import get_logger
 
 from src import runtime
 from src.config import settings
-from src.db.models import MemoryEpisode, PersonMemory, PersonMemoryEntry
+from src.db.models import MemoryEpisode, PersonMemory, PersonMemoryEntry, Plan
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService
@@ -184,6 +185,12 @@ async def diary_scheduler_loop() -> None:
 
             hour = world_time.hour
             day_of_year = world_time.timetuple().tm_yday
+
+            # 当日计划滚动过期（随世界时间检查，30 分钟粒度足够日级语义）
+            try:
+                await expire_daily_plans()
+            except Exception as e:
+                logger.warning("daily_plan_expire_failed", error=str(e))
 
             # 根据世界时间确定需要生成的周期
             periods_to_generate: list[str] = []
@@ -420,6 +427,35 @@ async def _merge_profile(prompts: Any, llm: Any, *, profile: str, entries: list[
     except Exception as e:
         logger.warning("person_memory_merge_failed", error=str(e))
         return None
+
+
+async def expire_daily_plans(session_factory: Any | None = None) -> int:
+    """当日计划滚动过期：创建超过 TTL 的 active daily 计划置 expired（审查清单 B2）
+
+    以真实时间计龄（created_at 为服务端时间），避免虚拟时间倍率差异；
+    过期区别于 abandoned（主动放弃）——语义是「当日已过，自然失效」。
+
+    Args:
+        session_factory: 会话上下文工厂；缺省用全局 db.session
+    """
+    cutoff = datetime.now(UTC) - timedelta(hours=settings.daily_plan_ttl_hours)
+    factory = session_factory or db.session
+    async with factory() as session:
+        stmt = (
+            update(Plan)
+            .where(
+                Plan.type == "daily",
+                Plan.status == "active",
+                Plan.created_at < cutoff,
+            )
+            .values(status="expired", updated_at=func.now())
+        )
+        result = cast("CursorResult[Any]", await session.execute(stmt))
+        await session.commit()
+        count = int(result.rowcount or 0)
+        if count:
+            logger.info("daily_plans_expired", count=count)
+        return count
 
 
 async def memory_retention_loop() -> None:

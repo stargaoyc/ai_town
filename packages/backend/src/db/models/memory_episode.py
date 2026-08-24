@@ -62,6 +62,9 @@ class MemoryEpisode(Base):
     location: Mapped[str | None] = mapped_column(String(50), comment="发生场景")
     related_characters: Mapped[list[UUID]] = mapped_column(ARRAY(Uuid), default=list, comment="相关角色 ID 列表")
     is_reflected: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否已被反思消化")
+    is_duplicate: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="改写式重复标记（向量化时余弦比对判定，检索/反思排除）"
+    )
     materialized: Mapped[bool] = mapped_column(
         Boolean, default=False, comment="embedding 是否已生成（异步 worker 处理）"
     )
