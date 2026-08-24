@@ -44,7 +44,7 @@ from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
 from src.memory.group_activity_service import GroupActivityService, parse_group_narrative
 from src.modules.relation.graph import RelationGraph
-from src.observability.langfuse_tracing import trace_character_tick
+from src.observability.langfuse_tracing import end_tick_trace, start_tick_trace, trace_character_tick
 from src.observability.metrics import (
     ACTION_EXECUTION_DURATION,
     ACTION_EXECUTION_TOTAL,
@@ -190,6 +190,9 @@ class CharacterTickEngine:
         start_perf = time.perf_counter()
         cid = str(character_id)
 
+        # Langfuse 根 trace：本 Tick 内全部 LLM 调用自动挂为其子 generation
+        tick_trace_id = start_tick_trace(cid)
+
         # 1. 感知环境
         context = await self._perceive(character_id)
 
@@ -281,7 +284,9 @@ class CharacterTickEngine:
             character_id=str(character_id),
             action=decision.action,
             duration_ms=int(tick_elapsed * 1000),
+            trace_id=tick_trace_id,
         )
+        end_tick_trace(action=decision.action, duration_ms=int(tick_elapsed * 1000))
 
         logger.info(
             "character_tick_end",
