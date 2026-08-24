@@ -82,12 +82,26 @@ def _get_default_character_id() -> UUID | None:
         return None
 
 
+# 群-角色映射解析缓存（TTL 5s）：每条群消息都重新 json.loads + UUID 解析
+# 属重复开销；短 TTL 兼容运行时热更新配置（审查 P3）
+_GROUP_MAP_CACHE_TTL = 5.0
+_group_map_cache: tuple[float, dict[str, UUID]] | None = None
+
+
 def _get_group_character_map() -> dict[str, UUID]:
-    """从配置读取群组-角色映射
+    """从配置读取群组-角色映射（带 5 秒 TTL 缓存）
 
     Returns:
         {group_id_str: character_uuid} 字典；解析失败返回空字典
     """
+    global _group_map_cache
+
+    import time as _time
+
+    now = _time.monotonic()
+    if _group_map_cache is not None and now - _group_map_cache[0] < _GROUP_MAP_CACHE_TTL:
+        return _group_map_cache[1]
+
     from src.config import settings
 
     raw = settings.onebot_group_character_map or "{}"
@@ -95,18 +109,20 @@ def _get_group_character_map() -> dict[str, UUID]:
         mapping = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("onebot_group_character_map_invalid", value=raw)
-        return {}
+        result: dict[str, UUID] = {}
+    else:
+        result = {}
+        for gid, cid in mapping.items():
+            try:
+                result[str(gid)] = UUID(str(cid))
+            except (ValueError, TypeError):
+                logger.warning(
+                    "onebot_group_mapping_invalid",
+                    group_id=gid,
+                    character_id=cid,
+                )
 
-    result: dict[str, UUID] = {}
-    for gid, cid in mapping.items():
-        try:
-            result[str(gid)] = UUID(str(cid))
-        except (ValueError, TypeError):
-            logger.warning(
-                "onebot_group_mapping_invalid",
-                group_id=gid,
-                character_id=cid,
-            )
+    _group_map_cache = (now, result)
     return result
 
 
@@ -1035,9 +1051,9 @@ class OneBotAdapter:
             logger.warning("onebot_push_share_no_target")
             return False
 
-        # 获取第一个活跃连接
+        # 获取活跃连接（此前取 conns[0] 单点发送，任一连接异常即整体失败）
         async with self._lock:
-            conns = list(self._connections)
+            conns = [ws for ws in self._connections if ws.client_state == WebSocketState.CONNECTED]
         if not conns:
             logger.warning(
                 "onebot_push_share_no_connection",
@@ -1046,32 +1062,37 @@ class OneBotAdapter:
             )
             return False
 
-        ws = conns[0]
-        try:
-            await self.send_message(
-                onebot_ws=ws,
-                event_type=event_type,
-                user_id=user_id,
-                group_id=group_id,
-                message=message,
-            )
-            logger.info(
-                "onebot_share_pushed",
-                event_type=event_type,
-                user_id=user_id,
-                group_id=group_id,
-                message_length=len(message),
-            )
-            return True
-        except Exception as e:
-            logger.error(
-                "onebot_push_share_failed",
-                user_id=user_id,
-                group_id=group_id,
-                error=str(e),
-                exc_info=True,
-            )
-            return False
+        # 依次尝试各连接：多实现（如多个 QQ 号）反连时避免绑死在任意一个上
+        last_error: Exception | None = None
+        for ws in conns:
+            try:
+                await self.send_message(
+                    onebot_ws=ws,
+                    event_type=event_type,
+                    user_id=user_id,
+                    group_id=group_id,
+                    message=message,
+                )
+                logger.info(
+                    "onebot_share_pushed",
+                    event_type=event_type,
+                    user_id=user_id,
+                    group_id=group_id,
+                    message_length=len(message),
+                )
+                return True
+            except Exception as e:
+                last_error = e
+                logger.warning("onebot_push_share_send_failed_try_next", error=str(e))
+
+        logger.error(
+            "onebot_push_share_failed",
+            user_id=user_id,
+            group_id=group_id,
+            error=str(last_error),
+            exc_info=last_error is not None,
+        )
+        return False
 
 
 def _get_at_only() -> bool:
