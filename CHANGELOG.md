@@ -8,6 +8,10 @@
 
 ### Added
 
+- **反思跨期主题归纳**：批次反思改为编号记忆主题归纳（每主题一条 Reflection、来源精确挂链）；新增 tier=2 跨期元反思——累计反思足够多且冷却期满时，对既有反思再归纳「长期倾向」，决策注入时元反思优先。
+- **记忆压缩归档**：retention 循环改两阶段——到期低价值记忆先按角色×月份 LLM 压缩成 `[归档]` 摘要行（豁免后续删除），压缩失败整组跳过绝不未压缩先删除；低于最小批的小组保持直删。配置 `MEMORY_COMPRESSION_ENABLED` / `MEMORY_COMPRESSION_MIN_BATCH`。
+- **Person Memory 两层改造**：新增 `person_memory_entries` append-only 事实条目层——交互时 LLM 只抽取新事实追加（不再全文重写，根除 telephone game 漂移）；后台每 6 小时把 ≥阈值条目合并进主档并软归档；对话上下文 = 主档 + 最近未压缩条目。配置 `PERSON_MEMORY_COMPACT_THRESHOLD`。
+- **Plan 层级体系与作息桥接**：计划类型扩展 `daily`（当日计划）；决策 Prompt 计划段注入类型/优先级/截止日全量信息；ScheduleSystem 作息档位经 `{schedule}` 占位符注入决策（含睡眠约束提示）；`get_active_plans` 按优先级+截止时间排序；修正「计划影响 precondition」的失真注释为实际的 Prompt 软引导机制。
 - **群体动力学·传闻传播**：好友的高重要性经历（importance≥门槛、沿关系强度过滤）以第二手记忆扩散——内容取源记忆原文模板拼接（非 LLM 编造）、importance 减半递减、每好友每窗口最多一条；经既有检索管线自然回流决策。配置项 `GOSSIP_ENABLED` / `GOSSIP_IMPORTANCE_THRESHOLD` / `GOSSIP_WINDOW_HOURS` / `GOSSIP_MAX_PER_TICK` / `GOSSIP_RELATION_MIN`。
 - **群体动力学·共同经历标记**：Tick 记忆沉淀时将同场景在场角色写入 `memory_episodes.related_characters`，激活预留字段供共同经历查询与传闻溯源使用。
 - **认知产物回流上下文**（20260824 审查 P0）：反思（最近 5 条）与最近日报注入角色决策 Prompt；Person Memory 注入对话 system prompt——此前三类认知产物只写不读，「我记得你」未在模型上下文生效。
