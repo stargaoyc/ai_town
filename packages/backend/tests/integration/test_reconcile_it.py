@@ -111,3 +111,51 @@ class TestRunReconciliation:
         assert stats["value_drift"] == 1
         await it_session.refresh(state)
         assert state.inventory == {"coffee": 1, "book": 2}
+
+
+class TestVersionAwareArbitration:
+    async def test_pg_advanced_flips_repair_direction(self, it_session: AsyncSession, it_redis: Redis) -> None:
+        """PG 在对账基线后发生写入（API 崩溃窗口）-> 方向翻转，Redis 被 PG 新值修复"""
+        state = await _make_character(it_session, location="cafe", stamina=80)
+        key = f"char:{state.character_id}:state"
+        await it_redis.hset(key, mapping=encode_state_mapping({"location": "cafe", "stamina": 80}))  # type: ignore[arg-type]
+
+        # 第一轮：建立对账基线（无漂移）
+        await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        # 模拟 API 双写崩溃窗口：PG 写入新值（version+1）但 Redis 未跟上
+        state.location = "park"
+        state.stamina = 60
+        state.version += 1
+        await it_session.flush()
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["value_drift"] == 1
+        # 方向翻转：Redis 被 PG 新值修复，而非 PG 被陈旧 Redis 覆盖
+        redis_now = await it_redis.hgetall(key)
+        assert redis_now["location"] == "park"
+        assert redis_now["stamina"] == "60"
+        await it_session.refresh(state)
+        assert state.stamina == 60
+
+    async def test_baseline_unchanged_keeps_redis_authority(self, it_session: AsyncSession, it_redis: Redis) -> None:
+        """基线未变（绕过双写的路径产生漂移）-> 维持 Redis 为准修正 PG"""
+        state = await _make_character(it_session, location="cafe", stamina=80)
+        key = f"char:{state.character_id}:state"
+        await it_redis.hset(key, mapping=encode_state_mapping({"location": "cafe", "stamina": 80}))  # type: ignore[arg-type]
+        await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        # 绕过双写直接改 PG（version 不变）
+        from sqlalchemy import update as sa_update
+
+        await it_session.execute(
+            sa_update(CharacterState).where(CharacterState.character_id == state.character_id).values(stamina=10)
+        )
+        await it_session.flush()
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+        assert stats["value_drift"] == 1
+
+        await it_session.refresh(state)
+        assert state.stamina == 80  # 被 Redis 权威值修复

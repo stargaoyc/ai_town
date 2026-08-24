@@ -78,7 +78,12 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
 
     修复方向：
     - Redis 键缺失 → 整键从 PG 回灌（pg_to_redis）
-    - 字段值漂移 → 以 Redis 为准修正 PG（redis_to_pg）
+    - 字段值漂移 → 版本感知仲裁：
+        * PG version 相对上次对账基线有前进（说明 Tick/API 刚写过 PG）
+          → 本次以 PG 为准修正 Redis（pg_to_redis），避免把刚写入的合法
+            变更回滚成陈旧的 Redis 值；
+        * 基线未变（漂移来自绕过双写的路径）→ 以 Redis 为准修正 PG。
+      每轮处理完记录基线 `char:{id}:rec_ver`。
 
     Args:
         redis: Redis 客户端（decode_responses=True）
@@ -96,8 +101,10 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
         rows = (await session.execute(select(Character, CharacterState).join(CharacterState))).unique().all()
         for character, pg_state in rows:
             key = f"char:{character.id}:state"
+            ver_key = f"char:{character.id}:rec_ver"
             if not await redis.exists(key):
                 await restore_character_to_redis(redis, pg_state)
+                await redis.set(ver_key, pg_state.version)
                 stats["missing_keys"] += 1
                 stats["repairs"] += 1
                 RECONCILE_DRIFT_TOTAL.labels(kind="missing_key").inc()
@@ -110,24 +117,54 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
             if not drift:
                 continue
 
-            # 以 Redis 为准修正 PG
-            update_values: dict[str, Any] = {}
-            for field in drift:
-                raw = raw_hash.get(field)
-                update_values[field] = _decode(field, raw) if raw is not None else None
-            from sqlalchemy import update
+            # 版本感知仲裁：PG 在上次对账后发生过写入 → PG 更可信，
+            # 反向把 PG 镜像推回 Redis，而不是用陈旧 Redis 覆盖新写入。
+            # 首次对账无基线：无法判定新旧，维持「Redis 为准」的默认方向。
+            rec_ver_raw = await redis.get(ver_key)
+            if rec_ver_raw is None:
+                pg_advanced = False
+                rec_ver = 0
+            else:
+                try:
+                    rec_ver = int(rec_ver_raw)
+                except (TypeError, ValueError):
+                    rec_ver = 0
+                pg_advanced = int(pg_state.version) > rec_ver
 
-            stmt = update(CharacterState).where(CharacterState.character_id == character.id).values(**update_values)
-            await session.execute(stmt)
+            if pg_advanced:
+                # 以 PG 为准修正 Redis（方向翻转）
+                from src.core.state_codec import encode_state_mapping
+
+                await redis.hset(
+                    key,
+                    mapping=encode_state_mapping({f: getattr(pg_state, f) for f in drift}),  # type: ignore[arg-type]
+                )
+                direction = "pg_to_redis"
+                RECONCILE_REPAIR_TOTAL.labels(direction="pg_to_redis").inc()
+            else:
+                # 以 Redis 为准修正 PG
+                update_values: dict[str, Any] = {}
+                for field in drift:
+                    raw = raw_hash.get(field)
+                    update_values[field] = _decode(field, raw) if raw is not None else None
+                from sqlalchemy import update
+
+                stmt = update(CharacterState).where(CharacterState.character_id == character.id).values(**update_values)
+                await session.execute(stmt)
+                direction = "redis_to_pg"
+                RECONCILE_REPAIR_TOTAL.labels(direction="redis_to_pg").inc()
+
+            await redis.set(ver_key, pg_state.version)
             stats["value_drift"] += 1
             stats["repairs"] += 1
             RECONCILE_DRIFT_TOTAL.labels(kind="value_drift").inc()
-            RECONCILE_REPAIR_TOTAL.labels(direction="redis_to_pg").inc()
             logger.warning(
                 "reconcile_drift_detected",
                 character_id=str(character.id),
                 fields=drift,
-                direction="redis_to_pg",
+                direction=direction,
+                pg_version=int(pg_state.version),
+                reconciled_version=rec_ver,
             )
 
     if stats["repairs"]:
