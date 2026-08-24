@@ -8,6 +8,10 @@
 
 ### Added
 
+- **数据库定时备份**：新增 `db-backup` 服务（`--profile backup` 启用）——pg_dump | gzip 按间隔写入 `./data/backups`（.part 临时文件原子改名防半成品），按保留天数自动清理；配置 `BACKUP_INTERVAL_HOURS` / `BACKUP_RETENTION_DAYS`。
+- **冷启动恢复演练脚本**：`packages/backend/scripts/cold_start_drill.py`——清空 Redis 世界/角色状态键后执行与启动路径一致的 `rehydrate_states()`，校验快照 tick_id/weather 回灌、角色镜像全量恢复与字段抽查；本地实跑 5/5 通过。
+- **容器日志轮转**：compose 全部服务统一 `json-file` 驱动 + 单文件 10MB×3 份上限（YAML 锚点一处定义），防止日志无限增长吃满磁盘。
+
 - **反思跨期主题归纳**：批次反思改为编号记忆主题归纳（每主题一条 Reflection、来源精确挂链）；新增 tier=2 跨期元反思——累计反思足够多且冷却期满时，对既有反思再归纳「长期倾向」，决策注入时元反思优先。
 - **记忆压缩归档**：retention 循环改两阶段——到期低价值记忆先按角色×月份 LLM 压缩成 `[归档]` 摘要行（豁免后续删除），压缩失败整组跳过绝不未压缩先删除；低于最小批的小组保持直删。配置 `MEMORY_COMPRESSION_ENABLED` / `MEMORY_COMPRESSION_MIN_BATCH`。
 - **Person Memory 两层改造**：新增 `person_memory_entries` append-only 事实条目层——交互时 LLM 只抽取新事实追加（不再全文重写，根除 telephone game 漂移）；后台每 6 小时把 ≥阈值条目合并进主档并软归档；对话上下文 = 主档 + 最近未压缩条目。配置 `PERSON_MEMORY_COMPACT_THRESHOLD`。

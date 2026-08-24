@@ -11,8 +11,7 @@
     "format": "oxfmt src/ --ignore-path=.oxfmtignore",
     "typecheck": "tsc --noEmit",
     "gen:api": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript ../backend/openapi.json -o src/types/api-generated.d.ts",
-    "test": "vitest",
-    "test:e2e": "playwright test"
+    "test": "vitest"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.0",
