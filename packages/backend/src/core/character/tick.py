@@ -38,6 +38,7 @@ from src.db.repositories import (
     PlanRepository,
     ReflectionRepository,
     RelationRepository,
+    WorldEventRepository,
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
@@ -408,6 +409,25 @@ class CharacterTickEngine:
         nearby_characters: list[dict[str, Any]] = []
         current_location = state.get("location")
         async with db.session() as session:
+            # 近期世界动态（事件中断重规划的感知面，审查 §4.3）：
+            # 天气/资源/节日类变化注入决策，提示 LLM 可用 planChanges 顺应调整
+            world_events_text = "暂无近期世界动态"
+            try:
+                current_tick = int(str(world.get("tick_id", "0")) or 0)
+                if current_tick > 0:
+                    notable = await WorldEventRepository(session).get_recent_notable(current_tick)
+                    if notable:
+                        world_events_text = "\n".join(
+                            f"- [Tick {e.tick_id}] {e.event_type}: {str(e.payload)[:120]}" for e in notable
+                        )
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "world_events_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
             try:
                 refs = await ReflectionRepository(session).get_by_character(character_id, limit=5)
                 if refs:
@@ -524,6 +544,7 @@ class CharacterTickEngine:
             "reflections": reflections_text,
             "diary": diary_text,
             "recent_gossip": gossips_text,
+            "world_events": world_events_text,
             "plans": plans,
             "nearby_characters": nearby_characters,
             "relations": relations_map,
@@ -633,6 +654,7 @@ class CharacterTickEngine:
             reflections=context.get("reflections", "暂无高层认知"),
             diary=context.get("diary", "暂无日记"),
             gossips=context.get("recent_gossip", "暂无听说的消息"),
+            world_events=context.get("world_events", "暂无近期世界动态"),
             plans=plans_text,
             candidates=candidates_text,
             nearby_characters=nearby_text,

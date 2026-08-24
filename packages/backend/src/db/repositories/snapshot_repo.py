@@ -103,6 +103,24 @@ class WorldEventRepository(BaseRepository[WorldEvent]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_recent_notable(self, current_tick: int, behind: int = 10, limit: int = 3) -> list[WorldEvent]:
+        """获取近期值得角色注意的世界事件（事件中断重规划的感知面）
+
+        排除 time 类型——时间演化每 Tick 必写，注入决策只会制造噪音。
+        """
+        stmt = (
+            select(WorldEvent)
+            .where(
+                WorldEvent.tick_id > current_tick - behind,
+                WorldEvent.tick_id <= current_tick,
+                WorldEvent.event_type != "time",
+            )
+            .order_by(WorldEvent.tick_id.desc(), WorldEvent.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
 
 class WorldSnapshotRepository(BaseRepository[WorldSnapshot]):
     """世界快照 Repository - 冷启动恢复用
