@@ -505,10 +505,9 @@ async def expire_daily_plans(session_factory: Any | None = None) -> int:
 async def memory_retention_loop() -> None:
     """记忆生命周期治理后台循环（审查 §七-P1）
 
-    每 24 小时执行一次，两阶段：
-    1. 压缩归档：到期低价值记忆按角色×月份 LLM 压缩成归档行（source_type='archive'）
-    2. 分级删除：importance<=3 超 low_importance_days、4-6 超 mid_importance_days；
-       importance>=7 永久保留；归档行豁免删除
+    每 24 小时执行一次：
+    1. 记忆两阶段治理：压缩归档 + 分级删除（importance>=7 永久保留）
+    2. 世界历史清理：超期 world_events 删除、world_snapshots 仅保留最近 N 份
 
     memory_episodes 为 HASH 分区表，无法像 RANGE 分区那样按时间 drop，
     膨胀治理只能在应用层定期处理。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
@@ -522,11 +521,59 @@ async def memory_retention_loop() -> None:
         try:
             await asyncio.sleep(interval)
             await run_memory_retention_cycle()
+            await run_world_retention_cycle()
         except asyncio.CancelledError:
             logger.info("memory_retention_loop_cancelled")
             raise
         except Exception as e:
             logger.error("memory_retention_loop_error", error=str(e), exc_info=True)
+
+
+async def run_world_retention_cycle(session_factory: Any | None = None) -> tuple[int, int]:
+    """单次世界历史清理：超期 world_events + 过多 world_snapshots（可测试入口）
+
+    world_events 按创建时间删除超过 WORLD_EVENTS_RETENTION_DAYS 的行；
+    world_snapshots 是冷启动恢复真相源，仅保留最近 WORLD_SNAPSHOTS_KEEP_LATEST 份。
+
+    Returns:
+        (deleted_events, deleted_snapshots)
+    """
+    from src.config import settings as _settings
+    from src.db.models import WorldEvent, WorldSnapshot
+
+    factory = session_factory or db.session
+    cutoff = datetime.now(UTC) - timedelta(days=_settings.world_events_retention_days)
+    keep = _settings.world_snapshots_keep_latest
+
+    async with factory() as session:
+        events_result = cast(
+            "CursorResult[Any]",
+            await session.execute(delete(WorldEvent).where(WorldEvent.created_at < cutoff)),
+        )
+        deleted_events = int(events_result.rowcount or 0)
+
+        deleted_snapshots = 0
+        if keep > 0:
+            threshold = (
+                select(WorldSnapshot.tick_id)
+                .order_by(WorldSnapshot.tick_id.desc())
+                .offset(keep - 1)
+                .limit(1)
+                .scalar_subquery()
+            )
+            snaps_result = cast(
+                "CursorResult[Any]",
+                await session.execute(delete(WorldSnapshot).where(WorldSnapshot.tick_id < threshold)),
+            )
+            deleted_snapshots = int(snaps_result.rowcount or 0)
+
+    if deleted_events or deleted_snapshots:
+        logger.info(
+            "world_retention_done",
+            deleted_events=deleted_events,
+            deleted_snapshots=deleted_snapshots,
+        )
+    return (deleted_events, deleted_snapshots)
 
 
 async def run_memory_retention_cycle(

@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # 与迁移 0005 的物理列 halfvec(2048) 对齐；改此值必须同步新迁移重建列与 HNSW 索引
     embedding_dim: int = 2048
 
+    # 世界历史保留（审查 §11.2：world_events/world_snapshots 此前无清理策略，长期运行持续增长）
+    world_events_retention_days: int = 90
+    world_snapshots_keep_latest: int = 3
+
     # Observability
     otel_endpoint: str | None = None
     otel_service_name: str = "ai-town-backend"

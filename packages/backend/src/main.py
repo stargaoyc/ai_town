@@ -502,6 +502,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await world_engine.stop()
         logger.info("world_engine_stopped")
 
+    # 关闭 LLM HTTP 客户端（close 存在但此前未接入 shutdown，连接靠进程退出回收）
+    llm_client = runtime.get_llm()
+    if llm_client is not None:
+        await llm_client.close()
+        logger.info("llm_client_closed")
+
+    # 释放数据库连接池（进程退出兜底之外的显式回收）
+    await db.engine.dispose()
+    logger.info("db_engine_disposed")
+
     # 关闭 Redis 连接
     if redis:
         await redis.close()
