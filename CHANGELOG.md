@@ -26,7 +26,7 @@
 
 - **记忆混合检索改指数衰减**：`final_score = (sim*0.6 + importance*0.05) * (0.25 + 0.75*exp(-天数/30))`，老记忆得分有 25% 下限永不为负（原线性衰减使 22 天前记忆不可达）。
 - **决策 Prompt 增强**：注入真实场景描述（容量/开放时段/活动）替换空占位；检索 query 拼入时段/情绪/计划标题。
-- **chat_with 升级两轮往返对话**：4 句承接式交流，提升角色间交互深度。
+- **chat_with 升级四句承接式对话（单次生成）**：一次 LLM 调用输出 4 句角色交替台词、第二轮承接第一轮话题，提升交互深度；非两次独立往返调用。
 - **JWT 库替换**：python-jose（维护停滞）→ PyJWT；移除声明后零使用的 passlib[bcrypt]。
 - **镜像 tag 固定**：Redis 统一 `redis:8-alpine`（compose/CI/README 三方对齐）；可观测性 profile 固定 prometheus/jaeger/alloy 版本。
 - **容器自动迁移**：backend 启动前执行 `alembic upgrade head`。
@@ -46,6 +46,12 @@
 - 同场景角色感知 N+1 查询（注释宣称批量而实现逐角色开 session）。
 - world_events 去重基线仅存内存，重启后首轮重复写入，现持久化到 Redis。
 - 全仓 ruff 口径 42 错：删除包根遗留探针脚本 `_cycle_probe.py`。
+- 集成测试探针仅做 TCP 检查（复审二轮 N1）：端口通但服务坏时 IT 以 error 收场，改 asyncpg `SELECT 1` + Redis `PING` 真实握手，环境缺失时正确 skip。
+- compose 凭据硬编码（N3）：`POSTGRES_PASSWORD` / Grafana 密码改为变量插值（自动读根目录 .env），backend `DATABASE_URL` 与 PG 服务共用同一变量消除双真相源。
+- 工具开关缓存无主动失效（N8）：toggle API 现即时清空进程内 5s TTL 缓存。
+- Tick/API 并发写 last-write-wins 窗口（N4）：`update_state` 支持乐观锁 CAS（`expected_version` 条件更新 + 冲突重读重试一次），API 移动端点接入。
+- planChanges 隐式兜底缺陷（N2 单测发现）：仅含 `planId` 的条目不再被默认当作 update 而错误复活为 active。
+- dev 依赖双清单漂移风险（N9）：收敛到 `[dependency-groups]` 唯一真相源，CI 改 `uv sync --frozen`；pnpm 版本对齐 11（packageManager 字段 + CI + Dockerfile 三方一致）。
 
 ### Removed
 
