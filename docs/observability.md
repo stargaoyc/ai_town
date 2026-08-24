@@ -426,8 +426,12 @@ docker compose --profile observability up -d
 `.env` 中配置 OTel endpoint 指向 Jaeger 的 OTLP HTTP 接收端口：
 
 ```env
+# 本地裸机运行（Jaeger 宿主映射 14318:4318 时也可用 4318 直连容器端口映射）
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
+
+> Docker Compose 部署时，backend 容器内应填服务名直连：`http://jaeger:4318`。
+> 照抄 `localhost:4318` 会导致 Trace 发送静默失败。
 
 后端启动后，OTel SDK 自动将 Trace 发送到 Jaeger，Prometheus 采集 `/metrics` 端点，Alloy 采集后端 stdout 日志推送到 Loki。
 

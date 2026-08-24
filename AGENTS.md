@@ -197,6 +197,10 @@ API 层 → Service 层 → Core 层 → Infrastructure 层 → Cross-cutting �
 - 禁止跨层调用（如 Infrastructure 直接调 API）
 - 禁止在 Repository 里写业务规则
 
+> 现状说明：通用 Service 层尚未完全落地——目前仅 `MessageService`（messaging）
+> 是完整的 Service 层组件，其余 API 路由直接查询 Repository。新增业务逻辑时
+> 应优先沉淀为 Service，不要继续在路由函数内堆积（审查 §三）。
+
 详见 [docs/rules/domain-design-style.md §三](docs/rules/domain-design-style.md#三分层落点)。
 
 ---

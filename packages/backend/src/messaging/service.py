@@ -2,11 +2,14 @@
 
 职责：
 1. 接收用户消息，写入 messages 表
-2. 构造 LLM 上下文（角色档案 + 对话历史 + 检索记忆）
+2. 构造 LLM 上下文（角色档案 + 对话历史 + 检索记忆 + Person Memory）
 3. 调用 LLM 生成回复，写入 messages 表
 4. 记录 token / cost 供成本控制
 5. 维护 conversation.context 摘要（超过阈值时压缩）
-6. 可选：将用户消息与角色回复沉淀为 memory_episodes（source_type=conversation）
+
+用户对话的记忆沉淀走 Person Memory 独立管线（person_memories +
+person_memory_entries），不写入 memory_episodes——角色间经历与
+用户专属记忆是两套隔离体系（见 docs/memory-system.md）。
 
 设计要点：
 - 上下文窗口管理：保留最近 N 条消息（默认 20），超出走 LLM 摘要压缩

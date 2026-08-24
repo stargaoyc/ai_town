@@ -261,6 +261,7 @@ MODEL_FLASH=gpt-3.5-turbo
 # 工具命名空间开关持久化到 Redis hash `tools:enabled`，未配置时默认全部启用。
 
 # ===== 可观测性 =====
+# 本地裸机运行填 localhost:4318；Docker Compose 内 backend 需填 http://jaeger:4318（服务名直连）
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 OTEL_SERVICE_NAME=ai-town-backend
 LANGFUSE_PUBLIC_KEY=xxx

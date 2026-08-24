@@ -40,7 +40,7 @@
 | 前端       | React 19.2 + TypeScript 7.0 + Vite (Rolldown) 8.1 + React Compiler   |
 | 前端状态   | TanStack Router 1.170 + TanStack Query 5.101 + Zustand 5.0 + Zod 4.4 |
 | 前端 Lint  | oxlint + oxfmt                                                       |
-| 前端组件   | shadcn/ui + Tailwind CSS v4 + Framer Motion                          |
+| 前端组件   | 自建 Glassmorphism 组件库 + Tailwind CSS v4 + Framer Motion          |
 | 主数据库   | PostgreSQL 18 + pgvector + pg_uuidv7 + JSONB + 分区表                |
 | 缓存/实时  | Redis 8.0                                                            |
 | 消息队列   | Redis Streams                                                        |
@@ -242,7 +242,7 @@ MODEL_CHAT=gpt-4o-mini                             # 日常对话模型
 MODEL_STRONG=gpt-4o                                # 强推理模型（决策、反思）
 MODEL_FLASH=gpt-3.5-turbo                          # 轻量判断模型（群聊回复决策）
 MODEL_EMBEDDING=text-embedding-3-small             # 向量化模型
-EMBEDDING_DIM=1536                                 # 向量维度（需与 pgvector 列维度一致）
+EMBEDDING_DIM=2048                                 # 向量维度（需与 pgvector 列维度一致，当前为 halfvec(2048)）
 LLM_TIMEOUT=30                                     # 单次请求超时（秒）
 LLM_DAILY_BUDGET_USD=10.0                          # 每日 LLM 成本预算上限
 ```

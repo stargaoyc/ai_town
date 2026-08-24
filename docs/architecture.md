@@ -1029,7 +1029,7 @@ embedding_model_key: str | None = None    # Embedding 专用 API Key
 embedding_model_url: str | None = None    # Embedding 专用 URL
 llm_timeout: int = 30
 llm_max_retries: int = 2
-embedding_dim: int = 1536
+embedding_dim: int = 2048
 ```
 
 ### 6.2 调用方式
@@ -1257,7 +1257,7 @@ class MemoryRepository:
 │   - id (UUID v7)                                 │
 │   - character_id (分区键，FK ON DELETE CASCADE)   │
 │   - content (Text)                               │
-│   - embedding (HALFVEC(1536), nullable)          │
+│   - embedding (HALFVEC(2048), nullable)          │
 │   - materialized (bool，embedding 是否已生成)     │
 │   - importance (1-10)                            │
 │   - timestamp (TIMESTAMPTZ)                      │
@@ -1559,7 +1559,7 @@ flush_langfuse()  # 确保追踪数据已发送
 | 索引内存      | 基准             | 减半                  |
 | HNSW 构建速度 | 基准             | 提升 20%–30%          |
 
-在 1536 维（text-embedding-3-small）下，单条记忆向量从 6KB 降至 3KB，1000 万条记忆节省约 30GB 存储。
+在 2048 维（halfvec 半精度）下，单条记忆向量相比 float32 大幅缩减，1000 万条记忆可节省数十 GB 存储。
 
 ### 9.3 为什么用 HASH 分区而不是 RANGE 分区
 
