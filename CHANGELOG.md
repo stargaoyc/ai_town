@@ -35,6 +35,8 @@
 - **消息断连兜底队列**：OneBot 消息事件先持久化到 Redis Streams（处理成功后确认），崩溃/重启后自动重放未确认条目；幂等由 SETNX 去重保证，毒消息超限转死信流。
 - **reconcile 版本感知仲裁**：对账基线记录 PG version，PG 在基线后发生过写入时修复方向翻转为 pg_to_redis——API 刚提交的合法变更不再被陈旧 Redis 回滚。
 - **Langfuse Tick 父子追踪**：以 Tick 为根 trace，同 Tick 内全部 LLM 调用经 ContextVar 自动挂为子 generation，形成可展开的调用树。
+- **类型收敛试点**：world/system 域端点挂载命名 response_model（WorldStateOut/HealthOut 等），openapi 重导出后前端 WorldState 切换为生成引用；CI 增加 API type contract guard。
+- **前端组件套件**：ui.test.tsx 覆盖 ui.tsx 全部 12 个导出组件（27 测试）。
 - **Redis vs PG 状态对账**：后台每 10 分钟 diff 两库并自动修复（键缺失回灌、字段漂移以 Redis 为准修正 PG）；新增指标 `ai_town_reconcile_drift_total` / `ai_town_reconcile_repair_total`。
 - **Prometheus 告警规则**：11 条规则覆盖世界 Tick 停摆、角色 Tick 失败率、LLM 预算/熔断、状态漂移、Redis 断连、5xx 错误率。
 - **`/ws/dashboard` 实时推送**：登录后订阅仪表盘帧（世界状态 + 通知未读数，每 5 秒），前端轮询降为 30 秒断连兜底。
