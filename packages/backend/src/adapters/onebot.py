@@ -332,11 +332,13 @@ class OneBotAdapter:
         self.router = APIRouter()
         self.router.websocket("/ws/onebot/v12")(self._ws_endpoint)
 
-        # 活跃连接集合（用于广播与生命周期管理）
+        # 活跃连接集合，用于广播和主动回复
         # 注意：OneBot 实现通常只有 1 个连接，这里保留 set 以支持多实例
         self._connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
         self._running = False
+        # 断连兜底：启动时重放队列中未确认的消息事件（后台任务）
+        self._recovery_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         """启动适配器（标记运行状态，路由由 FastAPI 自动接管）"""
@@ -350,10 +352,57 @@ class OneBotAdapter:
             group_mappings=len(group_map),
             at_only=_get_at_only(),
         )
+        # 断连兜底（审查清单 #5）：重放崩溃/重启期间未确认的入站消息。
+        # 重放幂等性由消息侧 SETNX 去重保证，不会重复回复。
+        self._recovery_task = asyncio.create_task(self._recovery_loop())
+
+    async def _recovery_loop(self) -> None:
+        """周期性重放队列中未确认的消息事件"""
+        from src.messaging.event_queue import EventQueue
+        from src.runtime import get_redis
+
+        while self._running:
+            try:
+                redis_client = get_redis()
+                if redis_client is None:
+                    await asyncio.sleep(30)
+                    continue
+                queue = EventQueue(redis_client)
+                ws = await self._any_ws()
+                if ws is None:
+                    await asyncio.sleep(5)
+                    continue
+
+                async def _replay(ev: dict[str, Any], _ws: WebSocket = ws) -> None:
+                    # 默认参数在定义时绑定当前 ws（每轮迭代重新定义，无晚绑定）
+                    await self.handle_event(ev, _ws)
+
+                replayed = await queue.recover_drain(_replay, max_entries=100)
+                if replayed:
+                    logger.info("onebot_events_replayed", count=replayed)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("onebot_recovery_failed", error=str(e))
+            await asyncio.sleep(15)
+
+    async def _any_ws(self) -> WebSocket | None:
+        """取一个活跃 OneBot 连接用于恢复重放时的回复发送"""
+        async with self._lock:
+            for ws in self._connections:
+                if ws.client_state == WebSocketState.CONNECTED:
+                    return ws
+        return None
 
     async def stop(self) -> None:
         """停止适配器，关闭所有 OneBot 连接"""
         self._running = False
+        if self._recovery_task:
+            self._recovery_task.cancel()
+            try:
+                await self._recovery_task
+            except asyncio.CancelledError:
+                pass
 
         async with self._lock:
             conns = list(self._connections)
@@ -419,16 +468,40 @@ class OneBotAdapter:
                     logger.warning("onebot_event_not_dict", event=event)
                     continue
 
+                # 断连兜底：消息事件先持久化到 Streams（处理成功后确认；
+                # 崩溃/重启后由 _recovery_loop 重放，幂等性由 SETNX 去重保证）
+                queue = None
+                entry_id = None
+                if event.get("post_type") == "message":
+                    from src.runtime import get_redis
+
+                    redis_client = get_redis()
+                    if redis_client is not None:
+                        from src.messaging.event_queue import EventQueue
+
+                        queue = EventQueue(redis_client)
+                        try:
+                            entry_id = await queue.enqueue(event)
+                        except Exception as e:
+                            logger.warning("onebot_event_enqueue_failed", error=str(e))
+                            queue = None
+
                 try:
                     await self.handle_event(event, websocket)
                 except Exception as e:
-                    # 单条事件处理失败不影响后续事件
+                    # 单条事件处理失败不影响后续事件；已入队条目留待重放
                     logger.error(
                         "onebot_event_handle_failed",
                         error=str(e),
                         exc_info=True,
                         event_type=event.get("type") or event.get("post_type"),
                     )
+                else:
+                    if queue is not None and entry_id is not None:
+                        try:
+                            await queue.ack(entry_id)
+                        except Exception as e:
+                            logger.warning("onebot_event_ack_failed", error=str(e))
         except WebSocketDisconnect:
             logger.info("onebot_client_disconnected_outer")
         except Exception as e:
