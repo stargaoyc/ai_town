@@ -43,6 +43,19 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["characters"])
 
+# WorldEngine 写入 world:state 的时间字段名是 "world_time"（非 "time"），
+# 字段名不一致会导致 hour 恒回退默认值、开放时段判断失真（P0-2）
+_DEFAULT_WORLD_HOUR = 8
+
+
+def _world_hour_from_state(world_state: dict[bytes | str, bytes | str]) -> int:
+    """从 world:state 哈希解析当前世界小时，格式 "HH:MM"，异常时回退默认值"""
+    world_time = str(world_state.get("world_time", ""))
+    try:
+        return int(world_time.split(":")[0])
+    except (ValueError, IndexError):
+        return _DEFAULT_WORLD_HOUR
+
 
 @router.get("/characters", response_model=CharacterListOut)
 async def list_characters(limit: int = 20, active_only: bool = False) -> dict[str, Any]:
@@ -264,11 +277,7 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
     # 获取当前小时（如果未提供）
     if hour is None:
         world_state = await redis.hgetall("world:state")
-        world_time = str(world_state.get("time", "08:00"))
-        try:
-            hour = int(world_time.split(":")[0])
-        except (ValueError, IndexError):
-            hour = 8
+        hour = _world_hour_from_state(world_state)
 
     # 执行移动
     result = await movement_system.execute_move(str(cid), from_scene, to_scene, hour=hour)
@@ -323,11 +332,7 @@ async def get_character_schedule(character_id: str, hour: int | None = None) -> 
     if hour is None:
         redis = get_redis()
         world_state = await redis.hgetall("world:state") if redis else {}
-        world_time = str(world_state.get("time", "08:00"))
-        try:
-            hour = int(world_time.split(":")[0])
-        except (ValueError, IndexError):
-            hour = 8
+        hour = _world_hour_from_state(world_state)
 
     level = schedule_system.get_activity_level(schedule_type, hour)
     is_sleeping = schedule_system.is_sleeping(schedule_type, hour)

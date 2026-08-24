@@ -78,6 +78,7 @@ from src.scheduler.loops import (
     reconciliation_loop,
 )
 from src.security.rate_limiter import RateLimiter
+from src.security.startup_checks import check_default_secrets
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
 try:
@@ -123,19 +124,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("ai_town_backend_starting")
 
-    # 安全检查（S-3）：默认弱口令在生产模式（ENVIRONMENT=production）下 fail-fast，
+    # 安全检查（S-3）：默认弱凭据在生产模式（ENVIRONMENT=production）下 fail-fast，
     # 开发模式仅告警
-    if settings.admin_password == "admin123":
-        if settings.environment == "production":
-            logger.error(
-                "insecure_default_password_blocked",
-                message="ADMIN_PASSWORD 仍为默认值 'admin123'，生产模式禁止启动；请在 .env 中设置强密码",
-            )
-            raise RuntimeError("ADMIN_PASSWORD must be changed from the default in production mode")
-        logger.warning(
-            "insecure_default_password",
-            message="ADMIN_PASSWORD 仍为默认值 'admin123'，请在 .env 中修改为强密码",
-        )
+    check_default_secrets()
 
     # 同步全局实例到 runtime 容器
     runtime.set_ws_manager(ws_manager)
