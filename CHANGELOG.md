@@ -8,6 +8,8 @@
 
 ### Added
 
+- **群体动力学·传闻传播**：好友的高重要性经历（importance≥门槛、沿关系强度过滤）以第二手记忆扩散——内容取源记忆原文模板拼接（非 LLM 编造）、importance 减半递减、每好友每窗口最多一条；经既有检索管线自然回流决策。配置项 `GOSSIP_ENABLED` / `GOSSIP_IMPORTANCE_THRESHOLD` / `GOSSIP_WINDOW_HOURS` / `GOSSIP_MAX_PER_TICK` / `GOSSIP_RELATION_MIN`。
+- **群体动力学·共同经历标记**：Tick 记忆沉淀时将同场景在场角色写入 `memory_episodes.related_characters`，激活预留字段供共同经历查询与传闻溯源使用。
 - **认知产物回流上下文**（20260824 审查 P0）：反思（最近 5 条）与最近日报注入角色决策 Prompt；Person Memory 注入对话 system prompt——此前三类认知产物只写不读，「我记得你」未在模型上下文生效。
 - **记忆生命周期治理**：`memory_retention_loop` 每 24 小时按重要性分级清理老记忆（≤3 级 90 天、4-6 级 180 天，≥7 永久保留），`MEMORY_RETENTION_ENABLED` 可关闭。
 - **Person Memory 热度衰减**：后台每 6 小时将超 14 天未交互的记忆热度减半。
