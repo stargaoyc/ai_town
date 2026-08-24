@@ -139,7 +139,8 @@ class NearbyOut(BaseModel):
 
 
 class StateHistoryPointOut(BaseModel):
-    recorded_at: str
+    """状态历史点（与端点实际返回对齐：时间戳字段为 updated_at）"""
+
     location: str | None = None
     stamina: int | None = None
     satiety: int | None = None

@@ -1,12 +1,13 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import path from 'node:path';
 
-// 后端端口可用环境变量覆盖（默认 8000；8000 被占用时可设 BACKEND_PORT=8001）
-const backendPort = process.env.BACKEND_PORT || '8000';
+// 后端端口解析顺序：进程环境变量 > .env.local（本机固化）> 默认 8000
+const envFiles = loadEnv(process.env.NODE_ENV ?? 'development', process.cwd(), '');
+const backendPort = process.env.BACKEND_PORT || envFiles.BACKEND_PORT || '8000';
 const backendOrigin = `http://localhost:${backendPort}`;
 const backendWsOrigin = backendOrigin.replace('http', 'ws');
 

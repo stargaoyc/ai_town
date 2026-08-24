@@ -540,19 +540,43 @@ async def ws_dashboard_endpoint(
     notif_key = notification_key(user_id)
     await websocket.accept()
     logger.info("ws_dashboard_connected", user_id=user_id)
-    try:
+
+    async def _push_frames() -> None:
         while True:
             snapshot = await _dashboard_snapshot(redis, notif_key)
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.send_json(snapshot)
+            # 客户端断开由接收任务感知并取消本循环；此处异常同样退出
+            await websocket.send_json(snapshot)
             await asyncio.sleep(_DASHBOARD_PUSH_INTERVAL)
-    except WebSocketDisconnect:
-        logger.info("ws_dashboard_disconnected", user_id=user_id)
-    except Exception as e:
-        logger.warning("ws_dashboard_error", user_id=user_id, error=str(e))
-    finally:
+
+    async def _receive_drain() -> None:
+        # 不读业务消息，仅用于第一时间感知客户端断开（WebSocketDisconnect）
+        while True:
+            await websocket.receive_text()
+
+    push_task = asyncio.create_task(_push_frames())
+    recv_task = asyncio.create_task(_receive_drain())
+    done, pending = await asyncio.wait({push_task, recv_task}, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    for task in pending:
         try:
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1000)
-        except Exception:
+            await task
+        except (WebSocketDisconnect, asyncio.CancelledError):
             pass
+
+    if recv_task in done and not recv_task.cancelled():
+        exc = recv_task.exception()
+        if isinstance(exc, WebSocketDisconnect):
+            logger.info("ws_dashboard_disconnected", user_id=user_id)
+        elif exc is not None:
+            logger.warning("ws_dashboard_error", user_id=user_id, error=str(exc))
+    elif push_task in done and not push_task.cancelled():
+        exc = push_task.exception()
+        if exc is not None:
+            logger.warning("ws_dashboard_push_error", user_id=user_id, error=str(exc))
+
+    try:
+        if websocket.client_state == WebSocketState.CONNECTED:
+            await websocket.close(code=1000)
+    except Exception:
+        pass
