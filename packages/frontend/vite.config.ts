@@ -5,6 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import path from 'node:path';
 
+// 后端端口可用环境变量覆盖（默认 8000；8000 被占用时可设 BACKEND_PORT=8001）
+const backendPort = process.env.BACKEND_PORT || '8000';
+const backendOrigin = `http://localhost:${backendPort}`;
+const backendWsOrigin = backendOrigin.replace('http', 'ws');
+
 export default defineConfig({
   plugins: [
     // TanStack Router 自动路由和代码分割（必须在 react() 之前）
@@ -37,19 +42,19 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: backendOrigin,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: backendWsOrigin,
         ws: true,
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: backendOrigin,
         changeOrigin: true,
       },
       '/metrics': {
-        target: 'http://localhost:8000',
+        target: backendOrigin,
         changeOrigin: true,
         bypass: (req) => {
           // Don't proxy HTML page navigation, only proxy API/fetch requests
