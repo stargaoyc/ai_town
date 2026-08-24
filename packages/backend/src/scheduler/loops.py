@@ -277,37 +277,45 @@ async def person_memory_heat_decay_loop() -> None:
     while True:
         try:
             await asyncio.sleep(interval)
-
-            async with db.session() as session:
-                cutoff = datetime.now(UTC) - timedelta(days=14)
-                count_stmt = (
-                    select(func.count())
-                    .select_from(PersonMemory)
-                    .where(
-                        PersonMemory.heat > 0,
-                        PersonMemory.last_interaction_at < cutoff,
-                    )
-                )
-                stale_count = int((await session.execute(count_stmt)).scalar_one())
-                if stale_count == 0:
-                    continue
-                stmt = (
-                    update(PersonMemory)
-                    .where(
-                        PersonMemory.heat > 0,
-                        PersonMemory.last_interaction_at < cutoff,
-                    )
-                    .values(heat=func.floor(PersonMemory.heat / 2))
-                )
-                await session.execute(stmt)
-                await session.commit()
-                logger.info("person_memory_heat_decayed", rows=stale_count)
-
+            await run_person_memory_heat_decay()
         except asyncio.CancelledError:
             logger.info("person_memory_heat_decay_loop_cancelled")
             raise
         except Exception as e:
             logger.error("person_memory_heat_decay_loop_error", error=str(e), exc_info=True)
+
+
+async def run_person_memory_heat_decay(session_factory: Any | None = None) -> int:
+    """单次热度衰减周期（可测试入口）；返回衰减的行数
+
+    Args:
+        session_factory: 会话上下文工厂；缺省用全局 db.session
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=14)
+    factory = session_factory or db.session
+    async with factory() as session:
+        count_stmt = (
+            select(func.count())
+            .select_from(PersonMemory)
+            .where(
+                PersonMemory.heat > 0,
+                PersonMemory.last_interaction_at < cutoff,
+            )
+        )
+        stale_count = int((await session.execute(count_stmt)).scalar_one())
+        if stale_count == 0:
+            return 0
+        stmt = (
+            update(PersonMemory)
+            .where(
+                PersonMemory.heat > 0,
+                PersonMemory.last_interaction_at < cutoff,
+            )
+            .values(heat=func.floor(PersonMemory.heat / 2))
+        )
+        await session.execute(stmt)
+        logger.info("person_memory_heat_decayed", rows=stale_count)
+        return stale_count
 
 
 async def person_memory_compaction_loop() -> None:
@@ -400,7 +408,6 @@ async def run_person_memory_compaction(session_factory: Any | None = None) -> in
             )
             for entry in entries:
                 entry.compacted = True
-            await session.commit()
             compacted_pairs += 1
 
     if compacted_pairs:
@@ -451,7 +458,6 @@ async def expire_daily_plans(session_factory: Any | None = None) -> int:
             .values(status="expired", updated_at=func.now())
         )
         result = cast("CursorResult[Any]", await session.execute(stmt))
-        await session.commit()
         count = int(result.rowcount or 0)
         if count:
             logger.info("daily_plans_expired", count=count)
@@ -557,7 +563,6 @@ async def run_memory_retention_cycle(
             .returning(MemoryEpisode.id)
         )
         mid_deleted = list((await session.execute(mid_stmt)).scalars())
-        await session.commit()
         deleted_rows = len(low_deleted) + len(mid_deleted)
 
     logger.info(
@@ -611,7 +616,6 @@ async def _compress_candidates(
         await repo.add(archive)
         await repo.delete_by_ids([e.id for e in episodes])
         archived += 1
-    await session.commit()
     return (archived, small_ids)
 
 

@@ -45,6 +45,98 @@ from src.observability.metrics import (
 logger = get_logger(__name__)
 
 
+def collect_changed_events(
+    world_state: dict[str, Any],
+    last: dict[str, Any],
+    tick_id: int,
+) -> tuple[list[WorldEvent], dict[str, str]]:
+    """对比世界状态与上次持久化基线，产出差分事件与新基线（纯函数）
+
+    维度语义：
+    - time/weather：值变化才写
+    - scenes/resources：JSON 序列化（sort_keys）后变化才写
+    - events：有活跃事件时始终写入（事件本身即"变化"）
+    - 空维度不写（避免初始化阶段写入空载荷）
+
+    Returns:
+        (差分事件列表, 新基线字典)
+    """
+    time_state = world_state.get("time", {})
+    weather = world_state.get("weather", "")
+    scenes_state = world_state.get("scenes", {})
+    resources_state = world_state.get("resources", {})
+    events_state = world_state.get("events", {})
+
+    events: list[WorldEvent] = []
+
+    # 时间事件（虚拟时间变化时写入）
+    world_time_str = str(time_state.get("world_time", ""))
+    if world_time_str and world_time_str != str(last.get("time", "")):
+        events.append(
+            WorldEvent(
+                tick_id=tick_id,
+                event_type="time",
+                event_key="default",
+                payload={"virtual_time": world_time_str, "tick_id": tick_id},
+            )
+        )
+
+    # 天气事件（天气变化时写入；weather 已为字符串扁平结构）
+    weather_str = str(weather)
+    if weather_str and weather_str != str(last.get("weather", "")):
+        events.append(
+            WorldEvent(
+                tick_id=tick_id,
+                event_type="weather",
+                event_key="default",
+                payload={"weather": weather_str},
+            )
+        )
+
+    # 场景事件（场景状态变化时写入）
+    scenes_json = json.dumps(scenes_state, sort_keys=True, default=str)
+    if scenes_state and scenes_json != last.get("_scenes_json"):
+        events.append(
+            WorldEvent(
+                tick_id=tick_id,
+                event_type="scene",
+                event_key="default",
+                payload=scenes_state,
+            )
+        )
+
+    # 资源事件（资源状态变化时写入）
+    resources_json = json.dumps(resources_state, sort_keys=True, default=str)
+    if resources_state and resources_json != last.get("_resources_json"):
+        events.append(
+            WorldEvent(
+                tick_id=tick_id,
+                event_type="resource",
+                event_key="default",
+                payload=resources_state,
+            )
+        )
+
+    # 特殊事件（有活跃事件时始终写入）
+    if events_state:
+        events.append(
+            WorldEvent(
+                tick_id=tick_id,
+                event_type="event",
+                event_key="default",
+                payload=list(events_state.values()),
+            )
+        )
+
+    new_baseline = {
+        "time": world_time_str,
+        "weather": weather_str,
+        "_scenes_json": scenes_json,
+        "_resources_json": resources_json,
+    }
+    return (events, new_baseline)
+
+
 class WorldEngine:
     """世界引擎 - 负责 World Tick 主循环
 
@@ -393,75 +485,7 @@ class WorldEngine:
             world_state: 世界状态字典
         """
         try:
-            time_state = world_state.get("time", {})
-            # weather 字段已为字符串（扁平结构）
-            weather = world_state.get("weather", "")
-            scenes_state = world_state.get("scenes", {})
-            resources_state = world_state.get("resources", {})
-            events_state = world_state.get("events", {})
-
-            # 上一次持久化的状态（用于去重对比）
-            last = self._last_persisted_state
-            events: list[WorldEvent] = []
-
-            # 时间事件（虚拟时间变化时写入）
-            world_time_str = str(time_state.get("world_time", ""))
-            if world_time_str and world_time_str != str(last.get("time", "")):
-                events.append(
-                    WorldEvent(
-                        tick_id=self.tick_id,
-                        event_type="time",
-                        event_key="default",
-                        payload={"virtual_time": world_time_str, "tick_id": self.tick_id},
-                    )
-                )
-
-            # 天气事件（天气变化时写入）
-            weather_str = str(weather)  # weather 已是字符串
-            if weather_str and weather_str != str(last.get("weather", "")):
-                events.append(
-                    WorldEvent(
-                        tick_id=self.tick_id,
-                        event_type="weather",
-                        event_key="default",
-                        payload={"weather": weather_str},
-                    )
-                )
-
-            # 场景事件（场景状态变化时写入）
-            scenes_json = json.dumps(scenes_state, sort_keys=True, default=str)
-            if scenes_state and scenes_json != last.get("_scenes_json"):
-                events.append(
-                    WorldEvent(
-                        tick_id=self.tick_id,
-                        event_type="scene",
-                        event_key="default",
-                        payload=scenes_state,
-                    )
-                )
-
-            # 资源事件（资源状态变化时写入）
-            resources_json = json.dumps(resources_state, sort_keys=True, default=str)
-            if resources_state and resources_json != last.get("_resources_json"):
-                events.append(
-                    WorldEvent(
-                        tick_id=self.tick_id,
-                        event_type="resource",
-                        event_key="default",
-                        payload=resources_state,
-                    )
-                )
-
-            # 特殊事件（有活跃事件时始终写入）
-            if events_state:
-                events.append(
-                    WorldEvent(
-                        tick_id=self.tick_id,
-                        event_type="event",
-                        event_key="default",
-                        payload=list(events_state.values()),
-                    )
-                )
+            events, new_baseline = collect_changed_events(world_state, self._last_persisted_state, self.tick_id)
 
             if events:
                 async with db.session() as session:
@@ -470,22 +494,11 @@ class WorldEngine:
                     # session 会自动 commit（session 上下文管理器）
 
             # 更新去重基线（内存缓存 + Redis 持久化，重启后恢复）
-            self._last_persisted_state = {
-                "time": world_time_str,
-                "weather": weather,
-                "_scenes_json": scenes_json,
-                "_resources_json": resources_json,
-            }
+            self._last_persisted_state = new_baseline
             try:
-                await self.redis.hset(
-                    self.BASELINE_KEY,
-                    mapping={
-                        "time": world_time_str,
-                        "weather": weather,
-                        "_scenes_json": scenes_json,
-                        "_resources_json": resources_json,
-                    },
-                )
+                # redis-py HashCommands.mapping 的值类型标注过窄（str 实际合法），
+                # 原 _save_world_events 同位置即有此豁免——第三方库类型缺陷
+                await self.redis.hset(self.BASELINE_KEY, mapping=new_baseline)  # type: ignore[arg-type]
             except Exception as e:
                 logger.warning("world_events_baseline_persist_failed", error=str(e))
 
