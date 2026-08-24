@@ -5,7 +5,7 @@
 # ===== Builder 阶段 =====
 FROM node:22-alpine AS builder
 
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11
 
 WORKDIR /app
 

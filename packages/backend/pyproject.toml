@@ -45,7 +45,9 @@ dependencies = [
   "apscheduler>=3.11",
 ]
 
-[project.optional-dependencies]
+# dev 依赖唯一真相源：uv sync 默认安装 dev 组（审查二轮 N9——
+# 原与 [project.optional-dependencies].dev 重复定义，两处清单漂移风险）
+[dependency-groups]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
@@ -83,7 +85,7 @@ explicit_package_bases = true
 # 以下第三方库无类型标注（无 py.typed / 无官方 stub），精确豁免而非全局忽略，
 # 新增依赖若缺 stub 应显式加入此列表
 [[tool.mypy.overrides]]
-module = ["yaml", "langfuse.*", "apscheduler.*"]
+module = ["yaml", "langfuse.*", "apscheduler.*", "asyncpg"]
 ignore_missing_imports = true
 
 # opentelemetry-instrumentation 系列无完整类型标注（无 py.typed），
@@ -96,9 +98,4 @@ disallow_untyped_calls = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-
-[dependency-groups]
-dev = [
-    "ruff",
-]
 

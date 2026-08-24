@@ -2,6 +2,7 @@
   "name": "ai-town-frontend",
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
