@@ -1234,10 +1234,14 @@ class CharacterTickEngine:
                 logger.warning("plan_change_invalid_id", plan_id=str(change.get("planId")))
                 continue
 
-            action = str(change.get("action") or "update").lower()
+            action_raw = change.get("action")
             updates: dict[str, Any] = {}
-            if action in status_map:
-                updates["status"] = status_map[action]
+            # 仅在 LLM 显式给出 action 时才变更 status：缺省归为 update 会把
+            # 只有 planId 的条目错误地「复活」为 active（单测发现的边界缺陷）
+            if action_raw is not None:
+                mapped = status_map.get(str(action_raw).lower())
+                if mapped is not None:
+                    updates["status"] = mapped
             progress = change.get("progress")
             if isinstance(progress, int) and not isinstance(progress, bool):
                 updates["progress"] = max(0, min(100, progress))
