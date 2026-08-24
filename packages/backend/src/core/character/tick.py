@@ -1518,7 +1518,7 @@ class CharacterTickEngine:
             action=decision.action,
         )
 
-    async def _propagate_gossip(self, character_id: UUID) -> None:
+    async def _propagate_gossip(self, character_id: UUID, session_factory: Any | None = None) -> None:
         """群体动力学·传闻传播 - 好友的显著经历以第二手记忆扩散
 
         独立 db session：传闻写入与主 Tick 事务解耦，失败仅告警。
@@ -1527,14 +1527,19 @@ class CharacterTickEngine:
         """
         from src.memory.gossip_service import GossipService
 
-        async with db.session() as session:
+        factory = session_factory or db.session
+        async with factory() as session:
             mem_repo = MemoryRepository(session)
             episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
             gossip = GossipService(session, episode_service)
             await gossip.propagate_from_friends(character_id)
 
     async def _handle_group_activity(
-        self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
+        self,
+        character_id: UUID,
+        decision: DecisionResult,
+        context: dict[str, Any],
+        session_factory: Any | None = None,
     ) -> str | None:
         """群体动力学·群活动 - 同场景 >=3 人临时小聚
 
@@ -1566,7 +1571,8 @@ class CharacterTickEngine:
             # LLM 不可用/解析失败时退化为模板叙事——聚会照常发生，只是没有文采
             narrative = f"{names_text}在{location}不期而遇，闲聊近况后各自散去。"
 
-        async with db.session() as session:
+        factory = session_factory or db.session
+        async with factory() as session:
             episode_service = EpisodeService(self.llm, MemoryRepository(session), prompts=self.prompts)
             service = GroupActivityService(session, episode_service)
             await service.persist(
