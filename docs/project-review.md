@@ -14,6 +14,30 @@ ai_town 是一个 LLM 驱动的多智能体虚拟小镇：角色以 30s Tick 周
 
 但项目存在一条清晰的分界线：**「精巧机制」与「数据一致性」之间存在系统性裂缝**——场景数据存在三套并行表示且互相矛盾、API 移动路径绕过审计与领域规则、若干幻影数据源与死分支 bug 未被测试捕获。此外可观测性栈组件齐全但核心引擎链路实际无自定义 span，成本追踪单价表与实际模型错配。
 
+---
+
+## 修复进度（2026-08-25 更新）
+
+本报告发布后已按 P0→P3 分波修复，**除三项结构性重构外全部完成**（467 后端测试全绿，mypy strict 0 错误）：
+
+### ✅ 已修复
+
+| 类别 | 内容 |
+|---|---|
+| P0 正确性/安全 | JWT_SECRET/API_KEY 生产 fail-fast；move/schedule 端点 world_time 字段名；场景演化器与 scenes.yaml 统一真相源；幻影 matrix 键与死代码清除；RelationGraph 升级日志死分支；is_open 全天场景恒关闭的存量 bug（修复中顺带发现） |
+| P1 高价值 | trace_span 接入 world.tick/character.tick/embedding.batch；LLM 单价参数化（全局默认+按模型覆盖）+ Langfuse per-call cost 与 prompt/completion 拆分；工具记忆 importance 7→6 消除永久膨胀；Person Memory 注入决策 Prompt（[记得的用户]）；四处文档漂移修正 |
+| P2 路线图 | world_events/snapshots 保留策略；API move 补 ActionRecord 审计 + record_movement 单一入口统一双账本；shutdown 补 engine.dispose/close；Alertmanager 服务 + nginx 非 root；REDIS 周期探活 + Embedding Worker/Streams 指标；_perceive 会话合并 8→5；事件中断重规划轻量注入（[近期世界动态] + planChanges 提示） |
+| P3 | is_open 双实现收敛到 schema.is_open_hours；decision 输出格式由 JSON Schema 派生（单一真相源）；decision.yaml 补 few-shot 示例；QQ push_share 连接故障转移 + 群配置 TTL 缓存；playwright 空挂依赖移除；根目录空 scripts/ 清理 |
+
+### ⏳ 遗留项（结构性重构，择机处理）
+
+1. **tick.py 上帝类拆分**：感知/决策/执行等阶段类化、chat/group/move 特判分支 handler 化。测试安全网已就绪，建议独立分支专项进行。
+2. **runtime.py 服务定位器 → 构造注入**：审查原议「逐步替换」，需全局性改动。
+3. **api/admin.py 拆分**：纯机械搬移，宜与其他 admin 改动同批进行。
+4. **前端路由页组件测试**：需先引入 jsdom + Provider 测试基建（@testing-library 已就位）。
+
+---
+
 ### 评分卡
 
 | 维度 | 评级 | 一句话评语 |
