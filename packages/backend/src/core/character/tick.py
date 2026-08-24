@@ -43,6 +43,7 @@ from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService, RetrievalService
 from src.memory.group_activity_service import GroupActivityService, parse_group_narrative
+from src.memory.person_memory_service import PersonMemoryService
 from src.modules.relation.graph import RelationGraph
 from src.observability.langfuse_tracing import end_tick_trace, start_tick_trace, trace_character_tick
 from src.observability.metrics import (
@@ -64,15 +65,32 @@ _ACTIVITY_LABELS = {
 }
 
 
+def _parse_world_hour(raw: str | None) -> int | None:
+    """解析虚拟小时：兼容 ISO datetime 与纯 "HH:MM" 两种格式；失败返回 None"""
+    if not raw:
+        return None
+    text = str(raw).strip()
+    try:
+        return datetime.fromisoformat(text).hour
+    except (ValueError, TypeError):
+        pass
+    time_part = text.replace("T", " ").split()[-1]
+    try:
+        return int(time_part.split(":")[0])
+    except (IndexError, ValueError):
+        return None
+
+
+# 工具调用记忆的重要性档位。
+# 必须低于 7：保留策略对 importance>=7 永久不清理，而工具调用高频发生，
+# 若记为 7 会使这类记忆线性膨胀且永久占据 HNSW 索引（审查 §11.2）
+_TOOL_MEMORY_IMPORTANCE = 6
+
+
 def _world_hour(world: dict[str, Any]) -> int:
     """从世界状态解析虚拟小时；解析失败回退现实小时"""
-    raw = str(world.get("world_time") or "")
-    for part in raw.replace("T", " ").split():
-        try:
-            return int(part.split(":")[0])
-        except (IndexError, ValueError):
-            continue
-    return datetime.now(UTC).hour
+    hour = _parse_world_hour(str(world.get("world_time") or ""))
+    return hour if hour is not None else datetime.now(UTC).hour
 
 
 def _build_schedule_text(character: Any, world: dict[str, Any]) -> str:
@@ -356,9 +374,10 @@ class CharacterTickEngine:
         # 检索相关记忆（需要 db session 创建 RetrievalService）
         # embedding 失败时降级为空记忆列表，不阻断 Tick
         # 检索 query 动态化：拼入时段/情绪/计划标题，提升向量区分度（审查 §五-P1）
-        plan_titles = "、".join(p.title for p in plans[:3]) if plans else "无"
-        hour_now = datetime.now(UTC).hour
+        # 时段用虚拟小时：角色活在虚拟时间里，与现实小时混用会造成时间语义错乱
+        hour_now = _world_hour(world)
         time_band = "凌晨" if hour_now < 6 else "上午" if hour_now < 12 else "下午" if hour_now < 18 else "晚上"
+        plan_titles = "、".join(p.title for p in plans[:3]) if plans else "无"
         query = (
             f"{character.name}在{state.get('location')}，{time_band}，"
             f"情绪{state.get('mood', '平静')}，计划：{plan_titles}，最近的经历与相关往事"
@@ -487,6 +506,19 @@ class CharacterTickEngine:
                     error=str(e),
                 )
 
+        # 用户记忆摘要（按热度 top-N）：让陪伴关系影响镇内决策（审查 §4.4 断层）
+        # 失败降级为占位文本，不阻断 Tick
+        known_users_text = "（暂无认识的用户）"
+        try:
+            pm_service = PersonMemoryService(session_factory=db.session)
+            known_users_text = await pm_service.get_top_users_context(character_id) or "（暂无认识的用户）"
+        except Exception as e:
+            logger.warning(
+                "known_users_query_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
         return {
             "character": character,
             "state": state,
@@ -498,6 +530,7 @@ class CharacterTickEngine:
             "plans": plans,
             "nearby_characters": nearby_characters,
             "relations": relations_map,
+            "known_users": known_users_text,
         }
 
     async def _decide(
@@ -606,6 +639,7 @@ class CharacterTickEngine:
             plans=plans_text,
             candidates=candidates_text,
             nearby_characters=nearby_text,
+            person_memory=context.get("known_users", "（暂无认识的用户）"),
         )
 
         # 追加工具信息到 Prompt
@@ -753,7 +787,7 @@ class CharacterTickEngine:
                         f"[工具调用] {tool_name}({tool_args}) → {str(tool_result)[:500]}",
                         action_id="use_tool",
                         location=context["state"].get("location"),
-                        importance=7,
+                        importance=_TOOL_MEMORY_IMPORTANCE,
                         character_name=character.name,
                         reason=f"使用工具 {tool_name}",
                         mood=context["state"].get("mood"),
@@ -877,13 +911,7 @@ class CharacterTickEngine:
     @staticmethod
     def _current_world_hour(context: dict[str, Any]) -> int | None:
         """从世界状态解析当前虚拟小时；解析失败返回 None（移动校验跳过开放时间检查）"""
-        raw = context.get("world", {}).get("world_time")
-        if not raw:
-            return None
-        try:
-            return datetime.fromisoformat(str(raw)).hour
-        except (ValueError, TypeError):
-            return None
+        return _parse_world_hour(str(context.get("world", {}).get("world_time") or ""))
 
     async def _execute_action(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """执行 Action - 事务化

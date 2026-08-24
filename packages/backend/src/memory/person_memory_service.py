@@ -244,3 +244,31 @@ class PersonMemoryService:
         if recent:
             parts.append("最近了解到的：\n" + "\n".join(f"- {fact}" for fact in recent))
         return "\n".join(parts) if parts else "（初次与该用户交流）"
+
+    async def get_top_users_context(self, character_id: UUID, limit: int = 3) -> str:
+        """按热度取最「记得」的用户摘要，供小镇决策注入
+
+        让陪伴关系影响角色在镇内的行为（审查 §4.4 断层：此前用户记忆
+        只进对话链路，镇内决策完全想不起任何用户）。
+        """
+        async with self.session_factory() as session:
+            stmt = (
+                select(
+                    PersonMemory.user_id,
+                    PersonMemory.summary,
+                    PersonMemory.content,
+                    PersonMemory.heat,
+                )
+                .where(PersonMemory.character_id == character_id)
+                .order_by(PersonMemory.heat.desc())
+                .limit(limit)
+            )
+            rows = (await session.execute(stmt)).all()
+
+        lines = []
+        for user_id, summary, content, heat in rows:
+            text = str(summary or content or "").strip().replace("\n", " ")[:80]
+            if not text:
+                continue
+            lines.append(f"- 用户 {user_id}（亲密度 {heat}）：{text}")
+        return "\n".join(lines)
