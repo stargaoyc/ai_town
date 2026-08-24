@@ -270,7 +270,7 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
     from src.db.session import db
 
     async with db.session() as session:
-        await CharacterRepository(session).update_state(cid, location=to_scene)
+        await CharacterRepository(session).update_state_cas(cid, location=to_scene)
     await redis.hset(f"char:{cid}:state", "location", to_scene)
 
     return {

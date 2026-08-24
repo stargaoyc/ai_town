@@ -71,6 +71,71 @@ class TestUpdateState:
         assert refreshed.version == before_version
 
 
+class TestUpdateStateCas:
+    async def test_version_mismatch_rejects_write(
+        self, it_session: AsyncSession, character_factory: CharacterFactory
+    ) -> None:
+        char, state = await character_factory("小艾", location="home")
+
+        repo = CharacterRepository(it_session)
+        applied = await repo.update_state(char.id, expected_version=state.version + 999, location="cafe")
+
+        refreshed = await it_session.get(CharacterState, char.id)
+        assert applied is False
+        assert refreshed is not None
+        assert refreshed.location == "home"
+        assert refreshed.version == state.version
+
+    async def test_matching_version_writes_and_increments(
+        self, it_session: AsyncSession, character_factory: CharacterFactory
+    ) -> None:
+        char, state = await character_factory("小博", location="home")
+        before_version = state.version
+
+        repo = CharacterRepository(it_session)
+        applied = await repo.update_state(char.id, expected_version=before_version, location="cafe")
+
+        refreshed = await it_session.get(CharacterState, char.id)
+        assert applied is True
+        assert refreshed is not None
+        assert refreshed.location == "cafe"
+        assert refreshed.version == before_version + 1
+
+    async def test_cas_recovers_from_concurrent_bump(
+        self, it_session: AsyncSession, character_factory: CharacterFactory
+    ) -> None:
+        """模拟 Tick 先行写入抬升版本后，API 侧 CAS 重读重试仍能落库"""
+        char, _ = await character_factory("小陈", location="home")
+
+        repo = CharacterRepository(it_session)
+        stale_version = await repo.get_state_version(char.id)
+        assert stale_version is not None
+        # 并发写：版本被 Tick 抬升
+        await repo.update_state(char.id, location="park")
+        bumped = await repo.get_state_version(char.id)
+        assert bumped is not None and bumped > stale_version
+
+        # 若用旧版本会冲突，但 update_state_cas 重读最新版本后成功
+        applied = await repo.update_state_cas(char.id, location="cafe")
+        refreshed = await it_session.get(CharacterState, char.id)
+        assert applied is True
+        assert refreshed is not None
+        assert refreshed.location == "cafe"
+
+    async def test_missing_state_row_falls_back_to_unconditional(self, it_session: AsyncSession) -> None:
+        """无状态行时无可比版本，退化为无条件写入；仍无行可写则如实返回 False"""
+        char = Character(id=uuid7(), name="无状态行角色")
+        it_session.add(char)
+        await it_session.flush()
+
+        repo = CharacterRepository(it_session)
+        version = await repo.get_state_version(char.id)
+        assert version is None
+
+        applied = await repo.update_state_cas(char.id, location="cafe")
+        assert applied is False
+
+
 class TestGetCharactersByLocation:
     async def test_returns_only_active_chars_in_location(
         self, it_session: AsyncSession, character_factory: CharacterFactory

@@ -3,10 +3,11 @@
 Character 为静态档案，CharacterState 为 PG 镜像（Redis 为主）。
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
@@ -80,27 +81,75 @@ class CharacterRepository(BaseRepository[Character]):
             return None
         return row[0], row[1]
 
-    async def update_state(self, character_id: UUID, **fields: Any) -> None:
+    async def get_state_version(self, character_id: UUID) -> int | None:
+        """读取角色状态当前乐观锁版本；无状态行时返回 None"""
+        stmt = select(CharacterState.version).where(CharacterState.character_id == character_id)
+        version = await self.session.scalar(stmt)
+        return None if version is None else int(version)
+
+    async def update_state(
+        self,
+        character_id: UUID,
+        *,
+        expected_version: int | None = None,
+        **fields: Any,
+    ) -> bool:
         """更新角色实时状态字段（任意合法列名通过关键字参数传入）
 
         每次写入自动递增 version：version 列声明为乐观锁版本号但从未自增，
         前端与对账链路无法感知状态新鲜度（审查 §七-P1）。
+
+        Args:
+            expected_version: 乐观锁期望版本。传入时追加 ``WHERE version = :expected``
+                条件更新，版本不匹配（Tick/API 并发写）则不写入并返回 False；
+                None 保持无条件写入——Tick 主链路以 Redis 为真相源，无需 CAS。
+
+        Returns:
+            是否实际写入一行。
         """
         if not fields:
-            return
+            return True
         fields.pop("version", None)
-        stmt = (
-            update(CharacterState)
-            .where(CharacterState.character_id == character_id)
-            .values(version=CharacterState.version + 1, **fields)
+        stmt = update(CharacterState).where(CharacterState.character_id == character_id)
+        if expected_version is not None:
+            stmt = stmt.where(CharacterState.version == expected_version)
+        result = cast(
+            "CursorResult[Any]", await self.session.execute(stmt.values(version=CharacterState.version + 1, **fields))
         )
-        await self.session.execute(stmt)
         await self.session.flush()
+        if result.rowcount == 0:
+            if expected_version is not None:
+                logger.warning(
+                    "character_state_cas_conflict",
+                    character_id=str(character_id),
+                    expected_version=expected_version,
+                    fields=list(fields.keys()),
+                )
+            else:
+                logger.info("character_state_row_missing", character_id=str(character_id))
+            return False
         logger.info(
             "character_state_updated",
             character_id=str(character_id),
             fields=list(fields.keys()),
         )
+        return True
+
+    async def update_state_cas(self, character_id: UUID, *, max_attempts: int = 2, **fields: Any) -> bool:
+        """带乐观锁重试的镜像写入：读当前版本 → 条件更新，冲突时重读再试
+
+        供 API 侧低频写路径使用，缩小 Tick/API 并发写的 last-write-wins 窗口
+        （审查二轮 N4）。全部尝试失败返回 False，镜像漂移由 reconcile 以
+        Redis 为准修复。
+        """
+        for _ in range(max_attempts):
+            version = await self.get_state_version(character_id)
+            if version is None:
+                # 无状态行无可比版本，退化为无条件写入（与历史行为一致）
+                return await self.update_state(character_id, **fields)
+            if await self.update_state(character_id, expected_version=version, **fields):
+                return True
+        return False
 
     async def get_by_name(self, name: str) -> Character | None:
         """按角色名查询角色（用于导入时同名冲突检测）"""
