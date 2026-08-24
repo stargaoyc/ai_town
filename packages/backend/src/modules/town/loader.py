@@ -137,6 +137,10 @@ class SceneLoader:
         """获取移动耗时"""
         return self._world_map.get_travel_time(from_scene, to_scene)
 
+    def get_neighbors(self, scene_id: str) -> dict[str, int]:
+        """获取场景的直接邻居及移动耗时（分钟）"""
+        return self._world_map.get_neighbors(scene_id)
+
     def is_scene_open(self, scene_id: str, hour: int, is_workday: bool = True) -> bool:
         """查询场景是否开放
 

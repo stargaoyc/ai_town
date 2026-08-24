@@ -7,6 +7,7 @@
 - 只读：所有函数不修改 Redis/PG 状态，仅查询
 - 直接调用：通过 src.runtime.get_redis() / src.db.session.db 直达存储层
 - 场景配置从 configs/scenes.yaml 读取（项目根目录相对路径）
+- 场景出口来自 SceneLoader 内存中的连通矩阵（runtime 注入）
 
 覆盖能力：
 - get_world_info: 世界当前状态（tick/时间/天气/季节/时段）
@@ -17,7 +18,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -26,14 +26,13 @@ import yaml
 
 from src.db.repositories import CharacterRepository
 from src.db.session import db
-from src.runtime import get_redis
+from src.runtime import get_redis, get_scene_loader
 
 logger = structlog.get_logger()
 
 # Redis 键名
 WORLD_STATE_KEY = "world:state"
 WORLD_TIME_KEY = "world:state:time"
-WORLD_MATRIX_KEY = "world:state:matrix"
 
 # 场景配置文件路径
 # 文件位于 packages/backend/src/tools/world.py，parents[4] 为项目根目录 aitown
@@ -177,7 +176,8 @@ async def find_character_by_name(query_name: str) -> dict[str, Any]:
 async def get_scene_info(scene_id: str) -> dict[str, Any]:
     """查询单个场景详情及其邻接出口
 
-    场景静态信息来自 configs/scenes.yaml；出口与移动耗时来自 Redis world:state:matrix。
+    场景静态信息来自 configs/scenes.yaml；出口与移动耗时来自 SceneLoader
+    内存中的连通矩阵（configs/world-map.yaml 的运行时形态）。
 
     Args:
         scene_id: 场景 ID
@@ -199,15 +199,11 @@ async def get_scene_info(scene_id: str) -> dict[str, Any]:
             "scene_id": scene_id,
         }
 
-    # 移动矩阵格式：{scene_id: {neighbor: minutes, ...}, ...}
+    # 出口取自 SceneLoader 的连通矩阵
     exits: dict[str, int] = {}
-    r = get_redis()
-    if r is not None:
-        raw_matrix = await r.get(WORLD_MATRIX_KEY)
-        if raw_matrix is not None:
-            matrix = json.loads(_decode(raw_matrix))
-            raw_exits = matrix.get(scene_id, {})
-            exits = {neighbor: int(minutes) for neighbor, minutes in raw_exits.items()}
+    loader = get_scene_loader()
+    if loader is not None:
+        exits = dict(loader.get_neighbors(scene_id))
 
     logger.info(
         "get_scene_info_called",

@@ -2,6 +2,9 @@
 
 根据当前虚拟时间判断各场景是否开放，并基于在场角色数 / 容量计算拥挤度。
 状态存储于 Redis Hash: `world:state:scenes`（field: scene_id → JSON{open, crowded, visitors, capacity}）。
+
+场景元数据（开放时段/容量）单一真相源是 configs/scenes.yaml，经 SceneLoader 注入；
+本模块不维护场景副本（审查 P0-3：硬编码副本曾与 yaml 脱节，导致拥挤度只覆盖部分场景）。
 """
 
 from datetime import datetime
@@ -12,6 +15,7 @@ from structlog import get_logger
 
 from src.core.world.evolutions.base import WorldEvolution
 from src.core.world.evolutions.time_evolution import TIME_KEY
+from src.runtime import get_scene_loader
 
 logger = get_logger(__name__)
 
@@ -20,27 +24,26 @@ SCENES_KEY = "world:state:scenes"
 # 各场景在场角色数（scene_id → count），由 Character Tick / Action 执行维护
 VISITORS_KEY = "world:scene:visitors"
 
-# 默认场景注册表：开放时段 (start_hour, end_hour) 与容量
-# end_hour 可大于 24，表示跨午夜（如 bar 18 → 次日 02:00 记作 26）
-DEFAULT_SCENES: dict[str, dict[str, Any]] = {
-    "cafe": {"open_hours": (7, 22), "capacity": 30},
-    "school": {"open_hours": (8, 17), "capacity": 100},
-    "park": {"open_hours": (6, 22), "capacity": 50},
-    "plaza": {"open_hours": (0, 24), "capacity": 80},
-    "shop": {"open_hours": (9, 21), "capacity": 20},
-    "bar": {"open_hours": (18, 26), "capacity": 40},
-}
-
 
 def is_open(open_hours: tuple[int, int], hour: int) -> bool:
-    """判断给定小时是否在开放时段内（支持跨午夜）
+    """判断给定小时是否在开放时段内
+
+    兼容两种时段约定：
+    - configs/scenes.yaml：end=0 表示 24 点（与 SceneLoader.is_scene_open 一致）
+    - 历史硬编码注册表：end 可大于 24 表示跨午夜（如 bar 18 → 次日 02:00 记作 26）
 
     Args:
-        open_hours: (start, end)，end 可大于 24 表示次日
+        open_hours: (start, end)
         hour: 当前小时（0-23）
     """
     start, end = open_hours
     hour = hour % 24
+    if end == 0:
+        # yaml 约定：结束时间为 0 表示 24 点，先归一化再比较，
+        # 否则 end%24=0 会使全天场景落入跨午夜分支而恒为关闭
+        end = 24
+    if start == 0 and end == 24:
+        return True
     start = start % 24
     end = end % 24
     if start <= end:
@@ -59,7 +62,21 @@ class SceneEvolution(WorldEvolution):
     name = "scene"
 
     def __init__(self, scenes: dict[str, dict[str, Any]] | None = None) -> None:
-        self.scenes = scenes or DEFAULT_SCENES
+        if scenes is not None:
+            self.scenes = scenes
+            return
+        # 未显式传入时从 SceneLoader（configs/scenes.yaml 的运行时形态）解析。
+        # WorldEngine 在 lifespan 中晚于 set_scene_loader 构造，此处 loader 必已就绪；
+        # loader 属可选模块（见 main.py 模块降级策略），缺失时演化为空操作并告警。
+        loader = get_scene_loader()
+        if loader is None:
+            self.scenes = {}
+            logger.warning("scene_evolution_no_scene_source", hint="SceneLoader 未初始化，场景状态将不刷新")
+            return
+        self.scenes = {
+            scene_id: {"open_hours": tuple(scene.open_hours), "capacity": scene.capacity}
+            for scene_id, scene in loader.get_all_scenes().items()
+        }
 
     async def setup(self, redis: Redis) -> None:
         """首次运行时初始化场景状态"""

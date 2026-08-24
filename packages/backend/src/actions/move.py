@@ -1,27 +1,17 @@
 """移动类 Action
 
 move: 移动到指定场景（参数 target_scene）
-- 实际耗时由"移动矩阵"决定，从 Redis world:state:matrix 读取
+- 实际耗时由 MovementSystem 按 configs/world-map.yaml 连通矩阵计算
+  （此前此处曾有从 Redis world:state:matrix 读取耗时的实现，但该键全仓无写入方，
+  属幻影数据源，已随 compute_move_duration 一并删除 —— 审查 P0-4）
 - 移动消耗体力（energy_cost = -5）
-
-移动矩阵格式（与 configs/world-map.yaml 的 adjacency 一致）：
-    { "home": {"school": 5, "cafe": 8, ...}, "school": {...}, ... }
-存储在 Redis 的 world:state:matrix 键中（JSON 字符串）。
 """
 
-import json
 from typing import Any
-
-from redis.asyncio import Redis
-from structlog import get_logger
 
 from src.actions.base import Action, ActionCategory
 
-logger = get_logger()
-
-# Redis 中存储移动矩阵的键
-MOVE_MATRIX_REDIS_KEY = "world:state:matrix"
-# 无法从矩阵读取时的默认移动耗时（虚拟分钟）
+# 无法计算矩阵耗时时的默认移动耗时（虚拟分钟）
 DEFAULT_MOVE_DURATION = 10
 
 
@@ -31,38 +21,6 @@ def _move_executor(state: dict[str, Any], params: dict[str, Any]) -> dict[str, A
     if not target:
         raise ValueError("move Action 缺少参数 target_scene")
     return {"location": target}
-
-
-async def compute_move_duration(redis: Redis, from_scene: str, to_scene: str) -> int:
-    """从 Redis 移动矩阵查询两点间的移动耗时（虚拟分钟）
-
-    Args:
-        redis: redis.asyncio.Redis 客户端
-        from_scene: 起点场景 ID
-        to_scene: 终点场景 ID
-
-    Returns:
-        移动耗时；起点 == 终点返回 0；矩阵缺失或无路径时返回 DEFAULT_MOVE_DURATION。
-    """
-    if from_scene == to_scene:
-        return 0
-    try:
-        raw = await redis.get(MOVE_MATRIX_REDIS_KEY)
-        if raw is None:
-            return DEFAULT_MOVE_DURATION
-        text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
-        matrix = json.loads(text)
-        minutes = matrix.get(from_scene, {}).get(to_scene)
-        if minutes is not None:
-            return int(minutes)
-    except Exception as e:  # 矩阵读取失败时降级为默认耗时，避免阻塞世界 Tick
-        logger.warning(
-            "move_matrix_read_failed",
-            error=str(e),
-            from_scene=from_scene,
-            to_scene=to_scene,
-        )
-    return DEFAULT_MOVE_DURATION
 
 
 def build_move_action() -> Action:
