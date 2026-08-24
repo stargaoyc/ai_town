@@ -31,6 +31,10 @@
 - **前端冒烟测试**：vitest 覆盖 queryKeys 契约与认证 store，CI frontend job 接入。
 
 - **多模型备用源**：`LLM_FALLBACK_SOURCES` 可配置多个 OpenAI-compatible 源，调用失败自动切换，失败源冷却 5 分钟后作为末位兜底。
+- **World Tick fencing 校验**：写路径前校验 Redis 锁 token 仍归本实例，旧 leader 停顿苏醒不再双写世界状态。
+- **消息断连兜底队列**：OneBot 消息事件先持久化到 Redis Streams（处理成功后确认），崩溃/重启后自动重放未确认条目；幂等由 SETNX 去重保证，毒消息超限转死信流。
+- **reconcile 版本感知仲裁**：对账基线记录 PG version，PG 在基线后发生过写入时修复方向翻转为 pg_to_redis——API 刚提交的合法变更不再被陈旧 Redis 回滚。
+- **Langfuse Tick 父子追踪**：以 Tick 为根 trace，同 Tick 内全部 LLM 调用经 ContextVar 自动挂为子 generation，形成可展开的调用树。
 - **Redis vs PG 状态对账**：后台每 10 分钟 diff 两库并自动修复（键缺失回灌、字段漂移以 Redis 为准修正 PG）；新增指标 `ai_town_reconcile_drift_total` / `ai_town_reconcile_repair_total`。
 - **Prometheus 告警规则**：11 条规则覆盖世界 Tick 停摆、角色 Tick 失败率、LLM 预算/熔断、状态漂移、Redis 断连、5xx 错误率。
 - **`/ws/dashboard` 实时推送**：登录后订阅仪表盘帧（世界状态 + 通知未读数，每 5 秒），前端轮询降为 30 秒断连兜底。
