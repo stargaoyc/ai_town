@@ -114,6 +114,8 @@ class EpisodeService:
         character_name: str | None = None,
         reason: str | None = None,
         mood: str | None = None,
+        related_characters: list[UUID] | None = None,
+        source_type: str = "action",
     ) -> MemoryEpisode | None:
         """创建记忆片段
 
@@ -137,6 +139,9 @@ class EpisodeService:
             character_name: 角色名（LLM 评分所需）
             reason: 决策理由（LLM 评分所需）
             mood: 当前情绪（LLM 评分所需）
+            related_characters: 共同经历/消息来源的角色 ID 列表
+                （群体动力学：同场景在场者或传闻来源好友）
+            source_type: 来源类型（action=自身行为 / gossip=传闻第二手记忆）
 
         Returns:
             MemoryEpisode 实体；重复内容返回 None
@@ -178,6 +183,8 @@ class EpisodeService:
             timestamp=datetime.now(UTC),
             action_id=action_id,
             location=location,
+            related_characters=related_characters or [],
+            source_type=source_type,
         )
 
         saved = await self.repo.add(episode)

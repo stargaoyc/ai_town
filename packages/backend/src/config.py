@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     share_probability_location: float = 0.2  # 位置变化时的分享概率（0.0-1.0）
     share_probability_routine: float = 0.15  # 日常行为的分享概率（0.0-1.0）
 
+    # 群体动力学·传闻传播：好友的高重要性经历以第二手记忆扩散，
+    # 内容取自源记忆原文（模板拼接非 LLM 编造），importance 减半保真度递减
+    gossip_enabled: bool = True
+    gossip_importance_threshold: int = 7  # 源记忆重要性门槛（仅显著经历值得传播）
+    gossip_window_hours: int = 24  # 源记忆与去重回窗（小时）；每好友每窗口最多传播 1 条
+    gossip_max_per_tick: int = 1  # 单次 Tick 最多传播条数（控制记忆膨胀速率）
+    gossip_relation_min: int = 20  # 好友关系强度门槛（传闻沿既有社交关系流动）
+
     # OneBot 适配器
     onebot_default_character_id: str | None = None
     # 机器人自身 QQ 号（用于群聊 @ 检测，从 OneBot 事件的 self_id 也能获取）
