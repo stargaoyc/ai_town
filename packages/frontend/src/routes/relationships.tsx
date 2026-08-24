@@ -98,8 +98,8 @@ function RelationshipsPage() {
   // 平均信任度 / 亲密度（后端使用 strength 字段，映射为 trust 和 intimacy）
   const avg = useMemo(() => {
     if (relations.length === 0) return { trust: 0, intimacy: 0 };
-    const t = relations.reduce((s, r) => s + (r.strength ?? r.trust ?? 0), 0) / relations.length;
-    const i = relations.reduce((s, r) => s + (r.strength ?? r.intimacy ?? 0), 0) / relations.length;
+    const t = relations.reduce((s, r) => s + (r.strength ?? 0), 0) / relations.length;
+    const i = relations.reduce((s, r) => s + (r.strength ?? 0), 0) / relations.length;
     return { trust: Math.round(t), intimacy: Math.round(i) };
   }, [relations]);
 
@@ -168,7 +168,7 @@ function RelationshipsPage() {
                 <svg viewBox="0 0 400 400" className="w-full max-w-md h-auto">
                   {/* 连线 */}
                   {graph.nodes.map((node, i) => {
-                    const strength = node.rel.strength ?? node.rel.trust ?? 0;
+                    const strength = node.rel.strength ?? 0;
                     const color = trustColor(strength);
                     const width = intimacyWidth(strength);
                     return (
@@ -188,7 +188,7 @@ function RelationshipsPage() {
 
                   {/* 关联节点 */}
                   {graph.nodes.map((node, i) => {
-                    const strength = node.rel.strength ?? node.rel.trust ?? 0;
+                    const strength = node.rel.strength ?? 0;
                     const color = trustColor(strength);
                     const label = node.rel.target_name ?? node.rel.target_id ?? "?";
                     return (
@@ -260,10 +260,10 @@ function RelationshipsPage() {
           {/* 关系详情列表 */}
           <motion.div variants={container} initial="hidden" animate="show" className="space-y-3">
             {relations.map((rel: RelationEntry, i) => {
-              const relType = rel.relationship_type ?? rel.relation_type ?? "stranger";
+              const relType = rel.relationship_type ?? "stranger";
               const typeColor =
                 relationTypeColors[relType] ?? "bg-gray-100 text-gray-500 border-gray-200/50";
-              const strength = rel.strength ?? rel.trust ?? 0;
+              const strength = rel.strength ?? 0;
               return (
                 <motion.div key={`${rel.target_id}-${i}`} variants={item}>
                   <GlassCard className="space-y-3" hover>
@@ -304,11 +304,9 @@ function RelationshipsPage() {
                           <Heart className="w-3 h-3" />
                           亲密度
                         </span>
-                        <span className="font-semibold text-sakura-600">
-                          {rel.intimacy ?? strength}
-                        </span>
+                        <span className="font-semibold text-sakura-600">{strength}</span>
                       </div>
-                      <ProgressBar value={rel.intimacy ?? strength} max={100} color="sakura" />
+                      <ProgressBar value={strength} max={100} color="sakura" />
                     </div>
                   </GlassCard>
                 </motion.div>

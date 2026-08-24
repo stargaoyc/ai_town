@@ -59,12 +59,15 @@ function CostPage() {
   const dailyData = useMemo(() => {
     if (!data?.by_day) return [];
     return Object.entries(data.by_day)
-      .map(([date, v]) => ({
-        date,
-        messages: v.messages,
-        tokens: v.tokens,
-        cost: v.cost,
-      }))
+      .map(([date, v]) => {
+        const item = v as { messages: number; tokens: number; cost: number };
+        return {
+          date,
+          messages: item.messages,
+          tokens: item.tokens,
+          cost: item.cost,
+        };
+      })
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [data]);
 
@@ -72,12 +75,15 @@ function CostPage() {
   const characterTokenData = useMemo(() => {
     if (!data?.by_character) return [];
     return Object.entries(data.by_character)
-      .map(([name, v]) => ({
-        name,
-        value: v.tokens,
-        messages: v.messages,
-        cost: v.cost,
-      }))
+      .map(([name, v]) => {
+        const item = v as { tokens: number; messages: number; cost: number };
+        return {
+          name,
+          value: item.tokens,
+          messages: item.messages,
+          cost: item.cost,
+        };
+      })
       .sort((a, b) => b.value - a.value);
   }, [data]);
 

@@ -91,7 +91,7 @@ function SnapshotCard({ snapshot }: { snapshot: SnapshotEntry }) {
         {/* 状态摘要 */}
         <div className="flex items-start gap-2 text-sm text-twilight-600">
           <Database className="w-4 h-4 text-sakura-400 mt-0.5 shrink-0" />
-          <span className="break-all">{summarizeState(snapshot.state)}</span>
+          <span className="break-all">{summarizeState(snapshot.state ?? {})}</span>
         </div>
 
         {/* 状态数据 JSON 格式化展示（可折叠） */}

@@ -58,23 +58,7 @@ export interface Character {
   state?: Partial<CharacterState>;
 }
 
-export interface CharacterState {
-  location?: string;
-  stamina: number;
-  satiety: number;
-  mood?: string;
-  money: number;
-  phone_battery: number;
-  social_energy: number;
-  current_action?: {
-    action_id?: string;
-    action_name?: string;
-    params?: Record<string, unknown>;
-    reason?: string;
-    end_time?: string;
-  } | null;
-  version: number;
-}
+export type CharacterState = components["schemas"]["CharacterStateOut"];
 
 // 类型收敛（复审 #19）：WorldState 已由 OpenAPI 命名模型生成，
 // 后端 GET /world 挂载 response_model=WorldStateOut，pnpm gen:api 自动同步
@@ -97,23 +81,9 @@ export interface Memory {
   source_type: string;
 }
 
-export interface Message {
-  id: string;
-  conversation_id: string;
-  sender: "user" | "character" | "system";
-  content: string;
-  tokens?: number;
-  cost?: number;
-  created_at: string;
-}
+export type Message = components["schemas"]["MessageOut"];
 
-export interface Conversation {
-  id: string;
-  character_id: string;
-  user_id: string;
-  platform: string;
-  last_message_at: string;
-}
+export type Conversation = components["schemas"]["ConversationOut"];
 
 export interface AdminStatus {
   redis: string;
@@ -123,15 +93,7 @@ export interface AdminStatus {
   llm: { initialized: boolean; model: string };
 }
 
-export interface Scene {
-  id: string;
-  name: string;
-  description?: string;
-  type?: string;
-  capacity?: number;
-  crowdedness?: number;
-  characters_present?: string[];
-}
+export type Scene = components["schemas"]["SceneOut"];
 
 export const api = {
   getHealth: () =>
@@ -421,143 +383,31 @@ export const api = {
 
 // ===== 扩展类型定义 =====
 
-export interface StateHistoryEntry {
-  stamina: number;
-  satiety: number;
-  mood: string;
-  money: number;
-  phone_battery: number;
-  social_energy: number;
-  location: string;
-  updated_at: string;
-}
+export type StateHistoryEntry = components["schemas"]["StateHistoryPointOut"];
 
-export interface WorldEventEntry {
-  id: string;
-  tick_id: number;
-  event_type: string;
-  event_key: string;
-  payload: Record<string, unknown>;
-  created_at: string;
-}
+export type WorldEventEntry = components["schemas"]["WorldEventEntryOut"];
 
-export interface ReflectionEntry {
-  id: string;
-  character_id: string;
-  content: string;
-  created_at: string;
-}
+export type ReflectionEntry = components["schemas"]["ReflectionOut"];
 
-export interface PlanEntry {
-  id: string;
-  character_id: string;
-  title: string;
-  description?: string;
-  type?: string;
-  status: string;
-  priority?: number;
-  progress?: number;
-  deadline?: string | null;
-  created_at: string;
-  updated_at?: string;
-}
+export type PlanEntry = components["schemas"]["PlanOut"];
 
-export interface ActionEntry {
-  id: string;
-  character_id?: string;
-  action_id: string;
-  action_name?: string;
-  params?: Record<string, unknown>;
-  reason?: string;
-  // result 可能是 JSON 对象（MCP 工具调用结果）或纯文本字符串（chat_with 对话内容）
-  result?: string | Record<string, unknown> | null;
-  duration_minutes?: number;
-  duration?: number;
-  location?: string;
-  related_characters?: string[];
-  timestamp?: string;
-  created_at?: string;
-}
+export type ActionEntry = components["schemas"]["ActionRecordOut"];
 
-export interface RelationEntry {
-  target_id: string;
-  target_name?: string;
-  relation_type: string;
-  relationship_type?: string;
-  trust: number;
-  intimacy: number;
-  strength: number;
-  last_interaction_at?: string;
-  notes?: string;
-}
+export type RelationEntry = components["schemas"]["RelationOut"];
 
-export interface NearbyCharacterEntry {
-  id: string;
-  name: string;
-  personality: string;
-  mood?: string;
-  current_action_name?: string | null;
-  relationship_type: string;
-  strength: number;
-  location: string;
-}
+export type NearbyCharacterEntry = components["schemas"]["NearbyCharacterOut"];
 
-export interface OnebotMessageEntry {
-  message_id: string;
-  conversation_id: string;
-  character_id: string;
-  user_id: string;
-  sender: string;
-  content: string;
-  tokens?: number;
-  cost?: number;
-  created_at: string;
-}
+export type OnebotMessageEntry = components["schemas"]["OnebotMessageEntryOut"];
 
-export interface ShareEntry {
-  message_id: string;
-  conversation_id: string;
-  character_id?: string;
-  character_name?: string;
-  share_id?: string;
-  sender: string;
-  content: string;
-  tokens?: number;
-  cost?: number;
-  created_at: string;
-}
+export type ShareEntry = components["schemas"]["ShareEntryOut"];
 
-export interface VectorSearchResult {
-  id: string;
-  content: string;
-  importance: number;
-  timestamp: string;
-  similarity: number;
-  is_reflected: boolean;
-  source_type: string;
-}
+export type VectorSearchResult = components["schemas"]["VectorSearchResultOut"];
 
-export interface SnapshotEntry {
-  id: string;
-  tick_id: number;
-  state: Record<string, unknown>;
-  created_at: string;
-}
+export type SnapshotEntry = components["schemas"]["SnapshotEntryOut"];
 
-export interface MessageStats {
-  total_messages: number;
-  total_tokens: number;
-  total_cost: number;
-  by_character?: Record<string, { messages: number; tokens: number; cost: number }>;
-  by_day?: Record<string, { messages: number; tokens: number; cost: number }>;
-}
+export type MessageStats = components["schemas"]["MessageStatsOut"];
 
-export interface ModuleEntry {
-  name: string;
-  type: string;
-  status: string;
-  description: string;
-}
+export type ModuleEntry = components["schemas"]["ModuleEntryOut"];
 
 export interface McpServerEntry {
   name: string;
@@ -582,14 +432,7 @@ export interface LogEntry {
   [key: string]: unknown;
 }
 
-export interface AppNotification {
-  id: string;
-  type: string;
-  title: string;
-  content: string;
-  created_at: string;
-  read: boolean;
-}
+export type AppNotification = components["schemas"]["AppNotificationOut"];
 
 export interface DetailedMetrics {
   world: {
@@ -628,26 +471,6 @@ export interface DetailedMetrics {
 
 // ===== 日记 & 角色对用户的记忆 =====
 
-export interface DiaryEntry {
-  id?: string;
-  character_id?: string;
-  period: "day" | "week" | "month" | "year";
-  diary_date: string;
-  diary_end_date?: string | null;
-  title: string;
-  content: string;
-  mood?: string;
-  generated_at?: string;
-}
+export type DiaryEntry = components["schemas"]["DiaryOut"];
 
-export interface PersonMemoryEntry {
-  id?: string;
-  character_id?: string;
-  user_id: string;
-  platform?: string;
-  content: string;
-  heat: number;
-  last_interaction_at?: string;
-  created_at?: string;
-  updated_at?: string;
-}
+export type PersonMemoryEntry = components["schemas"]["PersonMemoryRecordOut"];

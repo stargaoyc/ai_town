@@ -1860,6 +1860,32 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** NearbyCharacterOut */
+        NearbyCharacterOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Personality */
+            personality?: string | null;
+            /** Mood */
+            mood?: string | null;
+            /** Current Action Name */
+            current_action_name?: string | null;
+            /** Relationship Type */
+            relationship_type?: string | null;
+            /** Strength */
+            strength?: number | null;
+            /** Location */
+            location?: string | null;
+        };
+        /** NearbyOut */
+        NearbyOut: {
+            /** Data */
+            data: components["schemas"]["NearbyCharacterOut"][];
+            /** Total */
+            total: number;
+        };
         /** NotificationCreatedOut */
         NotificationCreatedOut: {
             data: components["schemas"]["AppNotificationOut"];
@@ -2188,6 +2214,8 @@ export interface components {
             data: components["schemas"]["StateHistoryPointOut"][];
             /** Total */
             total: number;
+            /** Source */
+            source?: string | null;
         };
         /** StateHistoryPointOut */
         StateHistoryPointOut: {
@@ -2205,6 +2233,12 @@ export interface components {
             social_energy?: number | null;
             /** Phone Battery */
             phone_battery?: number | null;
+            /** Mood */
+            mood?: string | null;
+            /** Action Id */
+            action_id?: string | null;
+            /** Updated At */
+            updated_at: string;
         };
         /**
          * ToolInvokeOut
@@ -3222,9 +3256,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NearbyOut"];
                 };
             };
             /** @description Validation Error */

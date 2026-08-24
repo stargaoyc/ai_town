@@ -268,11 +268,16 @@ function ActionsPage() {
               {...(action.action_name !== undefined && {
                 actionName: action.action_name,
               })}
-              {...((action.duration_minutes ?? action.duration !== undefined)
-                ? { duration: action.duration_minutes ?? action.duration }
+              {...(action.duration_minutes !== undefined
+                ? { duration: action.duration_minutes }
                 : {})}
               {...(action.result !== undefined && action.result !== null
-                ? { result: action.result }
+                ? {
+                    result:
+                      typeof action.result === "string"
+                        ? action.result
+                        : JSON.stringify(action.result),
+                  }
                 : {})}
               {...(action.reason !== undefined && action.reason !== null
                 ? { reason: action.reason }
@@ -280,9 +285,9 @@ function ActionsPage() {
               {...(action.related_characters !== undefined &&
               action.related_characters !== null &&
               action.related_characters.length > 0
-                ? { relatedCharacters: action.related_characters }
+                ? { relatedCharacters: action.related_characters.map((c) => String(c)) }
                 : {})}
-              createdAt={action.timestamp ?? action.created_at ?? ""}
+              createdAt={action.timestamp ?? ""}
             />
           ))}
         </motion.div>

@@ -28,13 +28,13 @@ const item = {
 function MapPage() {
   const { data, isLoading, error } = useScenes();
 
-  const getCrowdednessColor = (c?: number) => {
+  const getCrowdednessColor = (c?: number | null) => {
     if (!c || c <= 0.3) return "bg-emerald-100/80 text-emerald-700 border border-emerald-200/60";
     if (c <= 0.7) return "bg-amber-100/80 text-amber-700 border border-amber-200/60";
     return "bg-red-100/80 text-red-600 border border-red-200/60";
   };
 
-  const getCrowdednessEmoji = (c?: number) => {
+  const getCrowdednessEmoji = (c?: number | null) => {
     if (!c || c <= 0.3) return "🟢";
     if (c <= 0.7) return "🟡";
     return "🔴";

@@ -31,6 +31,7 @@ from src.schemas.characters import (
     ActionsOut,
     CharacterDetailOut,
     CharacterListOut,
+    NearbyOut,
     PlansOut,
     ReflectionsOut,
     RelationsOut,
@@ -373,7 +374,7 @@ async def get_character_relations(character_id: str) -> dict[str, Any]:
     }
 
 
-@router.get("/characters/{character_id}/nearby")
+@router.get("/characters/{character_id}/nearby", response_model=NearbyOut)
 async def get_character_nearby(character_id: str) -> dict[str, Any]:
     """获取与该角色同场景的其他角色（多智能体交互可见性）
 

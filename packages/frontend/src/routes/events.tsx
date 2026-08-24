@@ -125,7 +125,7 @@ function EventCard({ ev }: { ev: WorldEventEntry }) {
         <div className="flex items-center gap-2">
           <span className="text-xs text-twilight-400 flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {formatTime(ev.created_at)}
+            {formatTime(ev.created_at ?? "")}
           </span>
           {payloadEntries > 0 && (
             <button
@@ -149,7 +149,7 @@ function EventCard({ ev }: { ev: WorldEventEntry }) {
       </div>
       {/* payload 摘要（始终显示） */}
       <p className="text-sm text-twilight-600 leading-relaxed break-all">
-        {summarizePayload(ev.payload)}
+        {summarizePayload(ev.payload ?? {})}
       </p>
       {/* 展开：完整 payload JSON */}
       <AnimatePresence>

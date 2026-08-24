@@ -162,7 +162,9 @@ function CharacterDetailPage() {
               <StatCard title="金钱" value={`¥${state.money}`} icon="💰" color="sky" />
               <StatCard
                 title="当前行为"
-                value={state.current_action?.action_name ?? state.current_action?.action_id ?? "无"}
+                value={String(
+                  state.current_action?.action_name ?? state.current_action?.action_id ?? "无",
+                )}
                 icon="🎯"
                 color="sakura"
               />
@@ -248,7 +250,7 @@ function CharacterDetailPage() {
                       <span className="text-twilight-400">关系强度</span>
                       <span className="text-sakura-600 font-medium">{n.strength}/100</span>
                     </div>
-                    <ProgressBar value={n.strength} color="sakura" />
+                    <ProgressBar value={n.strength ?? 0} color="sakura" />
                   </div>
                 </div>
               ))}

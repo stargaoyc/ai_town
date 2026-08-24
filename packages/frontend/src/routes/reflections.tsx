@@ -86,7 +86,7 @@ function ReflectionsPage() {
     return parsedReflections.filter(
       (r) =>
         r.content.toLowerCase().includes(q) ||
-        r.parsed.points.some((p) => p.toLowerCase().includes(q)),
+        r.parsed.points.some((p: string) => p.toLowerCase().includes(q)),
     );
   }, [parsedReflections, searchQuery]);
 
@@ -200,7 +200,7 @@ function ReflectionsPage() {
                 {/* 认知点标签展示 */}
                 {reflection.parsed.points.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {reflection.parsed.points.map((point, idx) => (
+                    {reflection.parsed.points.map((point: string, idx: number) => (
                       <motion.span
                         key={idx}
                         initial={{ opacity: 0, scale: 0.9 }}

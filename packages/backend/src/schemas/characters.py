@@ -125,10 +125,12 @@ class RelationsOut(BaseModel):
 class NearbyCharacterOut(BaseModel):
     id: str
     name: str
+    personality: str | None = None
     mood: str | None = None
+    current_action_name: str | None = None
     relationship_type: str | None = None
     strength: int | None = None
-    current_action: str | None = None
+    location: str | None = None
 
 
 class NearbyOut(BaseModel):
@@ -144,8 +146,12 @@ class StateHistoryPointOut(BaseModel):
     money: int | None = None
     social_energy: int | None = None
     phone_battery: int | None = None
+    mood: str | None = None
+    action_id: str | None = None
+    updated_at: str
 
 
 class StateHistoryOut(BaseModel):
     data: list[StateHistoryPointOut]
     total: int
+    source: str | None = None

@@ -196,7 +196,7 @@ function PersonMemoryPage() {
                     </div>
                     <span className="text-xs text-twilight-400 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {formatTime(memory.last_interaction_at)}
+                      {formatTime(memory.last_interaction_at ?? undefined)}
                     </span>
                   </div>
 
