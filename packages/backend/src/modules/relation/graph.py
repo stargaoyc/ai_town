@@ -111,6 +111,11 @@ class RelationGraph:
         # 确保关系存在
         rel_ab, rel_ba = await self.ensure_relation(char_a, char_b)
 
+        # 先捕获旧类型：repo 更新与缓存覆写都会改写同一对象属性，
+        # 若在更新后才取「旧值」再比较，条件恒为 False，升级日志永远不可达（P0-5）
+        old_type_ab = rel_ab.relationship_type
+        old_type_ba = rel_ba.relationship_type
+
         now = datetime.now(UTC)
 
         # 更新 A→B
@@ -147,13 +152,22 @@ class RelationGraph:
         await self._cache_relation(rel_ab)
         await self._cache_relation(rel_ba)
 
-        # 记录升级
-        if new_type_ab != rel_ab.relationship_type:
+        # 记录关系类型变化
+        if new_type_ab != old_type_ab:
             logger.info(
-                "关系升级: %s -> %s: %s",
+                "关系升级: %s -> %s: %s -> %s",
                 char_a,
                 char_b,
+                old_type_ab,
                 new_type_ab,
+            )
+        if new_type_ba != old_type_ba:
+            logger.info(
+                "关系升级: %s -> %s: %s -> %s",
+                char_b,
+                char_a,
+                old_type_ba,
+                new_type_ba,
             )
 
         return (
