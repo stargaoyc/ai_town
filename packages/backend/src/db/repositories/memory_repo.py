@@ -30,6 +30,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
+from src.config import settings
 from src.db.models import MemoryEpisode
 from src.db.repositories.base import BaseRepository
 
@@ -422,8 +423,8 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         dbapi_conn = raw_conn.driver_connection
         assert dbapi_conn is not None
 
-        # 2. 设置 HNSW 检索参数（事务内生效）
-        await dbapi_conn.execute("SET LOCAL hnsw.ef_search = 100")
+        # 2. 设置 HNSW 检索参数（事务内生效；int 插值防注入）
+        await dbapi_conn.execute(f"SET LOCAL hnsw.ef_search = {int(settings.hnsw_ef_search)}")
 
         # 3. 向量召回 + 混合排序（使用 asyncpg 原生 $1 占位符）
         query_sql = """

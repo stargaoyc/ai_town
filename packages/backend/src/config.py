@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # Plan 层级体系：当日计划滚动过期（创建超过 TTL 的 active daily 置 expired）
     daily_plan_ttl_hours: int = 24
 
+    # HNSW 检索参数（SET LOCAL 事务内生效；调大提升召回率、增加延迟）
+    hnsw_ef_search: int = 100
+
     # Person Memory 两层结构：未压缩事实条目达到阈值后合并进主档
     person_memory_compact_threshold: int = 20
 

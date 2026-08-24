@@ -1032,11 +1032,11 @@ class CharacterTickEngine:
 
                 # 写入行为记录
                 # chat_with 时附带对话内容与对方角色 ID（供回放与关系溯源）
-                related_ids: list[str] = []
+                related_ids: list[UUID] = []
                 if decision.action == "chat_with":
                     target_id = decision.params.get("target_character_id")
                     if target_id:
-                        related_ids = [str(target_id)]
+                        related_ids = [UUID(str(target_id))]
 
                 record = ActionRecord(
                     character_id=character_id,

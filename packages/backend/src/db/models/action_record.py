@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
@@ -39,7 +39,9 @@ class ActionRecord(Base):
     result: Mapped[str | None] = mapped_column(Text, comment="执行结果")
     duration_minutes: Mapped[int] = mapped_column(Integer, comment="耗时（虚拟分钟）")
     location: Mapped[str | None] = mapped_column(String(50), comment="执行场景")
-    related_characters: Mapped[list[Any]] = mapped_column(JSONB, default=list, comment="相关角色 ID 列表")
+    related_characters: Mapped[list[UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, comment="相关角色 ID 列表（与 memory_episodes 同型：UUID[]）"
+    )
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="执行时间")
 
     __table_args__ = (
