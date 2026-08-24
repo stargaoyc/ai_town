@@ -204,6 +204,50 @@ class TestSearchHybrid:
         scores = {r["content"]: float(r["final_score"]) for r in rows}
         assert scores["新且重要"] > scores["旧且不重要"]
 
+    async def test_decay_floor_keeps_old_important_memories_reachable(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        """指数衰减 25% 下限：300 天的重要记忆仍可召回且得分不低于基准的 ~25%（P0-2 回归）"""
+        old_important = MemoryEpisode(
+            character_id=memory_character.id,
+            content="三个月前的重要事件",
+            embedding=_unit_vec(index=21),
+            materialized=True,
+            importance=9,
+            timestamp=datetime.now(UTC) - timedelta(days=300),
+        )
+        it_session.add(old_important)
+        await it_session.flush()
+
+        # 查询向量与记忆向量同向（sim≈1），隔离衰减因子维度
+        rows = await MemoryRepository(it_session).search_hybrid(memory_character.id, _unit_vec(index=21), top_k=5)
+
+        target = [r for r in rows if r["content"] == "三个月前的重要事件"]
+        assert target, "老记忆必须仍可召回"
+        final = float(target[0]["final_score"])
+        # sim≈1 时 base≈1.05；300 天因子 ≈0.250034 -> final ≈0.2625
+        assert 0.25 <= final <= 0.28
+
+    async def test_fresh_memory_full_score_no_penalty(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        """刚发生的记忆不受衰减惩罚（days≈0，因子≈1）"""
+        fresh = MemoryEpisode(
+            character_id=memory_character.id,
+            content="刚刚发生的事",
+            embedding=_unit_vec(index=31),
+            materialized=True,
+            importance=10,
+        )
+        it_session.add(fresh)
+        await it_session.flush()
+
+        # 同向查询（sim≈1），隔离衰减因子维度
+        rows = await MemoryRepository(it_session).search_hybrid(memory_character.id, _unit_vec(index=31), top_k=5)
+        final = float(rows[0]["final_score"])
+        # sim≈1、imp=10 -> base≈1.1，因子≈1
+        assert final > 1.0
+
 
 class TestExistsRecentDuplicate:
     async def test_exact_normalized_match_detected(self, it_session: AsyncSession, memory_character: Character) -> None:

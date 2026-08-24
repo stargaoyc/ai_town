@@ -157,3 +157,51 @@ class TestPropagateFromFriends:
         await it_session.flush()
 
         assert await _service(it_session).propagate_from_friends(listener.id) == 0
+
+
+class TestFetchRecentGossip:
+    async def test_returns_newest_gossip_only(self, it_session: AsyncSession, memory_character: Character) -> None:
+        repo = MemoryRepository(it_session)
+        now = datetime.now(UTC)
+        it_session.add_all(
+            [
+                MemoryEpisode(
+                    character_id=memory_character.id,
+                    content="听小传说：新店开业",
+                    source_type="gossip",
+                    timestamp=now - timedelta(hours=2),
+                ),
+                MemoryEpisode(
+                    character_id=memory_character.id,
+                    content="听老陈说：河堤修好了",
+                    source_type="gossip",
+                    timestamp=now - timedelta(hours=1),
+                ),
+                # 非传闻与过期传闻不出现
+                MemoryEpisode(
+                    character_id=memory_character.id,
+                    content="亲身经历",
+                    source_type="action",
+                    timestamp=now,
+                ),
+                MemoryEpisode(
+                    character_id=memory_character.id,
+                    content="一周前的旧八卦",
+                    source_type="gossip",
+                    timestamp=now - timedelta(hours=72),
+                ),
+            ]
+        )
+        await it_session.flush()
+
+        gossips = await repo.fetch_recent_gossip(memory_character.id, hours=24, limit=2)
+
+        assert gossips == ["听老陈说：河堤修好了", "听小传说：新店开业"]
+
+
+@pytest_asyncio.fixture
+async def memory_character(it_session: AsyncSession) -> Character:
+    char = Character(id=uuid7(), name="传闻查询角色")
+    it_session.add(char)
+    await it_session.flush()
+    return char
