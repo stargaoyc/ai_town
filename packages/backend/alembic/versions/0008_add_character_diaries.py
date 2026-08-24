@@ -13,7 +13,6 @@
 
 注意：降级脚本仅 raise RuntimeError，遵循"upgrade only"原则。
 """
-import sqlalchemy as sa
 from alembic import op
 
 revision = "add_char_diaries"

@@ -101,7 +101,9 @@ async def main(include_characters: bool = True) -> int:
             print("跳过角色层校验（--world-only）")
 
         failed = [label for ok, label in _results if not ok]
-        print(f"\n=== 结果：{'PASS' if not failed else 'FAIL'}（{len(_results) - len(failed)}/{len(_results)} 通过）===")
+        passed = len(_results) - len(failed)
+        status = "PASS" if not failed else "FAIL"
+        print(f"\n=== 结果：{status}（{passed}/{len(_results)} 通过）===")
         return 0 if not failed else 1
     finally:
         await r.aclose()

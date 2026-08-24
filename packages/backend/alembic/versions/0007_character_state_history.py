@@ -11,7 +11,6 @@
 
 注意：降级脚本仅 raise RuntimeError，遵循"upgrade only"原则。
 """
-import sqlalchemy as sa
 from alembic import op
 
 revision = "0007_character_state_history"
@@ -116,7 +115,8 @@ def upgrade() -> None:
                         RAISE NOTICE 'Created partition: %', partition_name;
                     EXCEPTION
                         WHEN undefined_table THEN
-                            RAISE NOTICE 'Table character_state_history does not exist, skipping partition %', partition_name;
+                            RAISE NOTICE 'Table character_state_history does not exist, skipping partition %',
+                                partition_name;
                         WHEN duplicate_table THEN
                             RAISE NOTICE 'Partition already exists: %', partition_name;
                     END;

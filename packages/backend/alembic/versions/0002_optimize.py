@@ -48,17 +48,18 @@ Revision ID: 0002_optimize
 Revises: 0001_init
 Create Date: 2026-07-06
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import TIMESTAMP, JSONB
 
 # revision identifiers, used by Alembic.
 revision: str = "0002_optimize"
-down_revision: Union[str, None] = "0001_init"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[Sequence[str], None] = None
+down_revision: str | None = "0001_init"
+branch_labels: str | Sequence[str] | None = None
+depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -344,7 +345,10 @@ def upgrade() -> None:
 
     # memory_episodes 表注释
     op.execute("COMMENT ON TABLE memory_episodes IS '记忆片段表 - HASH 分区（16 分区）+ 父表 HNSW 索引';")
-    op.execute("COMMENT ON COLUMN memory_episodes.character_id IS '所属角色（分区键，外键引用 characters.id ON DELETE CASCADE）';")
+    op.execute(
+        "COMMENT ON COLUMN memory_episodes.character_id IS "
+        "'所属角色（分区键，外键引用 characters.id ON DELETE CASCADE）';"
+    )
     op.execute("COMMENT ON COLUMN memory_episodes.embedding IS '向量嵌入（materialized=false 时为 NULL）';")
     op.execute("COMMENT ON COLUMN memory_episodes.importance IS '重要性 1-10，影响检索排序权重';")
     op.execute("COMMENT ON COLUMN memory_episodes.is_reflected IS '是否已被反思消化';")
@@ -352,7 +356,10 @@ def upgrade() -> None:
     op.execute("COMMENT ON COLUMN memory_episodes.source_type IS '来源：action/conversation/reflection/event';")
 
     # world_events 表注释
-    op.execute("COMMENT ON TABLE world_events IS '世界变更事件表 - 差分记录（事件溯源），UNIQUE(tick_id, event_type) 保证幂等';")
+    op.execute(
+        "COMMENT ON TABLE world_events IS "
+        "'世界变更事件表 - 差分记录（事件溯源），UNIQUE(tick_id, event_type) 保证幂等';"
+    )
     op.execute("COMMENT ON COLUMN world_events.tick_id IS 'Tick 序号';")
     op.execute("COMMENT ON COLUMN world_events.event_type IS '事件类型：time/weather/scene/resource/event';")
     op.execute("COMMENT ON COLUMN world_events.payload IS '变更内容（仅差分，非全量）';")

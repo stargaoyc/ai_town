@@ -11,7 +11,6 @@ pgvector 的 halfvec 类型（半精度 float16）支持最多 4000 维 + HNSW �
 
 注意：降级脚本仅 raise RuntimeError，遵循"upgrade only"原则。
 """
-import sqlalchemy as sa
 from alembic import op
 
 revision = "0005_embedding_dim_2048"

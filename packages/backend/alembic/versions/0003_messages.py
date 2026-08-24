@@ -22,16 +22,15 @@ Revision ID: 0003_messages
 Revises: 0002_optimize
 Create Date: 2026-07-09
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "0003_messages"
-down_revision: Union[str, None] = "0002_optimize"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[Sequence[str], None] = None
+down_revision: str | None = "0002_optimize"
+branch_labels: str | Sequence[str] | None = None
+depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -107,7 +106,10 @@ def upgrade() -> None:
 
     # 替换原 idx_mem_unmaterialized：排除已熔断的失败记忆
     op.execute("DROP INDEX IF EXISTS idx_mem_unmaterialized;")
-    op.execute("CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) WHERE materialized = FALSE AND fail_count < 5;")
+    op.execute(
+        "CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp) "
+        "WHERE materialized = FALSE AND fail_count < 5;"
+    )
 
     # COMMENT ON 元数据注释
     op.execute("COMMENT ON COLUMN memory_episodes.fail_count IS '向量化失败次数，达到 5 后不再重试';")

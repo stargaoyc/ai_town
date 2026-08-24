@@ -20,16 +20,15 @@ Revision ID: 0004_phase3_refinements
 Revises: 0003_messages
 Create Date: 2026-07-09
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "0004_phase3_refinements"
-down_revision: Union[str, None] = "0003_messages"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[Sequence[str], None] = None
+down_revision: str | None = "0003_messages"
+branch_labels: str | Sequence[str] | None = None
+depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -63,7 +62,10 @@ def upgrade() -> None:
     # ============================================================
     # 防止应用层 bug 写入非法值，污染数据
     # v10: PG18 兼容性 - 拆分为单语句执行
-    op.execute("ALTER TABLE conversations ADD CONSTRAINT ck_conv_platform CHECK (platform IN ('web', 'qq', 'lark', 'internal'));")
+    op.execute(
+        "ALTER TABLE conversations ADD CONSTRAINT ck_conv_platform "
+        "CHECK (platform IN ('web', 'qq', 'lark', 'internal'));"
+    )
     op.execute("ALTER TABLE messages ADD CONSTRAINT ck_msg_sender CHECK (sender IN ('user', 'character', 'system'));")
 
     # ============================================================
@@ -77,11 +79,17 @@ def upgrade() -> None:
     #   retry 5 → 熔断（不再重试）
     # v10: PG18 兼容性 - 拆分为单语句执行
     op.execute("ALTER TABLE memory_episodes ADD COLUMN next_retry_at TIMESTAMPTZ;")
-    op.execute("COMMENT ON COLUMN memory_episodes.next_retry_at IS '下次可重试时间（指数退避），NULL 表示可立即重试或已成功';")
+    op.execute(
+        "COMMENT ON COLUMN memory_episodes.next_retry_at IS "
+        "'下次可重试时间（指数退避），NULL 表示可立即重试或已成功';"
+    )
 
     # 更新部分索引：排除未到重试时间的记忆
     op.execute("DROP INDEX IF EXISTS idx_mem_unmaterialized;")
-    op.execute("CREATE INDEX idx_mem_unmaterialized ON memory_episodes (next_retry_at NULLS FIRST) WHERE materialized = FALSE AND fail_count < 5;")
+    op.execute(
+        "CREATE INDEX idx_mem_unmaterialized ON memory_episodes (next_retry_at NULLS FIRST) "
+        "WHERE materialized = FALSE AND fail_count < 5;"
+    )
 
     # ============================================================
     # 5. pre_create_partitions 函数文档化

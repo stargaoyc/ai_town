@@ -11,7 +11,6 @@ event_key 区分不同实体，保证幂等性的同时支持细粒度事件拆�
 
 注意：降级脚本仅 raise RuntimeError，遵循"upgrade only"原则。
 """
-import sqlalchemy as sa
 from alembic import op
 
 revision = "0006_world_event_key"

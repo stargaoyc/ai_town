@@ -5,17 +5,18 @@ Revises:
 Create Date: 2026-07-06
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import TIMESTAMP, JSONB
 
 # revision identifiers, used by Alembic.
 revision: str = "0001_init"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -117,7 +118,12 @@ def upgrade() -> None:
             WITH (m = 16, ef_construction = 64);
     """)
     op.create_index("idx_mem_char_time", "memory_episodes", ["character_id", sa.text("timestamp DESC")])
-    op.create_index("idx_mem_unreflected", "memory_episodes", ["character_id"], postgresql_where=sa.text("is_reflected = FALSE"))
+    op.create_index(
+        "idx_mem_unreflected",
+        "memory_episodes",
+        ["character_id"],
+        postgresql_where=sa.text("is_reflected = FALSE"),
+    )
 
     # 6. plans 表
     op.create_table(
