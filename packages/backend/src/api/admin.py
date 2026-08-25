@@ -14,7 +14,8 @@ from typing import Annotated, Any, Literal, get_args, get_origin
 from uuid import UUID
 
 import yaml
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
+from fastapi.responses import PlainTextResponse
 from prometheus_client import REGISTRY
 from prometheus_client.exposition import generate_latest
 from prometheus_client.parser import text_string_to_metric_families
@@ -763,6 +764,18 @@ async def get_recent_logs(
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to read logs: {e}") from e
+
+
+@router.get("/metrics-prometheus", response_class=PlainTextResponse)
+async def metrics_prometheus(user: Admin) -> Response:
+    """Prometheus 文本格式指标（管理端专用）
+
+    公网 /metrics 已被 nginx 刻意 404（防止指标泄露，见部署加固 M11）；
+    前端监控面板经此 RBAC 保护端点获取同一份数据。
+    """
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/metrics-detail", response_model=MetricsDetailOut)

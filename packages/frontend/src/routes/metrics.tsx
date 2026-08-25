@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import { Activity, Database, DollarSign, Cpu, Clock } from "lucide-react";
+import { useAuthStore } from "@/stores/auth";
 import {
   GlassCard,
   PageHeader,
@@ -106,12 +107,14 @@ function MetricsPage() {
   const [error, setError] = useState<Error | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // 获取 Prometheus 指标（F-2）：/metrics 挂载在根路径（不在 /api/v1 下），
-  // 且返回 Prometheus 文本格式——不能用统一 request 封装（会拼错前缀并按 JSON 解析）
+  // 获取 Prometheus 指标（F-2）：/metrics 公网路径已被部署加固 404（防指标泄露），
+  // 改走 admin RBAC 保护端点；返回 Prometheus 文本格式——不能用统一 request 封装（按 JSON 解析）
   const fetchMetrics = useCallback(async () => {
     try {
-      // 注意末尾斜杠：无斜杠会触发后端 307 绝对地址重定向（跨源被浏览器拦截）
-      const res = await fetch("/metrics/", { headers: { Accept: "text/plain" } });
+      const token = useAuthStore.getState().token;
+      const res = await fetch("/api/v1/admin/metrics-prometheus", {
+        headers: { Accept: "text/plain", Authorization: `Bearer ${token ?? ""}` },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(parseMetrics(await res.text()));
       setLastUpdated(new Date());
