@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     api_key: str | None = None
     admin_username: str = "admin"
     admin_password: str = "admin123"
+    # Alertmanager webhook 回流鉴权 token（R4-M2）：未配置时告警端点返回 403，
+    # 与 alertmanager.yml 的 bearer_token 占位符替换值保持一致
+    alert_webhook_token: str = ""
     # RBAC 角色配置（逗号分隔的用户名:角色列表）
     rbac_roles: str = ""  # 如 "admin:admin,viewer1:viewer,operator1:operator"
 

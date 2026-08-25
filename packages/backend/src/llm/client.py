@@ -168,34 +168,65 @@ class LLMClient:
         若 embedding_model_key + embedding_model_url 已配置则用专用客户端，
         否则回退到主 OpenAI 客户端。
 
+        R4-M5：纳入预算检查与用量记账——上游不回传 embedding 用量，
+        token 按字符数//2 估算（中文约 2 字符/token 的工程近似）。
+
         Args:
             text: 输入文本
 
         Returns:
             嵌入向量列表
         """
-        # OpenRouter 需要 extra_headers + 多模态 content 格式
-        is_openrouter = "openrouter.ai" in (settings.embedding_model_url or "")
+        await self._check_cost_control()
+        start_perf = time.perf_counter()
+        try:
+            # OpenRouter 需要 extra_headers + 多模态 content 格式
+            is_openrouter = "openrouter.ai" in (settings.embedding_model_url or "")
 
-        if is_openrouter:
-            response = await self._embedding_client.embeddings.create(
-                model=settings.model_embedding,
-                input=[{"content": [{"type": "text", "text": text}]}],  # type: ignore[arg-type]
-                encoding_format="float",
-                extra_headers={
-                    "HTTP-Referer": "https://github.com/ai-town",
-                    "X-OpenRouter-Title": "AI Town",
-                },
-            )
-        else:
-            response = await self._embedding_client.embeddings.create(
-                model=settings.model_embedding,
-                input=text,
-            )
+            if is_openrouter:
+                response = await self._embedding_client.embeddings.create(
+                    model=settings.model_embedding,
+                    input=[{"content": [{"type": "text", "text": text}]}],  # type: ignore[arg-type]
+                    encoding_format="float",
+                    extra_headers={
+                        "HTTP-Referer": "https://github.com/ai-town",
+                        "X-OpenRouter-Title": "AI Town",
+                    },
+                )
+            else:
+                response = await self._embedding_client.embeddings.create(
+                    model=settings.model_embedding,
+                    input=text,
+                )
 
-        embedding = response.data[0].embedding
-        logger.debug("embedding_created", dim=len(embedding))
-        return embedding
+            embedding = response.data[0].embedding
+            elapsed = time.perf_counter() - start_perf
+            est_tokens = max(1, len(text) // 2)
+            est_cost = estimate_cost(est_tokens, 0, model=settings.model_embedding)
+            self._record_embedding_metrics(elapsed, est_tokens, est_cost)
+            await self._record_cost_control_success(est_tokens, est_cost)
+            logger.debug("embedding_created", dim=len(embedding))
+            return embedding
+        except Exception:
+            await self._record_cost_control_failure()
+            from src.observability.metrics import LLM_CALL_TOTAL
+
+            LLM_CALL_TOTAL.labels(model=settings.model_embedding, status="failed").inc()
+            raise
+
+    def _record_embedding_metrics(self, elapsed: float, tokens: int, cost: float) -> None:
+        """记录 embedding 调用的指标与成本（R4-M5 前该路径完全不可观测）"""
+        from src.observability.metrics import (
+            LLM_CALL_DURATION,
+            LLM_CALL_TOTAL,
+            LLM_COST_TOTAL,
+            LLM_TOKENS_USED,
+        )
+
+        LLM_CALL_TOTAL.labels(model=settings.model_embedding, status="success").inc()
+        LLM_CALL_DURATION.labels(model=settings.model_embedding).observe(elapsed)
+        LLM_TOKENS_USED.labels(model=settings.model_embedding, type="prompt").inc(tokens)
+        LLM_COST_TOTAL.inc(cost)
 
     async def embed_multimodal(
         self,
@@ -204,7 +235,7 @@ class LLMClient:
     ) -> list[float]:
         """生成多模态嵌入向量（文本+图像）
 
-        使用 OpenRouter 多模态 embedding 格式。
+        使用 OpenRouter 多模态 embedding 格式。用量记账口径同 embed()（R4-M5）。
 
         Args:
             text: 输入文本
@@ -213,26 +244,40 @@ class LLMClient:
         Returns:
             嵌入向量列表
         """
-        content: list[dict[str, Any]] = [{"type": "text", "text": text}]
-        if image_url:
-            content.append({"type": "image_url", "image_url": {"url": image_url}})
+        await self._check_cost_control()
+        start_perf = time.perf_counter()
+        try:
+            content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+            if image_url:
+                content.append({"type": "image_url", "image_url": {"url": image_url}})
 
-        response = await self._embedding_client.embeddings.create(
-            model=settings.model_embedding,
-            input=[{"content": content}],  # type: ignore[arg-type]
-            encoding_format="float",
-            extra_headers={
-                "HTTP-Referer": "https://github.com/ai-town",
-                "X-OpenRouter-Title": "AI Town",
-            },
-        )
-        embedding = response.data[0].embedding
-        logger.debug(
-            "multimodal_embedding_created",
-            dim=len(embedding),
-            has_image=image_url is not None,
-        )
-        return embedding
+            response = await self._embedding_client.embeddings.create(
+                model=settings.model_embedding,
+                input=[{"content": content}],  # type: ignore[arg-type]
+                encoding_format="float",
+                extra_headers={
+                    "HTTP-Referer": "https://github.com/ai-town",
+                    "X-OpenRouter-Title": "AI Town",
+                },
+            )
+            embedding = response.data[0].embedding
+            elapsed = time.perf_counter() - start_perf
+            est_tokens = max(1, len(text) // 2)
+            est_cost = estimate_cost(est_tokens, 0, model=settings.model_embedding)
+            self._record_embedding_metrics(elapsed, est_tokens, est_cost)
+            await self._record_cost_control_success(est_tokens, est_cost)
+            logger.debug(
+                "multimodal_embedding_created",
+                dim=len(embedding),
+                has_image=image_url is not None,
+            )
+            return embedding
+        except Exception:
+            await self._record_cost_control_failure()
+            from src.observability.metrics import LLM_CALL_TOTAL
+
+            LLM_CALL_TOTAL.labels(model=settings.model_embedding, status="failed").inc()
+            raise
 
     # === Chat（agnes-2.0-flash：对话+图像理解）===
 
@@ -320,11 +365,19 @@ class LLMClient:
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
             return content if isinstance(content, str) else str(content), usage
-        except Exception:
+        except Exception as e:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
 
             LLM_CALL_TOTAL.labels(model=model, status="failed").inc()
+            from src.observability.langfuse_tracing import trace_llm_error
+
+            trace_llm_error(
+                model=model,
+                prompt=prompt,
+                error=e,
+                latency_ms=int((time.perf_counter() - start_perf) * 1000),
+            )
             raise
 
     async def multimodal_chat(
@@ -358,6 +411,7 @@ class LLMClient:
 
         effective_model = model or "chat"
         start_perf = time.perf_counter()
+        await self._check_cost_control()
         try:
             response, _source = await invoke_with_fallback(self._source_pool, lambda llm: llm.ainvoke([message]))
             resp_content = response.content
@@ -387,7 +441,15 @@ class LLMClient:
                 estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=effective_model)
                 LLM_COST_TOTAL.inc(estimated_cost)
             else:
-                estimated_cost = 0.0
+                # 多模态上游常不回传 token 用量：按文本部分字符数//2 估算入账（R4-M5），
+                # 否则图像理解调用完全游离在日预算之外
+                text_chars = sum(len(c.get("text", "")) for c in content if isinstance(c, dict))
+                prompt_tokens = max(1, text_chars // 2)
+                completion_tokens = 0
+                total_tokens = prompt_tokens
+                estimated_cost = estimate_cost(prompt_tokens, 0, model=effective_model)
+                LLM_TOKENS_USED.labels(model=effective_model, type="prompt").inc(prompt_tokens)
+                LLM_COST_TOTAL.inc(estimated_cost)
             from src.observability.langfuse_tracing import trace_llm_call
 
             trace_llm_call(
@@ -400,11 +462,21 @@ class LLMClient:
                 cost_usd=estimated_cost,
                 latency_ms=int(elapsed * 1000),
             )
+            await self._record_cost_control_success(total_tokens, estimated_cost)
             return resp_content if isinstance(resp_content, str) else str(resp_content)
-        except Exception:
+        except Exception as e:
+            await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
 
             LLM_CALL_TOTAL.labels(model=effective_model, status="failed").inc()
+            from src.observability.langfuse_tracing import trace_llm_error
+
+            trace_llm_error(
+                model=effective_model,
+                prompt=str(content),
+                error=e,
+                latency_ms=int((time.perf_counter() - start_perf) * 1000),
+            )
             raise
 
     # === 图像生成（agnes-image-2.1-flash）===
@@ -657,11 +729,21 @@ class LLMClient:
                 structured = target_llm.with_structured_output(pydantic_model, include_raw=True)
                 return await structured.ainvoke(prompt)
 
-            bundle, _source = await invoke_with_fallback(self._source_pool, _invoke_structured)
-            result = bundle.get("parsed")
-            if result is None:
-                parsing_error = bundle.get("parsing_error")
-                raise RuntimeError(f"structured_output_parse_failed: {parsing_error}")
+            async def _attempt() -> dict[str, Any]:
+                bundle_inner, _src = await invoke_with_fallback(self._source_pool, _invoke_structured)
+                bundle: dict[str, Any] = bundle_inner
+                if bundle.get("parsed") is None:
+                    raise RuntimeError(f"structured_output_parse_failed: {bundle.get('parsing_error')}")
+                return bundle
+
+            try:
+                bundle = await _attempt()
+            except RuntimeError as parse_error:
+                # R4-M9：畸形输出偶发，同 prompt 重试一次；二次失败如实上抛
+                logger.warning("structured_output_parse_retry", error=str(parse_error))
+                bundle = await _attempt()
+
+            result = bundle["parsed"]
             logger.debug("structured_output_completed", result_type=type(result).__name__)
             elapsed = time.perf_counter() - start_perf
             from src.observability.metrics import (
@@ -708,11 +790,19 @@ class LLMClient:
             if isinstance(result, BaseModel):
                 return result.model_dump(), usage
             return result, usage
-        except Exception:
+        except Exception as e:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
 
             LLM_CALL_TOTAL.labels(model=model, status="failed").inc()
+            from src.observability.langfuse_tracing import trace_llm_error
+
+            trace_llm_error(
+                model=model,
+                prompt=prompt,
+                error=e,
+                latency_ms=int((time.perf_counter() - start_perf) * 1000),
+            )
             raise
 
     async def multimodal_structured_output(

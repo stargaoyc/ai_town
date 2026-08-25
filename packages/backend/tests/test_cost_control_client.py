@@ -15,6 +15,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel
+from pytest import MonkeyPatch
 from redis.asyncio import Redis
 
 from src.cost_control import BudgetExceeded, CircuitOpen, set_circuit_breaker
@@ -308,3 +309,54 @@ async def test_structured_output_with_usage_returns_real_tokens() -> None:
     assert result == {"action": "move", "reason": "test"}
     assert usage.total_tokens == 15
     assert usage.cost > 0
+
+
+async def test_structured_output_parse_failure_retries_once(monkeypatch: MonkeyPatch) -> None:
+    """R4-M9：解析失败同 prompt 重试一次，二次成功则正常返回"""
+    from pydantic import BaseModel
+
+    import src.llm.client as client_module
+
+    class _Parsed(BaseModel):
+        action: str = "move"
+        reason: str = "test"
+
+    attempts: list[int] = []
+
+    async def fake_invoke(pool: Any, fn: Any) -> tuple[dict[str, Any], int]:
+        attempts.append(1)
+        if len(attempts) == 1:
+            return {"raw": None, "parsed": None, "parsing_error": "bad json"}, 0
+        raw = SimpleNamespace(response_metadata={"token_usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+        return {"raw": raw, "parsed": _Parsed(), "parsing_error": None}, 0
+
+    monkeypatch.setattr(client_module, "invoke_with_fallback", fake_invoke)
+    fake_llm = FakeChatLLM()
+    client = _make_client(fake_llm)
+
+    result, usage = await client.structured_output_with_usage("decide", _DECISION_SCHEMA)
+
+    assert len(attempts) == 2
+    assert result == {"action": "move", "reason": "test"}
+    assert usage.total_tokens == 15
+
+
+async def test_structured_output_second_parse_failure_propagates(monkeypatch: MonkeyPatch) -> None:
+    """R4-M9：两次均失败时如实抛出，不无限重试"""
+    from pydantic import BaseModel
+
+    import src.llm.client as client_module
+
+    class _Parsed(BaseModel):
+        action: str = "move"
+        reason: str = "test"
+
+    async def always_fail(pool: Any, fn: Any) -> tuple[dict[str, Any], int]:
+        return {"raw": None, "parsed": None, "parsing_error": "bad json"}, 0
+
+    monkeypatch.setattr(client_module, "invoke_with_fallback", always_fail)
+    fake_llm = FakeChatLLM()
+    client = _make_client(fake_llm)
+
+    with pytest.raises(RuntimeError, match="structured_output_parse_failed"):
+        await client.structured_output_with_usage("decide", _DECISION_SCHEMA)

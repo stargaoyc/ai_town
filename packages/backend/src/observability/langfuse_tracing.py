@@ -161,6 +161,57 @@ def trace_llm_call(
         logger.error("langfuse_trace_llm_call_failed", exc_info=True)
 
 
+def trace_llm_error(
+    *,
+    model: str,
+    prompt: str,
+    error: Exception | str,
+    latency_ms: int,
+) -> None:
+    """记录一次失败的 LLM 调用（R4-M6：此前 except 路径不进 Langfuse，失败调用不可见）。
+
+    与 trace_llm_call 同构：有 Tick 根 trace 时挂为其子 generation（level=ERROR），
+    否则独立成 trace；Langfuse 未配置时静默降级。
+    """
+    client = get_langfuse()
+    if client is None:
+        return
+
+    try:
+        metadata: dict[str, Any] = {"latency_ms": latency_ms}
+        otel_trace_id = _otel_trace_id()
+        if otel_trace_id:
+            metadata["otel_trace_id"] = otel_trace_id
+
+        error_text = str(error)
+        parent_trace_id = _tick_trace_id.get()
+        if parent_trace_id:
+            client.generation(
+                trace_id=parent_trace_id,
+                name="llm_generation",
+                model=model,
+                input=_truncate(prompt),
+                output=_truncate(error_text),
+                level="ERROR",
+                status_message=_truncate(error_text, 200),
+                metadata=metadata,
+            )
+            return
+
+        trace = client.trace(name="llm_call")
+        trace.generation(
+            name="llm_generation",
+            model=model,
+            input=_truncate(prompt),
+            output=_truncate(error_text),
+            level="ERROR",
+            status_message=_truncate(error_text, 200),
+            metadata=metadata,
+        )
+    except Exception:
+        logger.error("langfuse_trace_llm_error_failed", exc_info=True)
+
+
 def trace_character_tick(
     *,
     character_id: str,

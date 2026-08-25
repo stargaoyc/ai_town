@@ -169,6 +169,13 @@ HTTP_REQUEST_TOTAL = Counter(
     ["method", "path", "status"],
 )
 
+# === Alertmanager 告警接收（R4-M2：告警经 webhook 回流后端，不再只进 UI）===
+ALERTS_RECEIVED_TOTAL = Counter(
+    "ai_town_alerts_received_total",
+    "从 Alertmanager webhook 接收的告警数",
+    ["alertname"],
+)
+
 
 class PrometheusMiddleware:
     """纯 ASGI 中间件：记录 HTTP 请求耗时、状态码、路径
@@ -202,7 +209,10 @@ class PrometheusMiddleware:
         finally:
             duration = time.perf_counter() - start_time
             method = scope.get("method", "UNKNOWN")
-            path = scope.get("path", "/")
+            # R4-M4：用路由模板替代原始路径——参数化路由的 UUID 与 404 探测
+            # 各自生成新序列会把基数打爆；未匹配路由统一记为 "unmatched"
+            route = scope.get("route")
+            path = getattr(route, "path", None) or "unmatched"
             HTTP_REQUEST_DURATION.labels(method=method, path=path, status=status_code).observe(duration)
             HTTP_REQUEST_TOTAL.labels(method=method, path=path, status=status_code).inc()
 

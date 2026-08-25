@@ -1,7 +1,9 @@
 # Alertmanager 配置 - AI Town 告警通知路由
 #
-# 此前 alerts.yml 规则已挂载但无 Alertmanager 服务，告警只能在 Grafana UI 查看。
-# 默认 receiver 为空（仅 UI 可见）；接入实际通知渠道时取消下方注释并填写地址。
+# R4-M2：默认 receiver 接入后端 webhook（/api/v1/system/alerts/webhook），
+# 告警经结构化日志 + ai_town_alerts_received_total 指标双通道落地，
+# 不再只进 Grafana UI。bearer_token 占位符由 compose 启动时用
+# ALERT_WEBHOOK_TOKEN 环境变量替换（与后端 settings.alert_webhook_token 一致）。
 
 route:
   receiver: default
@@ -12,12 +14,13 @@ route:
 
 receivers:
   - name: default
+    webhook_configs:
+      - url: http://backend:8000/api/v1/system/alerts/webhook
+        http_config:
+          bearer_token: __ALERT_WEBHOOK_TOKEN__
 
-# 接入通知渠道示例：
+# 接入额外通知渠道示例（飞书/邮件等）：
 # receivers:
-#   - name: default
-#     webhook_configs:
-#       - url: http://your-notification-service/alerts
 #   - name: critical-email
 #     email_configs:
 #       - to: ops@example.com

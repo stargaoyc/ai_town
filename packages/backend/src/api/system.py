@@ -10,7 +10,7 @@
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from structlog import get_logger
 
 from src.api.tools import _NAMESPACES as _TOOL_NAMESPACES
@@ -125,6 +125,47 @@ async def login(body: dict[str, Any]) -> dict[str, Any]:
         "user_id": username,
         "expires_in": settings.jwt_expire_hours * 3600,
     }
+
+
+@router.post("/api/v1/system/alerts/webhook", status_code=204)
+async def receive_alerts(request: Request) -> Response:
+    """接收 Alertmanager webhook 告警（R4-M2：告警不再只进 UI）
+
+    鉴权独立于 JWT 中间件（AuthMiddleware 已豁免该精确路径）：
+    Authorization: Bearer <alert_webhook_token>，未配置 token 时一律 403。
+    每条告警记结构化 warning 并累加 ai_town_alerts_received_total 计数器，
+    使告警在日志与指标两个通道可见。
+    """
+    if not settings.alert_webhook_token:
+        raise HTTPException(status_code=403, detail="alert webhook token not configured")
+
+    auth_header = request.headers.get("Authorization", "")
+    provided = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+    if not provided or not secrets.compare_digest(provided, settings.alert_webhook_token):
+        logger.warning("alert_webhook_auth_failed")
+        raise HTTPException(status_code=403, detail="Invalid alert webhook token")
+
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from e
+
+    from src.observability.metrics import ALERTS_RECEIVED_TOTAL
+
+    alerts = payload.get("alerts", []) if isinstance(payload, dict) else []
+    for alert in alerts:
+        labels = alert.get("labels", {}) if isinstance(alert, dict) else {}
+        alertname = str(labels.get("alertname", "unknown"))
+        status = str(alert.get("status", "unknown"))
+        ALERTS_RECEIVED_TOTAL.labels(alertname=alertname).inc()
+        logger.warning(
+            "alert_received",
+            alertname=alertname,
+            status=status,
+            severity=str(labels.get("severity", "unknown")),
+            summary=str((alert.get("annotations") or {}).get("summary", ""))[:200] if isinstance(alert, dict) else "",
+        )
+    return Response(status_code=204)
 
 
 @router.get("/api/v1/modules", response_model=ModulesListOut)
