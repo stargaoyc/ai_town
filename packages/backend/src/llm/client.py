@@ -832,18 +832,85 @@ class LLMClient:
         message = HumanMessage(content=content)
 
         async def _invoke_multimodal_structured(llm: ChatOpenAI) -> Any:
-            structured = llm.with_structured_output(pydantic_model)
+            structured = llm.with_structured_output(pydantic_model, include_raw=True)
             return await structured.ainvoke([message])
 
-        result, _source = await invoke_with_fallback(self._source_pool, _invoke_multimodal_structured)
-        logger.debug(
-            "multimodal_structured_output_completed",
-            content_types=[c.get("type", "text") if isinstance(c, dict) else "text" for c in content],
-            result_type=type(result).__name__,
-        )
-        if isinstance(result, BaseModel):
-            return result.model_dump()
-        return dict(result)
+        effective_model = model or "chat"
+        start_perf = time.perf_counter()
+        await self._check_cost_control()
+        try:
+            bundle_inner, _source = await invoke_with_fallback(self._source_pool, _invoke_multimodal_structured)
+            bundle: dict[str, Any] = bundle_inner
+            parsed = bundle.get("parsed")
+            if parsed is None:
+                # include_raw=True 下解析失败不再由链路抛出，须显式转异常（同 R4-M9 口径）
+                raise RuntimeError(f"multimodal_structured_output_parse_failed: {bundle.get('parsing_error')}")
+            logger.debug(
+                "multimodal_structured_output_completed",
+                content_types=[c.get("type", "text") if isinstance(c, dict) else "text" for c in content],
+                result_type=type(parsed).__name__,
+            )
+            elapsed = time.perf_counter() - start_perf
+            from src.observability.metrics import (
+                LLM_CALL_DURATION,
+                LLM_CALL_TOTAL,
+                LLM_COST_TOTAL,
+                LLM_TOKENS_USED,
+            )
+
+            LLM_CALL_TOTAL.labels(model=effective_model, status="success").inc()
+            LLM_CALL_DURATION.labels(model=effective_model).observe(elapsed)
+            # include_raw=True 时从原始 AIMessage 取真实 token 用量（同 structured_output_with_usage）
+            raw_message = bundle.get("raw")
+            meta = getattr(raw_message, "response_metadata", None) or {}
+            token_usage = meta.get("token_usage") or meta.get("usage") or {}
+            prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+            completion_tokens = int(token_usage.get("completion_tokens", 0))
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=effective_model)
+            else:
+                # 多模态上游常不回传 token 用量：按文本部分字符数//2 估算入账（R4-M5），
+                # 否则图像理解的结构化调用完全游离在日预算之外
+                text_chars = sum(len(c.get("text", "")) for c in content if isinstance(c, dict))
+                prompt_tokens = max(1, text_chars // 2)
+                completion_tokens = 0
+                total_tokens = prompt_tokens
+                estimated_cost = estimate_cost(prompt_tokens, 0, model=effective_model)
+            LLM_TOKENS_USED.labels(model=effective_model, type="prompt").inc(prompt_tokens)
+            LLM_TOKENS_USED.labels(model=effective_model, type="completion").inc(completion_tokens)
+            LLM_COST_TOTAL.inc(estimated_cost)
+            from src.observability.langfuse_tracing import trace_llm_call
+
+            result_str = parsed.model_dump_json() if isinstance(parsed, BaseModel) else str(parsed)
+            trace_llm_call(
+                model=effective_model,
+                prompt=str(content),
+                response=result_str,
+                tokens=total_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=estimated_cost,
+                latency_ms=int(elapsed * 1000),
+            )
+            await self._record_cost_control_success(total_tokens, estimated_cost)
+            if isinstance(parsed, BaseModel):
+                return parsed.model_dump()
+            return dict(parsed)
+        except Exception as e:
+            await self._record_cost_control_failure()
+            from src.observability.metrics import LLM_CALL_TOTAL
+
+            LLM_CALL_TOTAL.labels(model=effective_model, status="failed").inc()
+            from src.observability.langfuse_tracing import trace_llm_error
+
+            trace_llm_error(
+                model=effective_model,
+                prompt=str(content),
+                error=e,
+                latency_ms=int((time.perf_counter() - start_perf) * 1000),
+            )
+            raise
 
     # === 成本控制（统一挂载点）===
 

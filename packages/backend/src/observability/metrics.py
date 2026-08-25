@@ -71,6 +71,14 @@ ACTION_EXECUTION_DURATION = Histogram(
     buckets=[0.1, 0.5, 1, 2, 5, 10],
 )
 
+# === 媒体生成指标（draw_image/generate_video；round-3 M18 成本盲区：上游 API 不回传
+# token 用量、费用不可估，仅以调用量计数兜住可观测性）===
+MEDIA_GENERATION_TOTAL = Counter(
+    "ai_town_media_generation_total",
+    "媒体生成调用次数（图片/视频）",
+    ["tool", "outcome"],  # tool: draw_image/generate_video; outcome: success/failed
+)
+
 # === LLM 指标 ===
 LLM_CALL_TOTAL = Counter(
     "ai_town_llm_call_total",
