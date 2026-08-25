@@ -480,3 +480,56 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             returned=len(rows),
         )
         return rows
+
+    async def search_hybrid_global(self, query_vec: list[float], top_k: int = 10) -> list[dict[str, Any]]:
+        """跨角色全局混合检索（无 character_id 谓词，探测全部 HASH 分区）
+
+        与 search_hybrid 完全同一评分公式（含 GREATEST(0, ·) 时钟回拨钳制）；
+        无分区键谓词时 planner 对每个分区的 HNSW 做有序扫描再 MergeAppend。
+        JOIN characters 带出角色名，供管理端调试展示归属。
+
+        ⚠️ 仅限管理端调试使用——Tick 主流程必须走带角色过滤的
+        search_hybrid，避免跨角色记忆串扰污染决策上下文。
+        """
+        # 1. 获取底层 asyncpg 连接
+        connection = await self.session.connection()
+        raw_conn = await connection.get_raw_connection()
+        dbapi_conn = raw_conn.driver_connection
+        assert dbapi_conn is not None
+
+        # 2. 设置 HNSW 检索参数（事务内生效；int 插值防注入）
+        await dbapi_conn.execute(f"SET LOCAL hnsw.ef_search = {int(settings.hnsw_ef_search)}")
+
+        # 3. 向量召回 + 混合排序（评分公式与 search_hybrid 逐项一致）
+        query_sql = """
+            WITH candidates AS (
+                SELECT m.id, m.character_id, c.name AS character_name,
+                       m.content, m.importance, m.timestamp, m.source_type, m.is_reflected,
+                       1 - (m.embedding <=> $1::halfvec) AS sim_score
+                FROM memory_episodes m
+                JOIN characters c ON c.id = m.character_id
+                WHERE m.materialized = TRUE AND m.is_duplicate = FALSE
+                  AND m.embedding IS NOT NULL
+                ORDER BY m.embedding <=> $1::halfvec
+                LIMIT $2
+            )
+            SELECT id, character_id, character_name, content, importance,
+                   timestamp, source_type, is_reflected, sim_score,
+                   (sim_score * 0.6 + importance * 0.05)
+                   * (0.25 + 0.75 * exp(- GREATEST(0,
+                       EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0))
+                   AS final_score
+            FROM candidates
+            ORDER BY final_score DESC
+            LIMIT $3
+        """
+        vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
+        result = await dbapi_conn.fetch(
+            query_sql,
+            vec_str,
+            top_k * 2,
+            top_k,
+        )
+        rows = [dict(row) for row in result]
+        logger.info("memory_search_hybrid_global", top_k=top_k, returned=len(rows))
+        return rows

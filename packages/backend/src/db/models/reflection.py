@@ -9,11 +9,13 @@
 from datetime import datetime
 from uuid import UUID
 
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
+from src.config import settings
 from src.db.base import Base
 
 
@@ -38,3 +40,8 @@ class Reflection(Base):
         Integer, default=1, server_default="1", comment="反思层级：1=批次主题反思，2=跨期元反思"
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
+    embedding: Mapped[list[float] | None] = mapped_column(
+        HALFVEC(settings.embedding_dim),
+        nullable=True,
+        comment="语义向量（保存时即时生成；失败留 NULL，检索回退 recency 的文档化退化）",
+    )

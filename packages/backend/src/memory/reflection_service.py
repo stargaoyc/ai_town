@@ -121,6 +121,7 @@ class ReflectionService:
             )
             stored = await self.ref_repo.add(reflection)
             saved = stored
+            await self._embed_saved(stored)
             for memory_id in theme["memory_ids"]:
                 episode = episodes[memory_id - 1]
                 self.ref_repo.session.add(
@@ -197,9 +198,26 @@ class ReflectionService:
                 tier=2,
             )
             saved = await self.ref_repo.add(reflection)
+            await self._embed_saved(saved)
 
         logger.info("meta_reflection_completed", character_id=str(character_id), metas=len(metas))
         return saved
+
+    async def _embed_saved(self, stored: Reflection) -> None:
+        """为已保存的反思即时生成语义向量（与 EmbeddingWorker 同一 llm.embed 路径）
+
+        失败降级：embedding 留 NULL，search_semantic 自动跳过该行，
+        检索回退 recency——反思低频，不值得像记忆 worker 那样建重试队列。
+        """
+        try:
+            stored.embedding = await self.llm.embed(stored.content)
+        except Exception as e:
+            logger.warning(
+                "reflection_embedding_failed",
+                character_id=str(stored.character_id),
+                reflection_id=str(stored.id),
+                error=str(e),
+            )
 
     def _parse_themes(self, result: dict[str, Any], total: int) -> list[dict[str, Any]]:
         """解析主题输出：过滤非法条目，memory_ids 收敛到 [1, total] 且去重"""

@@ -18,6 +18,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from prometheus_client import REGISTRY
 from prometheus_client.exposition import generate_latest
 from prometheus_client.parser import text_string_to_metric_families
+from pydantic import BaseModel
 from sqlalchemy import desc, select, text
 from structlog import get_logger
 
@@ -66,7 +67,6 @@ from src.schemas.api_out import (
     OnebotMessagesListOut,
     SharesListOut,
     SnapshotsListOut,
-    VectorSearchOut,
 )
 from src.security.rate_limit_dep import rate_limit
 
@@ -592,22 +592,42 @@ async def get_proactive_shares(user: Admin, limit: int = 50) -> dict[str, Any]:
     }
 
 
-@router.post("/vector-search", response_model=VectorSearchOut)
+class _VectorSearchItemOut(BaseModel):
+    """向量检索单条结果：原字段超集 + 角色归属（单角色模式下为请求范围值/None）"""
+
+    id: str
+    content: str
+    importance: int
+    timestamp: str | None = None
+    similarity: float
+    is_reflected: bool
+    source_type: str
+    character_id: str | None = None
+    character_name: str | None = None
+
+
+class _VectorSearchOut(BaseModel):
+    data: list[_VectorSearchItemOut]
+    total: int
+    query: str
+
+
+@router.post("/vector-search", response_model=_VectorSearchOut)
 async def vector_search(
     user: Admin,
-    character_id: UUID,
     query: str,
+    character_id: UUID | None = None,
     top_k: int = 10,
 ) -> dict[str, Any]:
     """向量检索测试 - 调试 pgvector 检索
 
     Args:
-        character_id: 角色 ID
         query: 查询文本
+        character_id: 可选角色 ID；缺省时执行跨角色全局检索（探测全部分区）
         top_k: 返回结果数
 
     Returns:
-        检索结果列表（含相似度分数）
+        检索结果列表（含相似度分数；character_id/character_name 标注归属）
     """
     llm = get_llm()
     if not llm:
@@ -620,18 +640,19 @@ async def vector_search(
         # 生成查询向量
         query_embedding = await llm.embed(query)
 
-        # 使用 MemoryRepository 进行向量检索
+        # 使用 MemoryRepository 进行向量检索（无角色 ID 时跨角色全局检索）
         async with db.session() as session:
             repo = MemoryRepository(session)
-            results = await repo.search_hybrid(
-                character_id=character_id,
-                query_vec=query_embedding,
-                top_k=top_k,
-            )
+            if character_id is None:
+                results = await repo.search_hybrid_global(query_vec=query_embedding, top_k=top_k)
+                scope_cid: str | None = None
+            else:
+                results = await repo.search_hybrid(character_id=character_id, query_vec=query_embedding, top_k=top_k)
+                scope_cid = str(character_id)
 
         return {
             "query": query,
-            "character_id": str(character_id),
+            "character_id": scope_cid,
             "data": [
                 {
                     "id": str(ep["id"]),
@@ -639,8 +660,10 @@ async def vector_search(
                     "importance": ep["importance"],
                     "timestamp": ep["timestamp"].isoformat() if ep.get("timestamp") else None,
                     "similarity": float(ep.get("sim_score", 0.0)),
-                    "is_reflected": ep.get("is_reflected", False),
+                    "is_reflected": bool(ep.get("is_reflected", False)),
                     "source_type": ep.get("source_type", "action"),
+                    "character_id": str(ep["character_id"]) if ep.get("character_id") is not None else scope_cid,
+                    "character_name": ep.get("character_name"),
                 }
                 for ep in results
             ],
