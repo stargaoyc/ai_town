@@ -30,7 +30,7 @@ from src.core.locks import acquire_resource_locks, release_lock, watch_locks
 from src.core.state_codec import decode_state_value, encode_state_mapping
 from src.core.world.evolutions.scene_evolution import VISITORS_KEY
 from src.cost_control import CircuitOpen
-from src.db.models import ActionRecord, Character, CharacterStateHistory, MemoryEpisode
+from src.db.models import ActionRecord, Character, CharacterStateHistory, MemoryEpisode, Reflection
 from src.db.repositories import (
     ActionRepository,
     CharacterRepository,
@@ -143,6 +143,50 @@ def _build_schedule_text(character: Any, world: dict[str, Any]) -> str:
     if system.is_sleeping(schedule_name, hour):
         text += "（睡眠时间：应休息/睡眠，不宜外出或社交）"
     return text
+
+
+# === chat_with 多轮对话常量 ===
+
+# 轮数硬上限：无论配置多大最多 3 轮（每轮双方各一句 = 2 次 LLM 调用），
+# 控制单次 chat_with 的调用次数上界
+_CHAT_MAX_ROUNDS = 3
+# 每轮 prompt 只携带对话记录的末尾窗口：逐轮重发全量记录会让 token 成本随轮数平方增长，
+# 且对下一句真正有影响的只是最近的交流
+_CHAT_TRANSCRIPT_MAX_CHARS = 800
+# 整场对话写入记忆前压缩到该长度以内：记忆条目被长期检索复用，超长原文会稀释向量召回
+_CHAT_MEMORY_MAX_CHARS = 300
+# LLM 评估的关系增量钳制范围：防止单次对话的异常评分扭曲关系图谱
+_CHAT_QUALITY_DELTA_LIMIT = 10
+# LLM 评估不可用时的固定回退增量（历史行为）：陌生人破冰小幅加固，其他常规增幅
+_CHAT_LEGACY_STRANGER_DELTA = 2
+_CHAT_LEGACY_DEFAULT_DELTA = 5
+
+
+def _clip_tail(text: str, max_chars: int) -> str:
+    """只保留文本末尾 max_chars 字符（对话的最新部分比开场更影响下一句）"""
+    return text[-max_chars:]
+
+
+def _personality_text(c: Character) -> str:
+    """性格列表转顿号分隔文本（chat prompt 注入用）"""
+    p = (c.traits or {}).get("personality", [])
+    return "、".join(p) if isinstance(p, list) else str(p)
+
+
+def _parse_chat_line(raw: str) -> str | None:
+    """解析单轮台词的严格 JSON 输出；失败返回 None（调用方判定整场对话失败）"""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = "\n".join(ln for ln in text.split("\n") if not ln.startswith("```")).strip()
+    start, end = text.find("{"), text.rfind("}") + 1
+    if start == -1 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start:end])
+    except json.JSONDecodeError:
+        return None
+    line = parsed.get("line") if isinstance(parsed, dict) else None
+    return line.strip() if isinstance(line, str) and line.strip() else None
 
 
 class CharacterTickEngine:
@@ -431,11 +475,14 @@ class CharacterTickEngine:
             f"情绪{state.get('mood', '平静')}，计划：{plan_titles}，最近的经历与相关往事"
         )
         memories = []
+        query_vec: list[float] = []
         try:
             async with db.session() as session:
                 mem_repo = MemoryRepository(session)
                 retrieval_service = RetrievalService(self.llm, mem_repo)
-                memories = await retrieval_service.search(character_id, query, top_k=10)
+                # 单次 embed 复用：同一查询向量同时供记忆与反思语义检索
+                query_vec = await self.llm.embed(query)
+                memories = await retrieval_service.search_with_vec(character_id, query_vec, top_k=10)
         except Exception as e:
             logger.warning(
                 "memory_retrieval_failed_continue",
@@ -474,7 +521,16 @@ class CharacterTickEngine:
                 )
 
             try:
-                refs = await ReflectionRepository(session).get_by_character(character_id, limit=5)
+                # 语义优先：按当前情境召回相关反思（embedding 由反思保存时生成）；
+                # 不足 limit 或向量缺失（历史行/生成失败降级）时以最近反思补齐
+                refs: list[Reflection] = []
+                if query_vec:
+                    refs = await ReflectionRepository(session).search_semantic(character_id, query_vec, limit=5)
+                if len(refs) < 5:
+                    seen_ids = {r.id for r in refs}
+                    recent = await ReflectionRepository(session).get_by_character(character_id, limit=5)
+                    refs.extend(r for r in recent if r.id not in seen_ids)
+                refs = refs[:5]
                 if refs:
                     reflections_text = "\n".join(f"- {r.content[:_DECISION_ITEM_MAX_CHARS]}" for r in refs)
             except Exception as e:
@@ -1333,7 +1389,12 @@ class CharacterTickEngine:
         decision: DecisionResult,
         context: dict[str, Any],
     ) -> str | None:
-        """chat_with 实际执行逻辑（在跨角色锁保护下运行）"""
+        """chat_with 实际执行逻辑（在跨角色锁保护下运行）
+
+        多轮对话：每轮发起方先说一句、对方回一句（逐轮小 LLM 调用，
+        各自看到不断增长的对话记录）；结束后由 LLM 评估本次交流对
+        双方关系的增量，评估不可用时回退固定值。
+        """
         async with db.session() as session:
             char_repo = CharacterRepository(session)
             target_data = await char_repo.get_character_with_state(target_id)
@@ -1343,7 +1404,6 @@ class CharacterTickEngine:
         target_char, _ = target_data
 
         # 读取关系（用于在 prompt 中说明亲密度，影响对话语气）
-
         rel_snapshot = None
         try:
             async with db.session() as rel_session:
@@ -1353,39 +1413,48 @@ class CharacterTickEngine:
             logger.debug("chat_relation_query_failed_continue", error=str(e))
 
         relationship_desc = "陌生人"
+        # 缺省 20 与 RelationGraph.ensure_relation 首次建交写入的默认强度一致
+        rel_strength = 20
         if rel_snapshot:
             relationship_desc = rel_snapshot.relationship_type
+            rel_strength = rel_snapshot.strength
 
-        # 提取双方性格
-        def _personality_text(c: Character) -> str:
-            p = (c.traits or {}).get("personality", [])
-            return "、".join(p) if isinstance(p, list) else str(p)
-
-        # 生成对话（一次往返：发起方说一句，对方回应一句）
-        # 不暴露工程概念，用自然语言描述场景
         state = context["state"]
         world = context["world"]
-        prompt = self.prompts.render(
-            "chat_with",
-            location=state.get("location", "某处"),
-            world_time=world.get("world_time", "未知"),
-            weather=world.get("weather", "未知"),
-            initiator_name=character.name,
-            initiator_personality=_personality_text(character),
-            mood=state.get("mood", "calm"),
-            target_name=target_char.name,
-            target_personality=_personality_text(target_char),
-            relationship=relationship_desc,
-            intent=decision.reason,
-        )
 
+        # 逐轮生成；任一句生成/解析失败即整场失败，调用方降级为 wait（保持既有语义）
+        rounds = min(settings.chat_with_max_rounds, _CHAT_MAX_ROUNDS)
+        transcript_lines: list[str] = []
         try:
-            dialogue = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
-            dialogue = dialogue.strip()
-            if len(dialogue) < 5:
-                return None
-            # 截断超长对话
-            dialogue = dialogue[:800]
+            for round_index in range(rounds):
+                for speaker, listener in ((character, target_char), (target_char, character)):
+                    line = await self._generate_chat_turn(
+                        speaker=speaker,
+                        listener=listener,
+                        relationship_desc=relationship_desc,
+                        rel_strength=rel_strength,
+                        topic_hint=decision.reason,
+                        state=state,
+                        world=world,
+                        transcript="\n".join(transcript_lines),
+                    )
+                    if line is None:
+                        logger.error(
+                            "chat_dialogue_generation_failed",
+                            character_id=str(character_id),
+                            target_id=target_id_str,
+                            error="turn_parse_failed",
+                        )
+                        return None
+                    transcript_lines.append(f"{speaker.name}: {line}")
+                    logger.info(
+                        "chat_with_turn_completed",
+                        character_id=str(character_id),
+                        target_id=target_id_str,
+                        round=round_index + 1,
+                        speaker=speaker.name,
+                        listener=listener.name,
+                    )
         except Exception as e:
             logger.error(
                 "chat_dialogue_generation_failed",
@@ -1396,8 +1465,32 @@ class CharacterTickEngine:
             )
             return None
 
-        # 更新双向关系：陌生人破冰 +2，其他 +5（双方同步）
-        strength_delta = 2 if relationship_desc == "stranger" else 5
+        dialogue = "\n".join(transcript_lines)
+
+        # 关系增量：优先 LLM 按对话质量评估，不可用时回退固定值——
+        # 文档化降级（同 group_activity 模板叙事回退哲学），非静默吞错
+        strength_delta = _CHAT_LEGACY_STRANGER_DELTA if relationship_desc == "stranger" else _CHAT_LEGACY_DEFAULT_DELTA
+        quality_assessed = False
+        if settings.chat_quality_enabled:
+            assessed = await self._assess_chat_delta(
+                char_a_name=character.name,
+                char_b_name=target_char.name,
+                relationship_type=relationship_desc,
+                strength=rel_strength,
+                transcript=dialogue,
+            )
+            if assessed is not None:
+                strength_delta = assessed
+                quality_assessed = True
+            else:
+                logger.warning(
+                    "chat_quality_fallback_legacy_delta",
+                    character_id=str(character_id),
+                    target_id=target_id_str,
+                    strength_delta=strength_delta,
+                )
+
+        # 更新双向关系（双方同步）
         try:
             async with db.session() as rel_session:
                 graph = RelationGraph(rel_session, self.redis)
@@ -1415,7 +1508,7 @@ class CharacterTickEngine:
             )
 
         # 为双方各写入一条记忆（source_type=conversation）
-        # 让两人都记得这次对话，未来检索时可回忆起
+        # 让两人都记得这次多轮交流，未来检索时可回忆起
         try:
             async with db.session() as session:
                 now = datetime.now(UTC)
@@ -1424,7 +1517,10 @@ class CharacterTickEngine:
                 session.add(
                     MemoryEpisode(
                         character_id=character_id,
-                        content=f"在{state.get('location', '某处')}和{target_char.name}聊天。{dialogue}",
+                        content=(
+                            f"在{state.get('location', '某处')}和{target_char.name}聊天。"
+                            f"{dialogue[:_CHAT_MEMORY_MAX_CHARS]}"
+                        ),
                         importance=6,
                         timestamp=now,
                         source_type="conversation",
@@ -1437,7 +1533,10 @@ class CharacterTickEngine:
                 session.add(
                     MemoryEpisode(
                         character_id=target_id,
-                        content=f"在{state.get('location', '某处')}和{character.name}聊天。{dialogue}",
+                        content=(
+                            f"在{state.get('location', '某处')}和{character.name}聊天。"
+                            f"{dialogue[:_CHAT_MEMORY_MAX_CHARS]}"
+                        ),
                         importance=6,
                         timestamp=now,
                         source_type="conversation",
@@ -1462,10 +1561,84 @@ class CharacterTickEngine:
             target_name=target_char.name,
             relationship=relationship_desc,
             strength_delta=strength_delta,
+            quality_assessed=quality_assessed,
+            rounds=len(transcript_lines),
             dialogue_length=len(dialogue),
         )
 
         return dialogue
+
+    async def _generate_chat_turn(
+        self,
+        *,
+        speaker: Any,
+        listener: Any,
+        relationship_desc: str,
+        rel_strength: int,
+        topic_hint: str,
+        state: dict[str, Any],
+        world: dict[str, Any],
+        transcript: str,
+    ) -> str | None:
+        """生成多轮对话中的单句台词；解析失败返回 None，渲染/LLM 异常向上抛"""
+        if transcript:
+            # 只喂末尾窗口：每轮都重发全量记录会让 token 成本随轮数平方增长
+            transcript_block = (
+                f"目前为止的对话记录（仅保留最近部分）：\n{_clip_tail(transcript, _CHAT_TRANSCRIPT_MAX_CHARS)}"
+            )
+        else:
+            transcript_block = "这是对话的开场，请由你先开口。"
+
+        # 不暴露工程概念，用自然语言描述场景
+        prompt = self.prompts.render(
+            "chat_turn",
+            location=state.get("location", "某处"),
+            world_time=world.get("world_time", "未知"),
+            mood=state.get("mood", "calm"),
+            speaker_name=speaker.name,
+            speaker_personality=_personality_text(speaker),
+            listener_name=listener.name,
+            relationship=relationship_desc,
+            strength=int(rel_strength),
+            topic_hint=topic_hint,
+            transcript_block=transcript_block,
+        )
+        raw = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
+        return _parse_chat_line(raw)
+
+    async def _assess_chat_delta(
+        self,
+        *,
+        char_a_name: str,
+        char_b_name: str,
+        relationship_type: str,
+        strength: int,
+        transcript: str,
+    ) -> int | None:
+        """LLM 结构化评估一次对话对双方关系强度的增量；任何失败返回 None（调用方回退固定值）"""
+        schema = {
+            "type": "object",
+            "properties": {
+                "delta": {"type": "integer"},
+                "reason": {"type": "string"},
+            },
+            "required": ["delta"],
+        }
+        try:
+            prompt = self.prompts.render(
+                "chat_quality",
+                char_a_name=char_a_name,
+                char_b_name=char_b_name,
+                relationship_type=relationship_type,
+                strength=int(strength),
+                transcript=_clip_tail(transcript, _CHAT_TRANSCRIPT_MAX_CHARS),
+            )
+            result = await self.llm.structured_output(prompt, schema, model="chat")
+            # 缺键直接 KeyError → 由降级路径捕获回退固定值
+            return max(-_CHAT_QUALITY_DELTA_LIMIT, min(_CHAT_QUALITY_DELTA_LIMIT, int(result["delta"])))
+        except Exception as e:
+            logger.warning("chat_quality_assessment_failed", error=str(e))
+            return None
 
     @staticmethod
     async def _apply_plan_changes(

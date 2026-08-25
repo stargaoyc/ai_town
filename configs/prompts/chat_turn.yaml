@@ -1,0 +1,17 @@
+name: chat_turn
+# 角色间多轮对话逐轮生成（Tick 链路 chat_with Action，每轮双方各一句）
+template: |
+  场景：{location}，虚拟时间：{world_time}，当前情绪：{mood}
+  你正在扮演：{speaker_name}（性格：{speaker_personality}）
+  对话对象：{listener_name}
+  双方关系：{relationship}（亲密度 {strength}/100）
+  这次聊天的话题起因：{topic_hint}
+
+  {transcript_block}
+
+  请以{speaker_name}的身份说出下一句话（30-80 字，口语化）：
+  - 若上方有对话记录，必须自然接住对方上一句（回应/追问/分享感受），不要重复寒暄
+  - 符合你的性格与双方关系的亲密程度（陌生人礼貌客气，密友可聊心事）
+  - 不要暴露 Action/system/LLM 等工程概念，不要用括号描写动作，不要播报数值
+  输出格式（严格 JSON）：
+  {{ "line": "<{speaker_name}的台词>" }}

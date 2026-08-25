@@ -45,13 +45,24 @@ class RetrievalService:
         # 生成查询向量
         query_vec = await self.llm.embed(query)
 
-        # 混合检索
+        return await self.search_with_vec(character_id, query_vec, top_k)
+
+    async def search_with_vec(
+        self,
+        character_id: UUID,
+        query_vec: list[float],
+        top_k: int = 10,
+    ) -> list[dict[str, Any]]:
+        """以现成查询向量执行混合检索
+
+        供调用方在同一 Tick 内复用一次 embed 结果检索多类认知产物
+        （记忆 + 反思），避免重复向量化开销。
+        """
         results = await self.repo.search_hybrid(character_id, query_vec, top_k)
 
         logger.debug(
             "memory_search_completed",
             character_id=str(character_id),
-            query=query,
             count=len(results),
         )
         return results
