@@ -283,5 +283,7 @@ class PersonMemoryService:
             text = str(summary or content or "").strip().replace("\n", " ")[:80]
             if not text:
                 continue
-            lines.append(f"- 用户 {user_id}（亲密度 {heat}）：{text}")
+            # 剥离平台前缀（qq_123456 → 123456）：工程标识符不应进入 LLM 上下文（三轮审查 L3）
+            display_id = str(user_id).split("_", 1)[-1]
+            lines.append(f"- 用户 {display_id}（亲密度 {heat}）：{text}")
         return "\n".join(lines)
