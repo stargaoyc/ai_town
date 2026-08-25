@@ -8,6 +8,48 @@
 
 ### Added
 
+- **告警回流后端**：Alertmanager 默认 receiver 接入 `/api/v1/system/alerts/webhook`（bearer token 鉴权），
+  告警经结构化日志 + `ai_town_alerts_received_total` 指标双通道落地，不再只进 Grafana UI；配置
+  `ALERT_WEBHOOK_TOKEN`。
+- **Redis 定时快照**：新增 redis-backup 服务（`--profile backup`）——redis-cli --rdb 一致性快照写入
+  备份卷，实时状态真相源首次纳入备份；配套恢复演练脚本 `scripts/restore_drill.sh`。
+- **群聊共享上下文**：群消息入 Redis 环（20 条/24h），角色回复经 chat.yaml 注入其他成员近期发言，
+  多方对话不再答非所问。
+- **认知产物保留策略**：tier-1 反思 / 日记 / PM 已压缩条目 / 归档行四类此前无界数据纳入 retention
+  分级清理，各带保留期开关。
+
+### Changed
+
+- **pg_dump 改自定义格式**：备份自带压缩、支持 `pg_restore --jobs` 并行恢复；deployment.md §七
+  重写对齐实际（移除不存在的 WAL/RPO 5 分钟宣称）。
+- **WS JWT 走子协议头**：/ws/dashboard 的 token 经 Sec-WebSocket-Protocol 传递，不再拼进 URL。
+- **vitest 环境改 jsdom**：与既有 DOM 组件测试对齐；登录页默认凭据提示仅开发构建显示。
+
+### Fixed
+
+- **ReAct 工具调用循环复活（R4-H1 P0）**：候选校验豁免 use_tool 保留字——修复工具循环自特性落地起
+  即为死代码的出生缺陷；ToolRegistry 新增必填参数校验、ReAct 循环端到端回归测试。
+- **隐私边界收紧（R4-H2 P0）**：AuthMiddleware 公开 GET 前缀移除 characters/memories——Person Memory、
+  记忆流、日记等用户衍生内容回归登录边界。
+- **消息发送身份绑定（R4-H3）**：POST /messages/send 校验 JWT sub 与 body user_id 一致，
+  API Key 主体允许机器代发。
+- **CI 部署冒烟（R4-H4）**：新增 deploy-smoke 作业——compose config 校验 + 双镜像构建 + 起栈探活，
+  关闭镜像不可构建/容器无法启动/nginx 运行时故障三类事故的复发通道。
+- **frontend 端口回环绑定（R4-H5）**；Jaeger 改 badger 持久化；全部服务补 mem_limit（R4-L5）。
+- **EMBEDDING_DIM 治理迁移链化（R4-H7）**：ORM 钉死 halfvec(2048) + 启动期物理列维度 fail-fast 校验。
+- **LLM 预算全覆盖（R4-M5）**：embed/embed_multimodal/multimodal_chat 纳入预算检查与用量记账；
+  Langfuse 记录失败调用（R4-M6）；structured_output 解析失败重试一次（R4-M9）。
+- **HTTP 指标 path 标签模板化（R4-M4）**：消除参数化路由 UUID 与 404 探测的高基数。
+- **文档↔schema 对齐（R4-M1）**：0016 迁移补建 idx_plans_char_status / idx_refl_char_time；
+  data-model.md 七处漂移校正（幽灵表 module_configs 移除等）。
+- **WS 发送超时与分享投递顺序（R4-M12/M13）**：Web WS 加 10s 超时+死连接驱逐；分享先落库后推送。
+- **决策链收尾（R4-M10/L3/L4/M11）**：move 参数契约进 Prompt；关系评审用强模型；动态耗时钳制
+  [1,480]；工具关系增量随主事务提交。
+- **杂项卫生**：死模板 chat_with.yaml 移除（R4-L1）；删除角色清理 rec_ver 孤儿键（R4-L5）；
+  群活动关系加成每对每日限额（R4-M16）。
+
+### Added
+
 - **视频生成链路**：新增 media.generate_video_clip 工具（帧数自动对齐 8n+1、同步轮询 agnes-video-v2.0），出站净化支持视频直链转 [CQ:video]；⚠️ 同步生成较慢约 1-3 分钟，仅建议在用户明确要求时使用。
 - **改写式记忆去重（B1）**：EmbeddingWorker 向量化时与同角色近 24h 记忆余弦比对（≥0.95 判定重复），重复行不落向量且检索/反思排除；迁移新增 `is_duplicate` 标记列。配置 `MEMORY_DEDUP_ENABLED` / `MEMORY_DEDUP_SIMILARITY_THRESHOLD` / `MEMORY_DEDUP_WINDOW_HOURS`。
 - **daily 计划滚动过期（B2）**：创建超 TTL 的 active 当日计划随世界时间检查自动置 `expired`。配置 `DAILY_PLAN_TTL_HOURS`。
