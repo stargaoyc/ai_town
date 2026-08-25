@@ -90,6 +90,22 @@ def estimate_cost(prompt_tokens: int, completion_tokens: int, model: str | None 
     return prompt_tokens * input_price + completion_tokens * output_price
 
 
+def _resolve_tier_model(tier: str) -> str:
+    """把模型档位映射为具体模型名（round-3 M15）
+
+    此前 structured_output 无视传入档位、强制重定向 chat（仅告警），
+    与 README「群聊判断走 flash」承诺漂移。未知档位回退 chat 并告警，
+    保持旧行为（拼错档位不应静默换模型）。
+    """
+    if tier == "strong":
+        return settings.model_strong
+    if tier == "flash":
+        return settings.model_flash
+    if tier != "chat":
+        logger.warning("llm_unknown_model_tier_fallback_chat", tier=tier)
+    return settings.model_chat
+
+
 @dataclass(frozen=True)
 class LLMUsage:
     """单次 LLM 调用的真实用量（来自 response_metadata，非估算）
@@ -597,12 +613,12 @@ class LLMClient:
         """结构化输出（用于 LLM 决策）
 
         使用 LangChain 的 with_structured_output 方法。
-        仅使用 chat 模型（文本决策）。
 
         Args:
             prompt: 输入提示
             schema: 输出结构的 JSON Schema
-            model: 已废弃，始终使用 chat 模型
+            model: 模型档位（chat/strong/flash），映射到对应配置模型；
+                默认 chat 与历史行为一致
 
         Returns:
             符合 schema 的结构化输出
@@ -616,9 +632,13 @@ class LLMClient:
         schema: dict[str, Any],
         model: str = "chat",
     ) -> tuple[dict[str, Any], LLMUsage]:
-        """结构化输出并返回真实 token 用量（include_raw 透出 response_metadata）"""
-        if model != "chat":
-            logger.warning("structured_output_model_redirect_to_chat", original_model=model)
+        """结构化输出并返回真实 token 用量（include_raw 透出 response_metadata）
+
+        Args:
+            model: 模型档位（chat/strong/flash）。round-3 M15 机制修复：恢复
+                尊重调用方请求的档位；默认 chat 时与池内主源模型一致，行为不变。
+        """
+        resolved_model = _resolve_tier_model(model)
 
         pydantic_model = self._schema_to_pydantic(schema)
 
@@ -627,7 +647,14 @@ class LLMClient:
         try:
 
             async def _invoke_structured(llm: ChatOpenAI) -> dict[str, Any]:
-                structured = llm.with_structured_output(pydantic_model, include_raw=True)
+                # 仅显式请求非默认档位时才覆盖源模型（chat 即主源默认，无需改写；
+                # 测试替身等鸭子类型实现因此不必模拟 ChatOpenAI 字段）。
+                # model_name 是 ChatOpenAI 字段名（alias "model"），model_copy
+                # 绕过 pydantic 校验直接改写并保留该源 api_key/base_url。
+                target_llm = llm
+                if resolved_model != settings.model_chat and llm.model_name != resolved_model:
+                    target_llm = llm.model_copy(update={"model_name": resolved_model})
+                structured = target_llm.with_structured_output(pydantic_model, include_raw=True)
                 return await structured.ainvoke(prompt)
 
             bundle, _source = await invoke_with_fallback(self._source_pool, _invoke_structured)
@@ -653,7 +680,8 @@ class LLMClient:
             prompt_tokens = int(token_usage.get("prompt_tokens", 0))
             completion_tokens = int(token_usage.get("completion_tokens", 0))
             total_tokens = prompt_tokens + completion_tokens
-            estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=model)
+            # 计费按实际解析出的模型名单价查表（档位字符串查不到按模型单价表）
+            estimated_cost = estimate_cost(prompt_tokens, completion_tokens, model=resolved_model)
             usage = LLMUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,

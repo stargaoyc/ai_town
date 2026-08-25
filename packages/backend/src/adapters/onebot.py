@@ -37,10 +37,13 @@ import asyncio
 import json
 import re
 import secrets
+import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from prometheus_client import Counter
 from starlette.websockets import WebSocketState
 from structlog import get_logger
 
@@ -61,11 +64,55 @@ MAX_SEGMENT_LENGTH = 500
 SEGMENT_SEND_INTERVAL = 0.6
 # 回复去重键 TTL（秒）：与原实现一致，防止 OneBot 实现重发同一事件导致重复回复
 _REPLY_DEDUP_TTL_SECONDS = 600
+# 出站帧发送超时（秒，M17）：半开连接的 send_text 会永久阻塞，必须限时后
+# 走跨连接 failover / 驱逐。config.py 本轮禁改，先以模块常量落地。
+_SEND_TIMEOUT_SECONDS = 10.0
+# 心跳新鲜度阈值（秒，M17）：约 2 倍常见 OneBot 心跳间隔（30s）。超过该时长
+# 未收到心跳的连接在选择发送目标时排到新鲜连接之后。
+_HEARTBEAT_FRESH_SECONDS = 60.0
+
+# QQ 层 action 响应可观测（M12）：此前 send-action 的 retcode 响应被当作未知
+# 事件吞掉，QQ 侧发送失败（风控 / 禁言 / 目标不存在）完全不可见。
+ONEBOT_ACTION_RESPONSE_TOTAL = Counter(
+    "ai_town_onebot_action_response_total",
+    "OneBot send-action 响应次数",
+    ["outcome"],  # outcome: success/failed
+)
 
 
 def _reply_dedup_key(message_id: str) -> str:
     """回复去重键（键格式与原实现保持一致）"""
     return f"onebot:msg:{message_id}"
+
+
+def _parse_action_response(data: dict[str, Any]) -> dict[str, Any] | None:
+    """识别并归一化 OneBot action 响应帧（round-3 M12）
+
+    v11/v12 的 action 响应形如 {"status": ..., "retcode": ..., "data": ..., "echo": ...}：
+    - v11：retcode 为 int，0 成功、1 已转异步、1200+ 各类失败
+    - v12：status 为字符串（"ok"/"failed"），retcode 恒为 int
+
+    成功判定：retcode 属于 {0, 1} 且 status 非 "failed"（1=async 视为已受理，
+    结果经回调异步送达，此处只关心同步可判定的失败）。
+
+    Returns:
+        归一化结果 {"ok": bool, "status": str, "retcode": Any, "echo": Any}；
+        非响应帧（正常事件）返回 None
+    """
+    if "post_type" in data or "type" in data:
+        return None
+    if "retcode" not in data or "status" not in data:
+        return None
+
+    retcode = data["retcode"]
+    status = str(data["status"]).lower()
+    ok = retcode in (0, 1) and status != "failed"
+    return {
+        "ok": ok,
+        "status": status,
+        "retcode": retcode,
+        "echo": data.get("echo"),
+    }
 
 
 def _get_default_character_id() -> UUID | None:
@@ -400,6 +447,10 @@ class OneBotAdapter:
         # 活跃连接集合，用于广播和主动回复
         # 注意：OneBot 实现通常只有 1 个连接，这里保留 set 以支持多实例
         self._connections: set[WebSocket] = set()
+        # 连接附属信息（M14/M17）：键与 _connections 同生命周期，_unregister/_evict
+        # 同步清理。心跳/账号由元事件携带，连接建立初期合法地为空。
+        self._last_heartbeat: dict[WebSocket, float] = {}
+        self._conn_self_id: dict[WebSocket, str] = {}
         self._lock = asyncio.Lock()
         self._running = False
         # 断连兜底：启动时重放队列中未确认的消息事件（后台任务）
@@ -433,14 +484,17 @@ class OneBotAdapter:
                     await asyncio.sleep(30)
                     continue
                 queue = EventQueue(redis_client)
-                ws = await self._any_ws()
-                if ws is None:
-                    await asyncio.sleep(5)
-                    continue
 
-                async def _replay(ev: dict[str, Any], _ws: WebSocket = ws) -> None:
-                    # 默认参数在定义时绑定当前 ws（每轮迭代重新定义，无晚绑定）
-                    await self.handle_event(ev, _ws)
+                async def _replay(ev: dict[str, Any]) -> None:
+                    # 每条事件按其 self_id 选同账号连接（M14：多账号部署下若绑
+                    # 任意连接，重放的回复会从错误 QQ 号发出）；无匹配账号时退回
+                    # 任意活跃连接，单账号部署行为不变。
+                    # 无可用连接必须抛错：静默返回会让 recover_drain 把条目
+                    # XDEL 掉而回复未发出。
+                    ws = await self._ws_for_self_id(ev.get("self_id")) or await self._any_ws()
+                    if ws is None:
+                        raise RuntimeError("onebot_replay_no_connection")
+                    await self.handle_event(ev, ws)
 
                 replayed = await queue.recover_drain(_replay, max_entries=100)
                 if replayed:
@@ -452,12 +506,39 @@ class OneBotAdapter:
             await asyncio.sleep(15)
 
     async def _any_ws(self) -> WebSocket | None:
-        """取一个活跃 OneBot 连接用于恢复重放时的回复发送"""
+        """取一个活跃 OneBot 连接；近期有心跳的连接优先于陈旧连接（M17）"""
+        connected = await self._connected_snapshot()
+        if not connected:
+            return None
+        fresh = self._fresh_first(connected)
+        return fresh[0] if fresh else connected[0]
+
+    async def _ws_for_self_id(self, self_id: Any) -> WebSocket | None:
+        """选择 self_id 匹配的活跃连接（多账号部署下重放必须走同账号出口）
+
+        Returns:
+            匹配的连接（心跳新鲜者优先）；无匹配账号连接时返回 None，
+            由调用方决定是否退回 _any_ws()
+        """
+        target = str(self_id) if self_id is not None else ""
+        if not target:
+            return None
+        connected = await self._connected_snapshot()
+        matches = [ws for ws in connected if self._conn_self_id.get(ws) == target]
+        if not matches:
+            return None
+        fresh = self._fresh_first(matches)
+        return fresh[0] if fresh else matches[0]
+
+    async def _connected_snapshot(self) -> list[WebSocket]:
+        """锁内快照当前 CONNECTED 的连接列表"""
         async with self._lock:
-            for ws in self._connections:
-                if ws.client_state == WebSocketState.CONNECTED:
-                    return ws
-        return None
+            return [ws for ws in self._connections if ws.client_state == WebSocketState.CONNECTED]
+
+    def _fresh_first(self, conns: list[WebSocket]) -> list[WebSocket]:
+        """按心跳新鲜度过滤：从未收到心跳的新连接视为新鲜（delta=0）"""
+        now = time.monotonic()
+        return [ws for ws in conns if now - self._last_heartbeat.get(ws, now) < _HEARTBEAT_FRESH_SECONDS]
 
     async def stop(self) -> None:
         """停止适配器，关闭所有 OneBot 连接"""
@@ -489,6 +570,9 @@ class OneBotAdapter:
     async def _unregister(self, websocket: WebSocket) -> None:
         async with self._lock:
             self._connections.discard(websocket)
+            # 心跳/账号记录可能尚未建立（连接后未收到任何元事件），允许缺键
+            self._last_heartbeat.pop(websocket, None)
+            self._conn_self_id.pop(websocket, None)
 
     async def _ws_endpoint(self, websocket: WebSocket) -> None:
         """OneBot v11/v12 反向 WebSocket 入口端点
@@ -531,6 +615,21 @@ class OneBotAdapter:
 
                 if not isinstance(event, dict):
                     logger.warning("onebot_event_not_dict", event=event)
+                    continue
+
+                # M12：send-action 的 retcode 响应不是事件帧。此前落入
+                # unknown_event 分支被吞掉，QQ 层发送失败完全不可观测，
+                # push_share 的 failover 也只能对 ws 级错误生效。
+                action_resp = _parse_action_response(event)
+                if action_resp is not None:
+                    ONEBOT_ACTION_RESPONSE_TOTAL.labels(outcome="success" if action_resp["ok"] else "failed").inc()
+                    log = logger.debug if action_resp["ok"] else logger.warning
+                    log(
+                        "onebot_action_response_ok" if action_resp["ok"] else "onebot_action_response_failed",
+                        status=action_resp["status"],
+                        retcode=action_resp["retcode"],
+                        echo=action_resp["echo"],
+                    )
                     continue
 
                 # 断连兜底：消息事件先持久化到 Streams（处理成功后 XACK+XDEL 从
@@ -597,7 +696,7 @@ class OneBotAdapter:
         if event_type == "message":
             await self._handle_message_event(event, onebot_ws)
         elif event_type == "meta_event":
-            await self._handle_meta_event(event)
+            await self._handle_meta_event(event, onebot_ws)
         elif event_type == "notice":
             logger.debug("onebot_notice_event_ignored", detail_type=event.get("detail_type"))
         elif event_type == "request":
@@ -829,14 +928,21 @@ class OneBotAdapter:
             return
         await redis_client.delete(_reply_dedup_key(message_id))
 
-    async def _handle_meta_event(self, event: dict[str, Any]) -> None:
+    async def _handle_meta_event(self, event: dict[str, Any], onebot_ws: WebSocket) -> None:
         """处理 OneBot 元事件（心跳 / 生命周期）
 
         兼容 OneBot v12 (detail_type) 和 OneBot 11 (meta_event_type)。
-        仅记录日志，不做业务处理。
+        心跳时间戳与 self_id 归属在此记录（M14/M17），供连接选择与新鲜度判定使用。
         """
         detail_type = event.get("detail_type") or event.get("meta_event_type")
+
+        # v11/v12 的元事件均携带 self_id：记录连接的账号归属，供按账号路由
+        sid = event.get("self_id")
+        if sid is not None:
+            self._conn_self_id[onebot_ws] = str(sid)
+
         if detail_type == "heartbeat":
+            self._last_heartbeat[onebot_ws] = time.monotonic()
             logger.debug(
                 "onebot_heartbeat",
                 status=event.get("status"),
@@ -1020,45 +1126,72 @@ class OneBotAdapter:
             "params": params,
         }
 
-        # 发送前检查 WebSocket 连接是否仍然存活
-        if onebot_ws.client_state != WebSocketState.CONNECTED:
-            logger.warning(
-                "onebot_send_ws_disconnected",
-                event_type=event_type,
-                user_id=user_id,
-                group_id=group_id,
-            )
-            return
+        # M13/M17：优先原连接，发送失败（已关闭/超时）降级到其余活跃连接。
+        # 全部候选失败时向上抛出——回复槽位释放、push_share 的多连接轮询与
+        # 错误提示路径都依赖异常感知彻底失败（round-3 H4 契约）。
+        await self._send_with_failover(onebot_ws, lambda: action)
+        logger.info(
+            "onebot_message_sent",
+            event_type=event_type,
+            user_id=user_id,
+            group_id=group_id,
+            message_length=len(message),
+            segment_index=segment_index,
+            segment_total=segment_total,
+        )
 
-        try:
-            await onebot_ws.send_text(json.dumps(action, ensure_ascii=False))
-            logger.info(
-                "onebot_message_sent",
-                event_type=event_type,
-                user_id=user_id,
-                group_id=group_id,
-                message_length=len(message),
-                segment_index=segment_index,
-                segment_total=segment_total,
-            )
-        except RuntimeError as e:
-            # WebSocket 已关闭（处理 LLM 回复期间连接断开）
-            logger.warning(
-                "onebot_send_ws_closed",
-                event_type=event_type,
-                user_id=user_id,
-                error=str(e),
-            )
-        except Exception as e:
-            logger.error(
-                "onebot_send_failed",
-                event_type=event_type,
-                user_id=user_id,
-                group_id=group_id,
-                error=str(e),
-                exc_info=True,
-            )
-            raise
+    async def _send_with_failover(
+        self,
+        preferred_ws: WebSocket,
+        build_payload_fn: Callable[[], dict[str, Any]],
+    ) -> None:
+        """优先经 preferred_ws 发送一帧，失败时降级到其余活跃连接
+
+        失败判定：starlette RuntimeError（发送中连接关闭）与 TimeoutError
+        （半开连接发送超时）。失败连接立即驱逐，避免后续选择再次命中。
+
+        Raises:
+            RuntimeError: 无任何 CONNECTED 候选，或全部候选发送失败
+                （重抛最后一个错误以保留原始失败语义）
+            Exception: 非连接类发送异常原样上抛
+        """
+        connected = await self._connected_snapshot()
+        ordered = [preferred_ws] + [ws for ws in connected if ws is not preferred_ws]
+
+        last_error: Exception | None = None
+        for ws in ordered:
+            if ws.client_state != WebSocketState.CONNECTED:
+                continue
+            try:
+                await self._send_json(ws, build_payload_fn())
+            except (RuntimeError, TimeoutError) as e:
+                last_error = e
+                logger.warning("onebot_send_failover_try_next", error=str(e))
+                await self._evict_connection(ws, f"send_failed:{type(e).__name__}")
+            else:
+                return
+
+        if last_error is None:
+            raise RuntimeError("onebot_no_connected_connection")
+        raise last_error
+
+    async def _send_json(self, onebot_ws: WebSocket, payload: dict[str, Any]) -> None:
+        """带超时的出站帧发送（M17：半开连接的 send_text 可能无限阻塞）"""
+        await asyncio.wait_for(
+            onebot_ws.send_text(json.dumps(payload, ensure_ascii=False)),
+            timeout=_SEND_TIMEOUT_SECONDS,
+        )
+
+    async def _evict_connection(self, onebot_ws: WebSocket, reason: str) -> None:
+        """驱逐发送失败的连接及其心跳/账号记录，避免再次被选中"""
+        async with self._lock:
+            if onebot_ws not in self._connections:
+                return
+            self._connections.discard(onebot_ws)
+            # 与 _unregister 同理：元事件未到的连接允许无记录
+            self._last_heartbeat.pop(onebot_ws, None)
+            self._conn_self_id.pop(onebot_ws, None)
+        logger.warning("onebot_connection_evicted", reason=reason)
 
     async def push_share(
         self,

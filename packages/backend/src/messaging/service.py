@@ -235,6 +235,10 @@ class MessageService:
                 message=text,
             )
 
+            # 群聊判定档位可配（M15：README 宣称 flash 轻量判断，
+            # 此前被 structured_output 强制重定向到 chat；机制修复后此处接线配置）
+            from src.config import settings
+
             result = await self.llm.structured_output(
                 judge_prompt,
                 schema={
@@ -245,7 +249,7 @@ class MessageService:
                     },
                     "required": ["should_reply", "reason"],
                 },
-                model="chat",
+                model=settings.group_judge_model,
             )
 
             should = bool(result.get("should_reply", False))
