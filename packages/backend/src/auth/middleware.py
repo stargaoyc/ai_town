@@ -128,14 +128,19 @@ class AuthMiddleware:
     # 公开只读 GET 路径前缀（无需登录即可查看）
     # P0-8：移除 messages/conversations/admin 前缀——聊天记录、管理日志、运行时配置
     # 含用户隐私与运维敏感信息，必须登录后按归属校验访问
+    # R4-H2：characters/memories 前缀同样移除——person-memory/diaries/记忆流等
+    # 用户衍生内容挂在其下，前缀级豁免会击穿隐私边界；Dashboard 已登录流量始终携带 token，不受影响
     PUBLIC_GET_PREFIXES = (
         "/api/v1/world",
-        "/api/v1/characters",
         "/api/v1/actions",
         "/api/v1/town/scenes",
-        "/api/v1/memories",
         "/api/v1/modules",
     )
+
+    # 精确豁免：自带独立鉴权（非 JWT）的端点。
+    # alerts/webhook 由 Alertmanager 以 bearer token 调用，无法提供 JWT，
+    # 鉴权在端点内完成（settings.alert_webhook_token）
+    PUBLIC_EXACT_PATHS = frozenset({"/api/v1/system/alerts/webhook"})
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -151,6 +156,11 @@ class AuthMiddleware:
 
         # 豁免：非 /api/ 路径、登录接口
         if not path.startswith("/api/") or path == "/api/v1/auth/login":
+            await self.app(scope, receive, send)
+            return
+
+        # 豁免：自带独立鉴权的精确路径（Alertmanager webhook 等）
+        if path in self.PUBLIC_EXACT_PATHS:
             await self.app(scope, receive, send)
             return
 

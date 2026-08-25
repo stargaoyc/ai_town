@@ -37,6 +37,7 @@ CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
 
 @router.post("/messages/send", response_model=SendMessageOut, dependencies=[Depends(rate_limit("msg_send", 60, 60))])
 async def send_message(
+    principal: CurrentUser,
     character_id: Annotated[str, Body(...)],
     user_id: Annotated[str, Body(...)],
     platform: str = "web",
@@ -44,7 +45,11 @@ async def send_message(
 ) -> dict[str, Any]:
     """发送消息给角色并获取回复
 
+    身份绑定（R4-H3）：JWT 用户只能以本人身份发言（user_id 必须等于 token sub）；
+    API Key 属机器对机器桥接（如 OneBot REST 调用方），允许代发任意 user_id。
+
     Args:
+        principal: 鉴权主体（{"user_id", "auth_method"}）
         character_id: 角色 UUID
         user_id: 用户标识
         platform: 来源平台（web/qq/lark/internal）
@@ -52,7 +57,13 @@ async def send_message(
 
     Returns:
         角色回复内容与元数据（token/cost/conversation_id）
+
+    Raises:
+        HTTPException: 403 当 JWT 用户的 user_id 与 token sub 不一致
     """
+    if principal["auth_method"] == "jwt" and user_id != principal["user_id"]:
+        raise HTTPException(status_code=403, detail="user_id does not match authenticated principal")
+
     llm = get_llm()
     prompts = get_prompts()
     redis = get_redis()
