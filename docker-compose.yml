@@ -159,6 +159,29 @@ services:
     networks:
       - aitown-net
 
+  # Redis 定时快照（R4-H6：实时状态真相源纳入备份；redis 镜像自带 redis-cli）
+  redis-backup:
+    image: redis:8-alpine
+    container_name: aitown-redis-backup
+    restart: unless-stopped
+    mem_limit: 128m
+    profiles: [backup]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD_required}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./docker/backup/redis_backup.sh:/redis_backup.sh:ro
+      - ./data/backups:/backups
+    entrypoint: ["sh", "/redis_backup.sh"]
+    logging: *default-logging
+    networks:
+      - aitown-net
+
   # ============================================================
   # 可观测性层（通过 --profile observability 启用）
   # ============================================================

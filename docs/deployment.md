@@ -335,17 +335,25 @@ curl -X POST http://localhost:8000/api/v1/admin/partitions/precreate \
 
 ## 七、备份与恢复
 
-### 7.1 备份策略
+### 7.1 备份策略（R4-H6 实际实现）
 
-| 对象       | 方式                      | 频率                |
-| ---------- | ------------------------- | ------------------- |
-| PostgreSQL | `pg_dump` 全量 + WAL 归档 | 每日全量 + 实时归档 |
-| Redis      | RDB 快照 + AOF            | 每 10 分钟 RDB      |
+| 对象 | 方式 | 频率 | 服务 |
+| ---- | ---- | ---- | ---- |
+| PostgreSQL | `pg_dump --format=custom`（自带压缩，支持 `pg_restore --jobs` 并行恢复） | 每 `BACKUP_INTERVAL_HOURS`（默认 6h） | db-backup（profile: backup） |
+| Redis | `redis-cli --rdb` 一致性 RDB 快照 + 常驻 AOF | 同上；AOF 实时落盘 ./data/redis | redis-backup（profile: backup） |
 
-### 7.2 恢复演练
+- 备份统一写入 `./data/backups`（`.part` 原子改名），按 `BACKUP_RETENTION_DAYS`（默认 14 天）自动清理；
+- **无 WAL 归档/PITR**：崩溃时最多丢失一个备份间隔内的 PG 数据（RPO ≤ 6h）；
+- **同主机风险**：备份与数据同宿主机存放——务必把 `./data/backups` 挂载/同步到异机或对象存储，
+  否则磁盘故障会同时摧毁数据与备份。
 
-- 每月一次恢复演练；
-- RTO ≤ 1 小时，RPO ≤ 5 分钟。
+### 7.2 恢复与演练
+
+- 恢复命令：`pg_restore --jobs=4 --dbname=<目标库> ai_town_<ts>.dump`；
+  Redis：停止实例 → 用 `.rdb` 覆盖 `./data/redis/dump.rdb` → 启动；
+- 自动演练脚本：`sh packages/backend/scripts/restore_drill.sh [dump] [rdb]`
+  在一次性容器中真实恢复并校验核心表行数 / RDB 可加载数据集；
+- 目标：RTO ≤ 1 小时；RPO ≤ `BACKUP_INTERVAL_HOURS`（默认 6h）。
 
 ---
 
