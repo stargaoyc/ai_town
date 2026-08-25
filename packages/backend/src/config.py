@@ -148,6 +148,13 @@ class Settings(BaseSettings):
     # 三轮审查 M15 发现实现强制 chat——现恢复为可配置，默认维持 chat 行为不变）
     group_judge_model: str = "chat"
 
+    # 角色间多轮对话：每轮双方各生成一句，轮数上限 3（控制单次 chat_with 的 LLM 成本）
+    chat_with_max_rounds: int = 2
+    # 对话结束后由 LLM 评估关系增量（替代固定 +5/+2）；关闭则回退固定值
+    chat_quality_enabled: bool = True
+    # 用户对话链路注入反思/日记（默认关闭保持上下文精简；开启后角色在 QQ 对话中体现近期心境与长期倾向）
+    chat_inject_cognition: bool = False
+
     # OneBot 适配器
     onebot_default_character_id: str | None = None
     # 机器人自身 QQ 号（用于群聊 @ 检测，从 OneBot 事件的 self_id 也能获取）
