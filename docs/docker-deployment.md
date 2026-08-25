@@ -36,17 +36,24 @@
 
 ### 容器清单
 
-| 容器         | 镜像                        | 端口  | 说明                         |
-| ------------ | --------------------------- | ----- | ---------------------------- |
-| `postgres`   | 自构 (pgvector + pg_uuidv7) | 5432  | 主数据库                     |
-| `redis`      | `redis:8.0-alpine`          | 6379  | 缓存/队列/锁/工具开关        |
-| `backend`    | 自构 (Python 3.13 + uv)     | 8000  | FastAPI 后端（含本地工具层） |
-| `frontend`   | 自构 (Node 22 + Nginx)      | 80    | 前端静态服务                 |
-| `prometheus` | `prom/prometheus`           | 9090  | 指标采集                     |
-| `loki`       | `grafana/loki:3.0.0`        | 3100  | 日志聚合                     |
-| `jaeger`     | `jaegertracing/all-in-one`  | 16686 | 链路追踪                     |
-| `grafana`    | `grafana/grafana:12.0.0`    | 3000  | 可视化面板                   |
-| `alloy`      | `grafana/alloy`             | 12345 | 日志收集器                   |
+基础设施与可观测性容器的宿主端口一律绑定 `127.0.0.1` 回环（不对局域网/公网暴露）；
+`backend`/`frontend` 为开发便利保持常规发布，生产环境应同样收紧。
+
+| 容器         | 镜像                        | 宿主端口            | 说明                         |
+| ------------ | --------------------------- | ------------------- | ---------------------------- |
+| `postgres`   | `pgvector/pgvector:pg18`    | 127.0.0.1:5433      | 主数据库（官方镜像，PG18 内建 `uuidv7()`，无需自建镜像） |
+| `redis`      | `redis:8-alpine`            | 127.0.0.1:6379      | 缓存/队列/锁/工具开关（强制密码） |
+| `backend`    | 自构 (Python 3.13 + uv)     | 8000                | FastAPI 后端（含本地工具层） |
+| `frontend`   | 自构 (Node 22 + Nginx)      | 80                  | 前端静态服务                 |
+| `db-backup`  | `pgvector/pgvector:pg18`    | 无                  | 定时备份（`--profile backup`） |
+| `prometheus` | `prom/prometheus:v2.53.0`   | 127.0.0.1:9090      | 指标采集                     |
+| `alertmanager` | `prom/alertmanager:v0.27.0` | 127.0.0.1:9093    | 告警通知                     |
+| `loki`       | `grafana/loki:3.0.0`        | 127.0.0.1:3100      | 日志聚合                     |
+| `jaeger`     | `jaegertracing/all-in-one:1.62.0` | 127.0.0.1:16686 / 127.0.0.1:14318 | 链路追踪 / OTLP HTTP |
+| `alloy`      | `grafana/alloy:v1.0.0`      | 127.0.0.1:12345     | 日志收集器（仅文件采集，不挂载 docker.sock） |
+| `grafana`    | `grafana/grafana:12.0.0`    | 127.0.0.1:3000      | 可视化面板                   |
+
+如需从其他机器访问某基础设施端口，将绑定改为 `内网IP:5433:5432` 并配套防火墙规则——这是显式的、有意识的决定。
 
 ---
 
@@ -91,11 +98,17 @@ cd ai-town
 cp .env.example .env
 ```
 
-编辑 `.env`，**必须填写**以下配置：
+编辑 `.env`，**必须填写**以下配置（`POSTGRES_PASSWORD`、`REDIS_PASSWORD` 缺失时 compose 插值校验 `${VAR:?}` 直接报错拒绝启动）：
 
 ```bash
-# 数据库密码（生产环境必须修改）
-DB_PASSWORD=your-secure-password
+# 数据库密码（compose 强制必填）
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+
+# Redis 密码（compose 强制必填；会拼入连接 URL，使用 hex 等无特殊字符的值）
+REDIS_PASSWORD=$(openssl rand -hex 24)
+
+# Grafana 管理密码（仅 --profile observability 需要，同样强制必填）
+GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)
 
 # LLM API Key
 OPENAI_API_KEY=sk-your-api-key
@@ -113,14 +126,13 @@ ADMIN_PASSWORD=your-secure-admin-password
 
 ### 3.1 Dockerfile 说明
 
-项目包含 3 个 Dockerfile：
+项目包含 2 个应用镜像 Dockerfile（PostgreSQL 直接使用官方 `pgvector/pgvector:pg18` 镜像，
+PG18 已内建 `uuidv7()` 函数，无需再自建补装 pg_uuidv7 的镜像）：
 
 | Dockerfile | 位置                           | 说明                                            |
 | ---------- | ------------------------------ | ----------------------------------------------- |
-| PostgreSQL | `docker/postgres/Dockerfile`   | 基于 `pgvector/pgvector:pg17`，补装 `pg_uuidv7` |
 | 后端       | `packages/backend/Dockerfile`  | 多阶段构建，Python 3.13 + uv                    |
 | 前端       | `packages/frontend/Dockerfile` | 多阶段构建，Node 22 + Nginx                     |
-
 
 ### 3.2 后端 Dockerfile（多阶段构建）
 
@@ -143,7 +155,7 @@ COPY --chown=aitown:aitown . .
 ENV PATH="/app/.venv/bin:$PATH"
 USER aitown
 EXPOSE 8000
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1"]
 ```
 
 **关键设计**：
@@ -186,9 +198,6 @@ docker build -t aitown/backend packages/backend/
 
 # 构建前端
 docker build -t aitown/frontend packages/frontend/
-
-# 构建 PostgreSQL
-docker build -t aitown/postgres docker/postgres/
 ```
 
 ---
@@ -197,12 +206,9 @@ docker build -t aitown/postgres docker/postgres/
 
 ### 4.1 编排文件说明
 
-项目提供 3 个 Docker Compose 文件：
-
-| 文件                           | 用途                                       |
-| ------------------------------ | ------------------------------------------ |
-| `docker-compose.yml`           | 完整生产部署（基础设施 + 应用 + 可观测性） |
-| `docker-compose.yml`           | 唯一编排文件（分层启动：基础设施 / 应用 / observability profile） |
+项目只有 **1 个** Compose 编排文件：根目录 `docker-compose.yml`（唯一真相源）。
+基础设施 + 应用为默认启动，可观测性通过 `--profile observability`、数据库定时备份
+通过 `--profile backup` 按需启用。
 
 ### 4.2 分层启动（Profile 机制）
 
@@ -245,10 +251,10 @@ docker compose logs -f backend
 
 ### 4.4 数据库初始化
 
-首次启动后需执行数据库迁移：
+后端容器启动命令自带 `alembic upgrade head`，首次 `up` 时自动完成迁移，无需手动执行：
 
 ```bash
-# 在后端容器中执行 Alembic 迁移
+# 需要重跑/排查时再手动执行
 docker compose exec backend alembic upgrade head
 
 # 验证扩展是否启用
@@ -283,22 +289,27 @@ asyncio.run(main())
 
 ### 5.1 必填变量
 
-| 变量             | 说明         | 示例            |
-| ---------------- | ------------ | --------------- |
-| `OPENAI_API_KEY` | LLM API Key  | `sk-xxx`        |
-| `JWT_SECRET`     | JWT 签名密钥 | 随机 32 字节    |
-| `ADMIN_PASSWORD` | 管理员密码   | `your-password` |
-| `DB_PASSWORD`    | 数据库密码   | `your-password` |
+| 变量                      | 说明           | 示例                       |
+| ------------------------- | -------------- | -------------------------- |
+| `POSTGRES_PASSWORD`       | 数据库密码     | `openssl rand -hex 24`     |
+| `REDIS_PASSWORD`          | Redis 密码     | `openssl rand -hex 24`     |
+| `GRAFANA_ADMIN_PASSWORD`  | Grafana 管理密码 | `openssl rand -hex 24`   |
+| `OPENAI_API_KEY`          | LLM API Key    | `sk-xxx`                   |
+| `JWT_SECRET`              | JWT 签名密钥   | 随机 32 字节               |
+| `ADMIN_PASSWORD`          | 管理员密码     | `your-password`            |
+
+> 前三项由 `docker-compose.yml` 以 `${VAR:?}` 插值校验强制必填：缺失或为空时
+> `docker compose up` 直接失败，不会带默认弱口令启动。
 
 ### 5.2 Docker Compose 环境变量覆盖
 
-`docker-compose.yml` 中 `backend` 服务会自动覆盖以下变量以使用容器网络：
+`docker-compose.yml` 中 `backend` 服务会自动覆盖以下变量以使用容器网络（凭据来自同一 `.env` 变量，无双真相源）：
 
 ```yaml
 backend:
   environment:
-    DATABASE_URL: postgresql+asyncpg://${DB_USER:-ai_town}:${DB_PASSWORD:-password}@postgres:5432/ai_town
-    REDIS_URL: redis://redis:6379/0
+    DATABASE_URL: postgresql+asyncpg://ai_town:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_required}@postgres:5432/ai_town
+    REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD_required}@redis:6379/0
 ```
 
 > **注意**：`.env` 文件中的 `DATABASE_URL`、`REDIS_URL` 在容器中会被覆盖为容器网络地址。其他变量（如 `OPENAI_API_KEY`）从 `.env` 继承。
@@ -346,17 +357,14 @@ docker compose exec backend pytest
 **生产环境建议**：
 
 1. **使用 Docker Swarm 或 Kubernetes** 管理容器编排
-2. **启用 PgBouncer** 连接池
-3. **配置 TLS/SSL** 证书
-4. **启用所有可观测性组件**
-5. **配置定期备份**
+2. **配置 TLS/SSL** 证书
+3. **启用所有可观测性组件**
+4. **启用 `--profile backup` 定时备份服务**
+5. **收紧端口暴露**：将 backend/frontend 也改绑 `127.0.0.1` 并前置网关（基础设施与可观测性端口已默认绑定回环）
 
 ```bash
 # 生产环境启动（含可观测性栈）
 docker compose --profile observability up -d
-
-# 配置 PgBouncer（生产推荐）
-# 在 docker-compose.yml 中取消 pgbouncer 服务注释
 ```
 
 ---
@@ -375,16 +383,18 @@ docker compose --profile observability up -d
 
 ### 7.2 数据库备份
 
+定时备份由 `db-backup` 服务负责（`pg_dump | gzip` 每 `BACKUP_INTERVAL_HOURS` 小时写入
+`./data/backups/`，保留 `BACKUP_RETENTION_DAYS` 天）：
+
 ```bash
-# 手动备份
+# 启用定时备份
+docker compose --profile backup up -d
+
+# 手动单次备份（临时排查用）
 docker compose exec postgres pg_dump -U ai_town ai_town | gzip > backup_$(date +%Y%m%d).sql.gz
 
 # 恢复备份
 gunzip -c backup_20260101.sql.gz | docker compose exec -T postgres psql -U ai_town ai_town
-
-# 自动备份（crontab）
-# 每天凌晨 3 点备份
-0 3 * * * cd /path/to/ai-town && docker compose exec postgres pg_dump -U ai_town ai_town | gzip > /backups/aitown_$(date +\%Y\%m\%d).sql.gz
 ```
 
 ### 7.3 Redis 备份
@@ -421,12 +431,14 @@ docker compose --profile observability up -d
 
 ### 8.2 访问入口
 
-| 服务       | 地址                   | 默认账号          |
-| ---------- | ---------------------- | ----------------- |
-| Grafana    | http://localhost:3000  | admin / admin123  |
-| Prometheus | http://localhost:9090  | -                 |
-| Jaeger     | http://localhost:16686 | -                 |
-| Loki       | http://localhost:3100  | 通过 Grafana 查询 |
+基础设施与可观测性端口均绑定 `127.0.0.1`，仅本机可访问；远程使用请走 SSH 隧道或显式改绑。
+
+| 服务       | 地址                          | 默认账号                       |
+| ---------- | ----------------------------- | ------------------------------ |
+| Grafana    | http://localhost:3000         | admin / `GRAFANA_ADMIN_PASSWORD`（`.env` 中设置） |
+| Prometheus | http://localhost:9090         | -                              |
+| Jaeger     | http://localhost:16686        | -                              |
+| Loki       | http://localhost:3100         | 通过 Grafana 查询              |
 
 ### 8.3 预置 Dashboard
 
@@ -464,12 +476,12 @@ curl http://localhost:8000/api/v1/admin/logs?lines=200&level=error
 docker compose ps postgres
 # STATUS 应为 healthy
 
-# 检查网络连通性
+# 检查网络连通性（<密码> 替换为 .env 中 POSTGRES_PASSWORD 的实际值）
 docker compose exec backend python -c "
 import asyncio
 import asyncpg
 async def test():
-    conn = await asyncpg.connect('postgresql://ai_town:password@postgres:5432/ai_town')
+    conn = await asyncpg.connect('postgresql://ai_town:<密码>@postgres:5432/ai_town')
     print('Connected:', await conn.fetchval('SELECT version()'))
     await conn.close()
 asyncio.run(test())
@@ -593,12 +605,14 @@ docker compose exec postgres psql -U ai_town -c "
 
 ### 11.1 生产环境清单
 
-- [ ] 修改默认数据库密码（`.env` 中 `DB_PASSWORD`）
+- [ ] 修改数据库密码（`.env` 中 `POSTGRES_PASSWORD`，compose 强制必填）
+- [ ] 修改 Redis 密码（`.env` 中 `REDIS_PASSWORD`，compose 强制必填）
+- [ ] 修改 Grafana 管理密码（`.env` 中 `GRAFANA_ADMIN_PASSWORD`，compose 强制必填）
 - [ ] 修改 JWT 密钥（`.env` 中 `JWT_SECRET` 设为随机 32 字节）
 - [ ] 修改管理员密码（`.env` 中 `ADMIN_PASSWORD`）
-- [ ] 修改 Grafana 密码（`.env` 中 `GRAFANA_PASSWORD`）
+- [ ] 设置 `ENVIRONMENT=production`（启用启动期弱口令 fail-fast 检查）并配置 `CORS_ORIGINS`
 - [ ] 配置 TLS/SSL 证书
-- [ ] 限制端口暴露（生产环境仅暴露 80/443）
+- [ ] 收紧端口暴露（基础设施端口已绑定 127.0.0.1；backend/frontend 也应改绑或前置网关）
 - [ ] 配置防火墙规则
 
 ### 11.2 网络隔离

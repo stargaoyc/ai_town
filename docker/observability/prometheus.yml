@@ -19,11 +19,11 @@ alerting:
 
 # 采集目标
 scrape_configs:
-  # AI Town 后端 - FastAPI /metrics 端点
+  # AI Town 后端 - FastAPI /metrics 端点（compose 同网络内容器直连，不经宿主端口）
   - job_name: "ai-town-backend"
     metrics_path: /metrics
     static_configs:
-      - targets: ["host.docker.internal:8000"]
+      - targets: ["backend:8000"]
         labels:
           service: "backend"
           env: "local"

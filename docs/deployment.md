@@ -42,39 +42,26 @@
 | Nginx             | `nginx:alpine`                         | 80/443      | 反向代理                |
 | 前端              | 自构 (Node 22)                         | 80 (容器内) | 静态文件                |
 | 后端              | 自构 (Python 3.13)                     | 8000        | FastAPI（含本地工具层） |
-| PostgreSQL        | `pgvector/pgvector:pg17` + pg_uuidv7   | 5432        | 主数据库                |
-| PgBouncer         | `edoburu/pgbouncer`                    | 6432        | 连接池                  |
-| Redis             | `redis:8.0-alpine`                     | 6379        | 缓存/队列/工具开关      |
+| PostgreSQL        | `pgvector/pgvector:pg18`（官方镜像，PG18 内建 `uuidv7()`） | 5433 (宿主) | 主数据库 |
+| Redis             | `redis:8-alpine`                       | 6379        | 缓存/队列/工具开关      |
 | Jaeger            | `jaegertracing/all-in-one`             | 16686       | 链路追踪                |
 | Prometheus        | `prom/prometheus`                      | 9090        | 指标                    |
 | Grafana           | `grafana/grafana:12.x`                 | 3000        | 可视化                  |
-| OTel Collector    | `otel/opentelemetry-collector-contrib` | 4318        | 收集器                  |
-| Langfuse          | `langfuse/langfuse:3`                  | 3001        | LLM 追踪                |
+| Langfuse          | `langfuse/langfuse:3`                  | 3001        | LLM 追踪（可选外部服务，自部署于 compose 之外） |
 | **Loki**          | **`grafana/loki:3.x`**                 | **3100**    | **日志聚合**            |
 | **Grafana Alloy** | **`grafana/alloy`**                    | **12345**   | **统一可观测性收集器**  |
+
+> 基础设施与可观测性端口在 docker-compose.yml 中一律绑定 `127.0.0.1` 回环。
 
 ---
 
 ## 二、容器化部署
 
-### 2.1 PostgreSQL Dockerfile（pgvector + pg_uuidv7）
+### 2.1 PostgreSQL 镜像
 
-官方 `pgvector/pgvector:pg17` 镜像仅含 pgvector，需自定义镜像补装 `pg_uuidv7`：
-
-```dockerfile
-# docker/postgres/Dockerfile
-FROM pgvector/pgvector:pg17
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git build-essential postgresql-server-dev-17 && \
-    git clone --depth 1 https://github.com/fboulnois/pg_uuidv7.git /tmp/pg_uuidv7 && \
-    cd /tmp/pg_uuidv7 && make && make install && \
-    rm -rf /tmp/pg_uuidv7 && \
-    apt-get purge -y git build-essential postgresql-server-dev-17 && \
-    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-```
-
-> 应用层兜底：即使未安装 `pg_uuidv7` 扩展，Python `uuid6` 库的 `uuid7()` 也能在应用层生成 UUID v7，DB 列类型仍为 `UUID`。
+直接使用官方 `pgvector/pgvector:pg18` 镜像：向量检索由 pgvector 扩展提供，
+UUID v7 由 PG18 内建的 `uuidv7()` 函数生成——无需再维护补装 pg_uuidv7 的自定义镜像
+（历史方案 `docker/postgres/Dockerfile` 已删除）。
 
 ### 2.2 后端 Dockerfile
 
@@ -113,114 +100,65 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 ```
 
-### 2.4 docker-compose.yml
+### 2.4 docker-compose.yml（节选）
+
+唯一编排文件为根目录 `docker-compose.yml`。关键点：官方 pgvector 镜像、
+凭据 `${VAR:?}` 插值强制必填、基础设施端口绑定回环、可观测性走 profile：
 
 ```yaml
 # docker-compose.yml (节选)
-version: "3.9"
-
 services:
   postgres:
-    build:
-      context: ./docker/postgres # 自定义镜像: pgvector + pg_uuidv7
-      dockerfile: Dockerfile
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_DB: ai_town
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ai_town
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_required}
     volumes:
-      - pg_data:/var/lib/postgresql/data
-    ports: ["5432:5432"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
-      interval: 10s
-
-  # 生产环境推荐启用 PgBouncer (transaction 模式)
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    environment:
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: postgres
-      DB_NAME: ai_town
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 25
-    ports: ["6432:5432"]
-    depends_on:
-      postgres: { condition: service_healthy }
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432" # 基础设施端口一律绑定回环
 
   redis:
-    image: redis:8.0-alpine
-    ports: ["6379:6379"]
-    volumes: [redis_data:/data]
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD_required}"]
+    ports:
+      - "127.0.0.1:6379:6379"
 
   backend:
-    build: ./packages/backend
-    env_file: .env
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_started }
-    ports: ["8000:8000"]
+    build: ./packages/backend # CMD 内置 alembic upgrade head，启动即自动迁移
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ai_town:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_required}@postgres:5432/ai_town
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD_required}@redis:6379/0
+    ports:
+      - "8000:8000"
 
   frontend:
     build: ./packages/frontend
     depends_on: [backend]
-    ports: ["80:80"]
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.60
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-    ports: ["16686:16686", "4318:4318"]
+    ports:
+      - "80:8080"
 
   prometheus:
-    image: prom/prometheus:latest
-    volumes: ["./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
-    ports: ["9090:9090"]
-
-  loki:
-    image: grafana/loki:3.0.0
-    volumes: ["./docker/observability/loki-config.yml:/etc/loki/local-config.yaml:ro"]
-    ports: ["3100:3100"]
-    command: -config.file=/etc/loki/local-config.yaml
+    image: prom/prometheus:v2.53.0
+    profiles: [observability]
+    ports:
+      - "127.0.0.1:9090:9090"
 
   grafana:
     image: grafana/grafana:12.0.0
-    ports: ["3000:3000"]
+    profiles: [observability]
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin123
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./docker/observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./docker/observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
-      - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on: [prometheus, loki, jaeger]
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD_required}
+    ports:
+      - "127.0.0.1:3000:3000"
 
-  # 统一可观测性收集器（取代 Promtail）
-  alloy:
-    image: grafana/alloy:latest
-    volumes:
-      - ./docker/observability/alloy.config.alloy:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
-    ports: ["12345:12345"]
-    depends_on: [loki]
-
-  langfuse:
-    image: langfuse/langfuse:3
-    env_file: .env
-    ports: ["3001:3001"]
-
-volumes:
-  pg_data:
-  redis_data:
-  grafana_data:
-  loki_data:
-  prometheus_data:
+  db-backup:
+    image: pgvector/pgvector:pg18
+    profiles: [backup] # 定时 pg_dump 备份，详见附：运维增补
 ```
+
+> 完整服务清单与分层启动见 [Docker 部署指南](docker-deployment.md)。
 
 > **实际配置文件**：可观测性组件的完整配置位于 `docker/observability/` 目录，包含 Prometheus 采集规则、Loki 存储配置、Alloy 采集管道、Grafana 数据源与 3 个预置 Dashboard（Overview / LLM / Character Tick）。统一使用根目录 `docker-compose.yml`（可观测性组件通过 `--profile observability` 启用）。详见 [可观测性设计](observability.md#十二部署实现docker-compose)。
 
@@ -232,19 +170,16 @@ volumes:
 # .env.example
 
 # ===== 数据库 =====
-# 生产环境通过 PgBouncer 连接 (端口 6432), 直连 PG 用 5432
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:6432/ai_town
+DATABASE_URL=postgresql+asyncpg://ai_town:password@localhost:5432/ai_town
 DB_POOL_SIZE=20
 DB_MAX_OVERFLOW=10
-# PgBouncer transaction 模式下需关闭 prepared statements
-DB_PREPARED_STATEMENT_CACHE_SIZE=0
 
 # 主键: UUID v7 (时间有序, 索引友好)
-# DB 端通过 pg_uuidv7 扩展生成, 应用层用 uuid6 库兜底
+# PG18 内建 uuidv7() 函数直接生成, 应用层用 uuid6 库兜底
 
 # pgvector
-EMBEDDING_DIM=1536
-EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIM=2048
+MODEL_EMBEDDING=text-embedding-3-small
 
 # ===== Redis =====
 REDIS_URL=redis://localhost:6379/0
@@ -255,23 +190,26 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 MODEL_CHAT=gpt-4o-mini
 MODEL_STRONG=gpt-4o
 MODEL_FLASH=gpt-3.5-turbo
+GROUP_JUDGE_MODEL=chat
 
 # ===== 本地工具 =====
 # 工具已内联到后端进程，无需独立服务地址。
 # 工具命名空间开关持久化到 Redis hash `tools:enabled`，未配置时默认全部启用。
 
 # ===== 可观测性 =====
-# 本地裸机运行填 localhost:4318；Docker Compose 内 backend 需填 http://jaeger:4318（服务名直连）
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# 本地裸机运行填 http://localhost:4318；Docker Compose 内 backend 需填 http://jaeger:4318（服务名直连）
+OTEL_ENDPOINT=http://localhost:4318
 OTEL_SERVICE_NAME=ai-town-backend
 LANGFUSE_PUBLIC_KEY=xxx
 LANGFUSE_SECRET_KEY=xxx
 LANGFUSE_HOST=http://localhost:3001
 
-# ===== 消息平台 =====
-ONE_BOT_WS_URL=ws://localhost:6700
-LARK_APP_ID=xxx
-LARK_APP_SECRET=xxx
+# ===== 消息平台（OneBot v11/v12）=====
+ONEBOT_DEFAULT_CHARACTER_ID=
+ONEBOT_SELF_ID=
+ONEBOT_GROUP_AT_ONLY=false
+ONEBOT_GROUP_CHARACTER_MAP={}
+ONEBOT_ACCESS_TOKEN=
 
 # ===== 鉴权 =====
 JWT_SECRET=xxx

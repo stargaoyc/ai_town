@@ -110,6 +110,8 @@ pnpm dev                          # 默认监听 http://localhost:5173
 docker compose up -d              # 启动 PG / Redis / 后端（含本地工具） / 前端
 ```
 
+> 先 `cp .env.example .env` 并至少填写 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`（compose 强制必填，缺失直接报错拒绝启动）；启用可观测性 profile 还需 `GRAFANA_ADMIN_PASSWORD`。基础设施端口仅绑定 127.0.0.1。
+
 详细部署架构、容器化方案与容量规划见 [部署与运维](docs/deployment.md)。
 
 ---
