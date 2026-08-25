@@ -8,7 +8,7 @@ LLM 决策时可返回 planChanges，更新此表。
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer, String, Text, func
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
@@ -34,6 +34,9 @@ class Plan(Base):
     """
 
     __tablename__ = "plans"
+    # 0016 迁移补建（此前 data-model.md 声称存在但从未创建，R4-M1）：
+    # get_active_plans 每 Tick 每角色一次，是最热的缺失索引
+    __table_args__ = (Index("idx_plans_char_status", "character_id", "status"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid7)
     character_id: Mapped[UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), comment="所属角色")

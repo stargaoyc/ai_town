@@ -9,6 +9,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from typing import Any
+
 from structlog import get_logger
 
 from src.config import settings
@@ -38,3 +42,31 @@ def check_default_secrets() -> None:
             "insecure_default_secret",
             message=f"{label} 仍为默认值 '{default}'，请在 .env 中修改为强密钥",
         )
+
+
+async def check_embedding_dim(session_factory: Callable[[], AbstractAsyncContextManager[Any]]) -> None:
+    """启动时校验 EMBEDDING_DIM 声明与物理列维度一致（R4-H7 纵深防御）
+
+    ORM 已钉死 HALFVEC(2048) 与迁移链对齐；本检查拦截「改了 env 没配套迁移」
+    的错配——否则问题会潜伏到首次向量写入/检索才以运行时报错暴露。
+    """
+    from sqlalchemy import text
+
+    async with session_factory() as session:
+        result = await session.execute(
+            text(
+                "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a "
+                "WHERE a.attrelid = 'memory_episodes'::regclass AND a.attname = 'embedding'"
+            )
+        )
+        type_str = result.scalar_one_or_none()
+    if type_str is None:
+        logger.warning("embedding_dim_check_skipped", reason="memory_episodes.embedding column not found")
+        return
+    physical = int(str(type_str).split("(")[1].rstrip(")"))
+    if physical != settings.embedding_dim:
+        raise RuntimeError(
+            f"EMBEDDING_DIM={settings.embedding_dim} 与物理列 {type_str} 不一致："
+            "请将 .env 的 EMBEDDING_DIM 改回 2048 或执行配套迁移，二者必须一致"
+        )
+    logger.info("embedding_dim_check_passed", dim=physical)

@@ -156,7 +156,7 @@ CREATE TABLE action_records (
     result             TEXT,
     duration_minutes   INT,
     location           TEXT,
-    related_characters JSONB,                              -- 相关角色 ID 列表（JSONB，非 UUID[]）
+    related_characters UUID[] NOT NULL DEFAULT '{}',       -- 0013 迁移：JSONB→UUID[]
     timestamp          TIMESTAMPTZ NOT NULL DEFAULT now(), -- 执行时间（分区键）
     PRIMARY KEY (id, timestamp)
 ) PARTITION BY RANGE (timestamp);
@@ -170,8 +170,7 @@ CREATE TABLE action_records_2026_07 PARTITION OF action_records
 
 CREATE INDEX idx_ar_char_time   ON action_records (character_id, timestamp DESC);
 CREATE INDEX idx_ar_action      ON action_records (action_id);
--- ⚠️ related_characters 为 JSONB 非 UUID[]，不能直接 GIN 索引
--- 如需数组查询，需改为 UUID[] 类型或使用 JSONB GIN 索引
+-- 0013 迁移后 related_characters 为 UUID[]，GIN 索引见 memory_episodes 的 idx_mem_related
 CREATE INDEX idx_ar_params      ON action_records USING gin (params jsonb_path_ops);
 ```
 
@@ -187,7 +186,7 @@ CREATE TABLE memory_episodes (
     character_id       UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
                                                                       -- 分区键（外键引用 characters.id）
     content            TEXT NOT NULL,
-    embedding          vector(1536),                        -- nullable: materialized=false 时为 NULL
+    embedding          halfvec(2048),                       -- 0005 迁移：1536→2048 半精度（R4-M1 文档对齐）
     importance         INT  NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
     timestamp          TIMESTAMPTZ NOT NULL DEFAULT now(),
     action_id          TEXT,
@@ -251,7 +250,7 @@ CREATE TABLE reflections (
 -- ⚠️ related_episodes 字段已在 0002_optimize v5 迁移中删除
 --    关联记忆通过 reflection_sources 中间表管理（复合外键 ON DELETE CASCADE）
 
-CREATE INDEX idx_refl_char_time ON reflections (character_id, created_at DESC);
+CREATE INDEX idx_refl_char_time ON reflections (character_id, created_at DESC); -- 0016 补建
 ```
 
 #### 3.5.1 reflection_sources（反思来源中间表）
@@ -291,7 +290,7 @@ CREATE TABLE plans (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()      -- 0002_optimize 新增，触发器自动维护
 );
 
-CREATE INDEX idx_plans_char_status ON plans (character_id, status);
+CREATE INDEX idx_plans_char_status ON plans (character_id, status); -- 0016 补建
 ```
 
 ### 3.7 relations（角色关系）
@@ -372,25 +371,11 @@ CREATE INDEX idx_conv_last_msg         ON conversations (last_message_at DESC);
 CREATE INDEX idx_conv_char             ON conversations (character_id);
 ```
 
-### 3.9 module_configs（模块配置）
+### 3.9 模块配置（已移除）
 
-```sql
-CREATE TABLE module_configs (
-    id                   UUID PRIMARY KEY DEFAULT uuidv7(),
-    name                 TEXT NOT NULL UNIQUE,
-    type                 TEXT NOT NULL CHECK (type IN ('mcp','local','skill')),
-    enabled              BOOLEAN NOT NULL DEFAULT FALSE,
-    config               JSONB NOT NULL DEFAULT '{}'::jsonb,
-    dependencies         TEXT[] NOT NULL DEFAULT '{}',
-    mcp_server_url       TEXT,
-    health_check_status  TEXT NOT NULL DEFAULT 'unknown'
-                         CHECK (health_check_status IN ('healthy','unhealthy','unknown')),
-    last_check_at        TIMESTAMPTZ,
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_module_enabled ON module_configs (enabled) WHERE enabled = TRUE;
-```
+> module_configs 表从未在迁移链中实现（R4-M1 幽灵表）：模块/工具开关实际存储于
+> Redis hash \	ools:enabled\（见 src/tools/registry.py）。本节保留仅为说明该历史，
+> DDL 已从文档删除。
 
 ### 3.10 world_events（世界变更事件，差分记录）
 
@@ -399,7 +384,7 @@ CREATE INDEX idx_module_enabled ON module_configs (enabled) WHERE enabled = TRUE
 > - `world_snapshots`：完整状态快照（低频，每 1000 Tick 存一次），冷启动恢复用
 > - 冷启动恢复：加载最新快照 → 回放之后的增量事件 → 恢复状态（启动时间恒定）
 >
-> ⚠️ **幂等性保证（v4 修复）**：`UNIQUE(tick_id, event_type)` 约束保证单 Tick 单类型事件唯一。
+> ⚠️ **幂等性保证（0006 迁移扩展）**：`UNIQUE(tick_id, event_type, event_key)` 三元组保证同类型多事件（如不同角色入场）各自幂等。
 > `add_batch` 使用 `INSERT ... ON CONFLICT DO NOTHING`，服务重启 / Tick 重试时自动跳过已存在事件。
 
 ```sql
@@ -409,7 +394,8 @@ CREATE TABLE world_events (
     event_type  TEXT NOT NULL,                           -- time/weather/scene/resource/event
     payload     JSONB NOT NULL,                          -- 变更内容（仅差分）
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (tick_id, event_type)                         -- 幂等约束：单 Tick 单类型事件唯一
+    event_key   TEXT NOT NULL DEFAULT '',                -- 0006 新增：同类事件细分键
+    UNIQUE (tick_id, event_type, event_key)              -- 幂等约束（0006 扩展）
 );
 
 CREATE INDEX idx_world_events_tick      ON world_events (tick_id);
@@ -472,7 +458,7 @@ CREATE TABLE person_memories (
     last_interaction_at  TIMESTAMPTZ,                      -- 最后互动时间
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (character_id, user_id, platform)
+    UNIQUE (character_id, user_id) -- 0008 实际定义：platform 不参与唯一性
 );
 
 CREATE INDEX idx_person_mem_character_heat ON person_memories (character_id, heat DESC, last_interaction_at DESC);

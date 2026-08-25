@@ -521,11 +521,87 @@ async def memory_retention_loop() -> None:
             await run_memory_retention_cycle()
             await run_world_retention_cycle()
             await run_messages_retention_cycle()
+            await run_cognition_retention_cycle()
         except asyncio.CancelledError:
             logger.info("memory_retention_loop_cancelled")
             raise
         except Exception as e:
             logger.error("memory_retention_loop_error", error=str(e), exc_info=True)
+
+
+async def run_cognition_retention_cycle(session_factory: Any | None = None) -> dict[str, int]:
+    """单次认知产物清理（R4-M7 可测试入口）
+
+    覆盖此前无任何清理路径的四类数据：
+    - tier=1 批次反思（tier=2 元反思跨期归纳，永久保留）
+    - 角色日记
+    - Person Memory 已压缩条目（compacted=TRUE 的软归档行此前永不清理）
+    - 归档记忆行（source_type='archive'，此前豁免一切删除路径）
+
+    各 retention_days<=0 时跳过对应类。返回各类删除行数。
+    """
+    from src.config import settings as _settings
+    from src.db.models import CharacterDiary, PersonMemoryEntry, Reflection
+
+    factory = session_factory or db.session
+    now = datetime.now(UTC)
+    deleted = {"reflections": 0, "diaries": 0, "pm_entries": 0, "archive_episodes": 0}
+
+    async with factory() as session:
+        days = _settings.reflection_retention_days
+        if days > 0:
+            res = cast(
+                "CursorResult[Any]",
+                await session.execute(
+                    delete(Reflection).where(
+                        Reflection.tier == 1,
+                        Reflection.created_at < now - timedelta(days=days),
+                    )
+                ),
+            )
+            deleted["reflections"] = int(res.rowcount or 0)
+
+        days = _settings.diary_retention_days
+        if days > 0:
+            res = cast(
+                "CursorResult[Any]",
+                await session.execute(
+                    delete(CharacterDiary).where(CharacterDiary.generated_at < now - timedelta(days=days))
+                ),
+            )
+            deleted["diaries"] = int(res.rowcount or 0)
+
+        days = _settings.person_memory_entry_retention_days
+        if days > 0:
+            res = cast(
+                "CursorResult[Any]",
+                await session.execute(
+                    delete(PersonMemoryEntry).where(
+                        PersonMemoryEntry.compacted.is_(True),
+                        PersonMemoryEntry.created_at < now - timedelta(days=days),
+                    )
+                ),
+            )
+            deleted["pm_entries"] = int(res.rowcount or 0)
+
+        days = _settings.archive_episode_retention_days
+        if days > 0:
+            res = cast(
+                "CursorResult[Any]",
+                await session.execute(
+                    delete(MemoryEpisode).where(
+                        MemoryEpisode.source_type == "archive",
+                        MemoryEpisode.timestamp < now - timedelta(days=days),
+                    )
+                ),
+            )
+            deleted["archive_episodes"] = int(res.rowcount or 0)
+
+        await session.commit()
+
+    if any(deleted.values()):
+        logger.info("cognition_retention_done", **deleted)
+    return deleted
 
 
 async def run_messages_retention_cycle(session_factory: Any | None = None) -> int:

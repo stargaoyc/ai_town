@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     # 消息表保留天数（三轮审查 M1：messages 刻意不分区却无清理任务；0 = 永久保留）
     messages_retention_days: int = 180
 
+    # 认知产物保留（R4-M7）：reflections/diaries/PM 已压缩条目/归档行四类此前
+    # 无任何清理路径，「长期运行记忆不膨胀」对这四类不成立；0 = 对应类永久保留
+    reflection_retention_days: int = 365  # 仅 tier=1 批次反思；tier=2 元反思永久保留
+    diary_retention_days: int = 730
+    person_memory_entry_retention_days: int = 180  # 仅清理已压缩（compacted）条目
+    archive_episode_retention_days: int = 365  # source_type=archive 的归档行
+
     # Observability
     otel_endpoint: str | None = None
     otel_service_name: str = "ai-town-backend"

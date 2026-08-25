@@ -22,7 +22,6 @@ from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
-from src.config import settings
 from src.db.base import Base
 
 
@@ -54,7 +53,9 @@ class MemoryEpisode(Base):
     )
     content: Mapped[str] = mapped_column(Text, comment="记忆内容（自然语言）")
     embedding: Mapped[list[float] | None] = mapped_column(
-        HALFVEC(settings.embedding_dim), nullable=True, comment="向量嵌入（materialized=false 时为 NULL）"
+        HALFVEC(2048),
+        nullable=True,
+        comment="向量嵌入（materialized=false 时为 NULL）",
     )
     importance: Mapped[int] = mapped_column(Integer, default=5, comment="重要性 1-10")
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="发生时间")

@@ -250,6 +250,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("state_rehydration_failed", error=str(e), exc_info=True)
         # 不中断启动，引擎可从空状态重建
 
+    # 1.5 EMBEDDING_DIM 与物理列一致性校验（R4-H7）：错配即 fail-fast，
+    # 否则潜伏到首次向量写入才以运行时报错暴露
+    from src.db.session import db as _db
+    from src.security.startup_checks import check_embedding_dim
+
+    await check_embedding_dim(_db.session)
+
     # 2. 初始化 LLM 客户端
     try:
         llm = LLMClient()

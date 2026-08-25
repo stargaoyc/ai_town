@@ -36,6 +36,17 @@ from src.db.repositories.base import BaseRepository
 
 logger = get_logger()
 
+# 混合检索评分公式（R4-M8 单一真相源）：此前在 search_hybrid 与
+# search_hybrid_global 双处硬编码，公式演进需同步两处否则「同一公式」
+# 不变量静默破坏。sim_score/importance/timestamp 为外层 SELECT 的列名，
+# 两处查询的候选 CTE 均以同名输出这些列，故可安全共享。
+# GREATEST(0, ·) 钳制时钟回拨（round-3 L1）。
+_HYBRID_SCORE_SQL = (
+    "(sim_score * 0.6 + importance * 0.05)"
+    " * (0.25 + 0.75 * exp(- GREATEST(0,"
+    " EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0))"
+)
+
 
 class MemoryRepository(BaseRepository[MemoryEpisode]):
     """记忆 Repository - ORM + 原生 SQL 混合策略"""
@@ -443,7 +454,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         await dbapi_conn.execute(f"SET LOCAL hnsw.ef_search = {int(settings.hnsw_ef_search)}")
 
         # 3. 向量召回 + 混合排序（使用 asyncpg 原生 $1 占位符）
-        query_sql = """
+        query_sql = f"""
             WITH candidates AS (
                 SELECT id, content, importance, timestamp, source_type, is_reflected,
                        1 - (embedding <=> $2::halfvec) AS sim_score
@@ -454,10 +465,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
                 LIMIT $3
             )
             SELECT id, content, importance, timestamp, source_type, is_reflected, sim_score,
-                   (sim_score * 0.6 + importance * 0.05)
-                   * (0.25 + 0.75 * exp(- GREATEST(0,
-                       EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0))
-                   AS final_score
+                   {_HYBRID_SCORE_SQL} AS final_score
             FROM candidates
             ORDER BY final_score DESC
             LIMIT $4
@@ -500,8 +508,8 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         # 2. 设置 HNSW 检索参数（事务内生效；int 插值防注入）
         await dbapi_conn.execute(f"SET LOCAL hnsw.ef_search = {int(settings.hnsw_ef_search)}")
 
-        # 3. 向量召回 + 混合排序（评分公式与 search_hybrid 逐项一致）
-        query_sql = """
+        # 3. 向量召回 + 混合排序（评分公式与 search_hybrid 共享单一真相源）
+        query_sql = f"""
             WITH candidates AS (
                 SELECT m.id, m.character_id, c.name AS character_name,
                        m.content, m.importance, m.timestamp, m.source_type, m.is_reflected,
@@ -515,10 +523,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             )
             SELECT id, character_id, character_name, content, importance,
                    timestamp, source_type, is_reflected, sim_score,
-                   (sim_score * 0.6 + importance * 0.05)
-                   * (0.25 + 0.75 * exp(- GREATEST(0,
-                       EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0))
-                   AS final_score
+                   {_HYBRID_SCORE_SQL} AS final_score
             FROM candidates
             ORDER BY final_score DESC
             LIMIT $3
