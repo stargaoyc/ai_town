@@ -34,6 +34,7 @@ services:
     image: pgvector/pgvector:pg18
     container_name: aitown-postgres
     restart: unless-stopped
+    mem_limit: 1g
     environment:
       # 凭据经变量插值（compose 自动读根目录 .env）；:? 强制必填，缺失即启动失败
       POSTGRES_DB: ai_town
@@ -58,6 +59,7 @@ services:
     image: redis:8-alpine # 与 README/CI 对齐的大版本固定 tag，避免浮动漂移
     container_name: aitown-redis
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -87,6 +89,7 @@ services:
       dockerfile: Dockerfile
     container_name: aitown-backend
     restart: unless-stopped
+    mem_limit: 2g
     env_file:
       - path: .env # 根目录 .env（生产部署）；本地仅起基础设施时可以没有
         required: false
@@ -122,10 +125,13 @@ services:
       dockerfile: packages/frontend/Dockerfile
     container_name: aitown-frontend
     restart: unless-stopped
+    mem_limit: 256m
     depends_on:
       - backend
     ports:
-      - "80:8080" # 容器内 nginx 以非 root 用户监听 8080（审查 §10.1）；生产建议同样收紧来源或前置网关
+      # R4-H5：回环绑定与其余服务一致——frontend 是唯一公网入口面，
+      # 生产经反代/网关暴露时由网关转发到该回环端口
+      - "127.0.0.1:80:8080" # 容器内 nginx 以非 root 用户监听 8080（审查 §10.1）
     logging: *default-logging
     networks:
       - aitown-net
@@ -135,6 +141,7 @@ services:
     image: pgvector/pgvector:pg18
     container_name: aitown-db-backup
     restart: unless-stopped
+    mem_limit: 512m
     profiles: [backup]
     depends_on:
       postgres:
@@ -160,6 +167,7 @@ services:
     image: prom/prometheus:v2.53.0
     container_name: aitown-prometheus
     restart: unless-stopped
+    mem_limit: 1g
     volumes:
       - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docker/observability/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
@@ -179,10 +187,21 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    # R4-M2：启动时把 bearer_token 占位符替换为真实 token（与后端 alert_webhook_token 同源），
+    # 配置文件本身保持 :ro 只读；未配置 token 时写入 "disabled"，后端会以 403 拒绝
+    command:
+      - /bin/sh
+      - -c
+      - |
+        sed "s/__ALERT_WEBHOOK_TOKEN__/$${ALERT_WEBHOOK_TOKEN:-disabled}/g" \
+          /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml \
+          && exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
     environment:
       TZ: Asia/Shanghai
+      ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:-}
+    mem_limit: 128m
     logging: *default-logging
     networks:
       - aitown-net
@@ -192,6 +211,7 @@ services:
     image: grafana/loki:3.0.0
     container_name: aitown-loki
     restart: unless-stopped
+    mem_limit: 1g
     volumes:
       - ./docker/observability/loki-config.yml:/etc/loki/local-config.yaml:ro
       - ./data/loki:/loki
@@ -209,12 +229,18 @@ services:
     image: jaegertracing/all-in-one:1.62.0
     container_name: aitown-jaeger
     restart: unless-stopped
+    # R4-L5：badger 持久化——all-in-one 默认内存存储，重启即丢全部 trace
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_DIRECTORY: /badger
       TZ: Asia/Shanghai
+    volumes:
+      - ./data/jaeger:/badger
     ports:
       - "127.0.0.1:16686:16686" # Jaeger UI
       - "127.0.0.1:14318:4318" # OTLP HTTP
+    mem_limit: 1g
     logging: *default-logging
     networks:
       - aitown-net
@@ -224,6 +250,7 @@ services:
     image: grafana/alloy:v1.0.0
     container_name: aitown-alloy
     restart: unless-stopped
+    mem_limit: 256m
     volumes:
       # 仅文件采集（容器日志 + 后端日志目录），不挂载 docker.sock 以缩小攻击面
       - ./docker/observability/alloy.config.alloy:/etc/alloy/config.alloy:ro
@@ -244,6 +271,7 @@ services:
     image: grafana/grafana:12.0.0
     container_name: aitown-grafana
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD_required}

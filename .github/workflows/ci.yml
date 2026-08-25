@@ -101,3 +101,40 @@ jobs:
         run: pnpm test -- --run
       - name: Build
         run: pnpm run build
+
+  deploy-smoke:
+    # R4-H4：部署冒烟——此前 CI 零镜像构建/零运行时验证，
+    # c387487（镜像不可构建、后端容器从未成功启动）与 900c73d（nginx 运行时 502）
+    # 两类事故只能靠人肉发现，本作业关闭该复发通道
+    name: Deploy Smoke (build & boot)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      POSTGRES_PASSWORD: smoke-test-password
+      REDIS_PASSWORD: smoke-test-password
+      ENVIRONMENT: development
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate compose config
+        run: docker compose config -q
+      - name: Build images
+        run: docker compose build backend frontend
+      - name: Boot core stack
+        run: docker compose up -d postgres redis backend frontend
+      - name: Wait for backend health (direct)
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8001/health > /dev/null; then echo "backend healthy"; exit 0; fi
+            sleep 2
+          done
+          echo "backend failed to become healthy" && docker compose logs backend --tail 100 && exit 1
+      - name: Wait for frontend health (through nginx proxy)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:80/health > /dev/null; then echo "frontend proxy healthy"; exit 0; fi
+            sleep 2
+          done
+          echo "nginx proxy failed" && docker compose logs frontend --tail 100 && exit 1
+      - name: Tear down
+        if: always()
+        run: docker compose down -v -t 30
