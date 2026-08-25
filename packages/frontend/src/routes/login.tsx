@@ -61,9 +61,14 @@ function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
+              <label htmlFor="login-username" className="sr-only">
+                账号
+              </label>
               <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sakura-400" />
               <input
+                id="login-username"
                 type="text"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="账号"
@@ -72,9 +77,14 @@ function LoginPage() {
               />
             </div>
             <div className="relative">
+              <label htmlFor="login-password" className="sr-only">
+                密码
+              </label>
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sakura-400" />
               <input
+                id="login-password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="密码"

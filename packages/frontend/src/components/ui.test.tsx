@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AnimeButton,
   AnimeInput,
+  ConfirmDialog,
   EmptyState,
   ErrorDisplay,
   GlassCard,
@@ -16,10 +17,13 @@ import {
   SkeletonList,
   StatCard,
   StatusBadge,
+  Toaster,
 } from "./ui";
+import { useToastStore } from "@/stores/toast";
 
 afterEach(() => {
   cleanup();
+  useToastStore.setState({ toasts: [] });
 });
 
 describe("GlassCard", () => {
@@ -186,5 +190,97 @@ describe("AnimeInput", () => {
   it("有 icon 时输入框加左内边距", () => {
     const { container } = render(<AnimeInput icon="🔍" />);
     expect(container.querySelector("input")?.className).toContain("pl-12");
+  });
+});
+
+describe("ConfirmDialog", () => {
+  const baseProps = {
+    title: "清除全部通知",
+    description: "此操作不可恢复",
+    confirmText: "全部清除",
+    onConfirm: vi.fn(),
+    onCancel: vi.fn(),
+  };
+
+  it("open 时渲染标题、描述与操作按钮", () => {
+    render(<ConfirmDialog {...baseProps} danger open />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("清除全部通知")).toBeTruthy();
+    expect(screen.getByText("此操作不可恢复")).toBeTruthy();
+    expect(screen.getByText("取消")).toBeTruthy();
+    expect(screen.getByText("全部清除")).toBeTruthy();
+  });
+
+  it("open=false 时不渲染对话框", () => {
+    render(<ConfirmDialog {...baseProps} open={false} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("Esc 触发 onCancel", () => {
+    const onCancel = vi.fn();
+    render(<ConfirmDialog {...baseProps} onCancel={onCancel} open />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("点击确认按钮触发 onConfirm，点击遮罩触发 onCancel", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    const { container } = render(
+      <ConfirmDialog {...baseProps} onConfirm={onConfirm} onCancel={onCancel} open />,
+    );
+    fireEvent.click(screen.getByText("全部清除"));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const overlay = container.querySelector(".fixed.inset-0") as HTMLElement;
+    fireEvent.click(overlay);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("打开时焦点落在确认按钮上", () => {
+    render(<ConfirmDialog {...baseProps} confirmText="确认重置" open />);
+    const confirmBtn = screen.getByText("确认重置") as HTMLButtonElement;
+    expect(document.activeElement).toBe(confirmBtn);
+  });
+
+  it("danger 变体标题为红色系，普通变体为樱花色系", () => {
+    const { container, rerender } = render(<ConfirmDialog {...baseProps} danger open />);
+    const dialog = container.querySelector('[role="dialog"]') as HTMLElement;
+    expect(dialog.querySelector("h3")?.className).toContain("text-red-600");
+    rerender(<ConfirmDialog {...baseProps} open />);
+    expect(dialog.querySelector("h3")?.className).toContain("text-sakura-600");
+  });
+});
+
+describe("Toaster", () => {
+  it("渲染 store 中的 toast 文案", () => {
+    useToastStore.setState({
+      toasts: [{ id: 1, kind: "success", message: "配置已保存" }],
+    });
+    render(<Toaster />);
+    expect(screen.getByText("配置已保存")).toBeTruthy();
+  });
+
+  it("kind 决定强调色（success 绿 / error 红 / info 中性）", () => {
+    useToastStore.setState({
+      toasts: [
+        { id: 1, kind: "success", message: "成功" },
+        { id: 2, kind: "error", message: "失败" },
+        { id: 3, kind: "info", message: "提示" },
+      ],
+    });
+    const { container } = render(<Toaster />);
+    const buttons = Array.from(container.querySelectorAll("button"));
+    expect(buttons[0]?.className).toContain("text-emerald-700");
+    expect(buttons[1]?.className).toContain("text-red-600");
+    expect(buttons[2]?.className).toContain("text-twilight-600");
+  });
+
+  it("点击 toast 调用 dismiss 从 store 移除", () => {
+    useToastStore.setState({
+      toasts: [{ id: 7, kind: "info", message: "点击关闭" }],
+    });
+    render(<Toaster />);
+    fireEvent.click(screen.getByText("点击关闭").closest("button") as HTMLButtonElement);
+    expect(useToastStore.getState().toasts.find((t) => t.id === 7)).toBeUndefined();
   });
 });

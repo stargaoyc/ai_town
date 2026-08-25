@@ -1,8 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode, MouseEventHandler } from "react";
-import { motion } from "framer-motion";
-import { LogOut, User } from "lucide-react";
+import type { MouseEventHandler, ReactNode, Ref } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { LogOut, Menu, User, X } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
+import { useToastStore } from "@/stores/toast";
+import type { ToastItem } from "@/stores/toast";
 
 /* =========================================================
    GlassCard — 强玻璃拟态卡片
@@ -63,6 +66,8 @@ export function GlassCard({
 export function NavLayout({ children }: { children: ReactNode }) {
   const userId = useAuthStore((s) => s.userId);
   const logout = useAuthStore((s) => s.logout);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const links = [
     { to: "/", label: "总览", icon: "🏠" },
     { to: "/characters", label: "角色", icon: "👥" },
@@ -74,6 +79,16 @@ export function NavLayout({ children }: { children: ReactNode }) {
   ];
 
   const initials = userId ? userId.slice(0, 2).toUpperCase() : "??";
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    drawerCloseRef.current?.focus();
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [drawerOpen]);
 
   return (
     <>
@@ -105,6 +120,16 @@ export function NavLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setDrawerOpen(true)}
+              aria-label="打开导航菜单"
+              aria-expanded={drawerOpen}
+              className="md:hidden p-2 rounded-xl text-twilight-500 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </motion.button>
             <div className="flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-white/40 border border-white/40">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sakura-400 to-twilight-400 flex items-center justify-center text-white text-xs font-bold">
                 <User className="w-4 h-4" />
@@ -128,6 +153,76 @@ export function NavLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </nav>
+
+      {/* 移动端抽屉导航（md 以下） */}
+      <AnimatePresence>
+        {drawerOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm md:hidden"
+            onClick={() => setDrawerOpen(false)}
+          >
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="导航菜单"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute inset-y-0 right-0 w-72 bg-white/80 backdrop-blur-2xl border-l border-white/50 shadow-soft flex flex-col"
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/50">
+                <span className="font-bold gradient-text flex items-center gap-2">
+                  <span className="text-xl">🌸</span>
+                  AI Town
+                </span>
+                <button
+                  ref={drawerCloseRef}
+                  onClick={() => setDrawerOpen(false)}
+                  aria-label="关闭菜单"
+                  className="p-2 rounded-xl text-twilight-400 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+                {links.map((link) => (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    onClick={() => setDrawerOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-twilight-500 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
+                    activeProps={{
+                      className: "bg-sakura-200/60 text-sakura-700 shadow-sm",
+                    }}
+                  >
+                    <span>{link.icon}</span>
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+              <div className="px-3 pb-4 pt-2 border-t border-white/50">
+                <div className="text-xs text-twilight-300 px-3 pb-2">{userId}</div>
+                <button
+                  onClick={() => {
+                    setDrawerOpen(false);
+                    logout();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-twilight-500 hover:bg-red-50 hover:text-red-500 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  退出登录
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <main className="container mx-auto p-4 relative z-10">{children}</main>
     </>
   );
@@ -440,6 +535,7 @@ export function AnimeButton({
   disabled = false,
   type,
   onClick,
+  ref,
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "danger";
@@ -447,6 +543,7 @@ export function AnimeButton({
   disabled?: boolean;
   type?: "button" | "submit" | "reset";
   onClick?: MouseEventHandler<HTMLButtonElement>;
+  ref?: Ref<HTMLButtonElement>;
 }) {
   const variants = {
     primary:
@@ -460,7 +557,7 @@ export function AnimeButton({
 
   if (disabled) {
     return (
-      <button type={type} disabled onClick={onClick} className={classString}>
+      <button ref={ref} type={type} disabled onClick={onClick} className={classString}>
         {children}
       </button>
     );
@@ -468,6 +565,7 @@ export function AnimeButton({
 
   return (
     <motion.button
+      ref={ref}
       type={type}
       onClick={onClick}
       className={classString}
@@ -498,5 +596,145 @@ export function AnimeInput({
         {...props}
       />
     </div>
+  );
+}
+
+/* =========================================================
+   Toaster — 全局 toast 渲染器（消费 stores/toast）
+   ========================================================= */
+
+const toasterStyles: Record<ToastItem["kind"], { accent: string; icon: string }> = {
+  success: {
+    accent: "border-emerald-200/60 bg-emerald-50/90 text-emerald-700",
+    icon: "✅",
+  },
+  error: {
+    accent: "border-red-200/60 bg-red-50/90 text-red-600",
+    icon: "⚠️",
+  },
+  info: {
+    accent: "border-white/60 bg-white/80 text-twilight-600",
+    icon: "💬",
+  },
+};
+
+export function Toaster() {
+  const toasts = useToastStore((s) => s.toasts);
+  const dismiss = useToastStore((s) => s.dismiss);
+
+  return (
+    <div
+      aria-live="polite"
+      className="fixed top-4 right-4 z-[100] flex flex-col items-end gap-2 pointer-events-none"
+    >
+      <AnimatePresence>
+        {toasts.map((t) => (
+          <motion.button
+            key={t.id}
+            type="button"
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 40 }}
+            transition={{ type: "spring", stiffness: 300, damping: 24 }}
+            onClick={() => dismiss(t.id)}
+            title="点击关闭"
+            className={`pointer-events-auto flex items-center gap-2 max-w-xs px-4 py-2.5 rounded-xl border backdrop-blur-xl shadow-soft text-sm font-medium text-left ${toasterStyles[t.kind].accent}`}
+          >
+            <span aria-hidden>{toasterStyles[t.kind].icon}</span>
+            <span>{t.message}</span>
+          </motion.button>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* =========================================================
+   ConfirmDialog — 危险操作确认对话框
+   ========================================================= */
+
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmText,
+  danger = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  description?: string;
+  confirmText: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const titleId = useId();
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    confirmRef.current?.focus();
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, onCancel]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+          onClick={onCancel}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.9, y: 20, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 24 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm"
+          >
+            <GlassCard hover={false}>
+              <h3
+                id={titleId}
+                className={`font-semibold text-lg ${danger ? "text-red-600" : "text-sakura-600"}`}
+              >
+                {title}
+              </h3>
+              {description && (
+                <p className="text-sm text-twilight-400 mt-1 leading-relaxed">{description}</p>
+              )}
+              <div className="flex items-center justify-end gap-2 mt-5">
+                <AnimeButton
+                  variant="secondary"
+                  onClick={onCancel}
+                  className="!px-4 !py-2 !text-sm"
+                >
+                  取消
+                </AnimeButton>
+                <AnimeButton
+                  ref={confirmRef}
+                  variant={danger ? "danger" : "primary"}
+                  onClick={onConfirm}
+                  className="!px-4 !py-2 !text-sm"
+                >
+                  {confirmText}
+                </AnimeButton>
+              </div>
+            </GlassCard>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

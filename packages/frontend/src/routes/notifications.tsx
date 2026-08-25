@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Bell,
@@ -20,7 +21,9 @@ import {
   StatusBadge,
   LoadingSpinner,
   ErrorDisplay,
+  ConfirmDialog,
 } from "@/components/ui";
+import { toast } from "@/stores/toast";
 import {
   useNotifications,
   useMarkNotificationRead,
@@ -121,6 +124,8 @@ function NotificationsPage() {
   const totalCount = data?.total ?? 0;
   const byType = (type: NotificationType) => notifications.filter((n) => n.type === type).length;
 
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
@@ -147,8 +152,9 @@ function NotificationsPage() {
             <button
               onClick={() => refetch()}
               disabled={isFetching}
-              className="ml-1 p-1 rounded-lg text-twilight-400 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
+              aria-label="刷新通知"
               title="刷新"
+              className="ml-1 p-1 rounded-lg text-twilight-400 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
             </button>
@@ -166,7 +172,7 @@ function NotificationsPage() {
               </span>
             </AnimeButton>
             <AnimeButton
-              onClick={() => clearAll.mutate()}
+              onClick={() => setConfirmClearAll(true)}
               variant="danger"
               className="!px-3 !py-2 !text-sm"
               disabled={totalCount === 0 || clearAll.isPending}
@@ -239,7 +245,12 @@ function NotificationsPage() {
                         <motion.button
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
-                          onClick={() => markRead.mutate(notif.id)}
+                          onClick={() =>
+                            markRead.mutate(notif.id, {
+                              onError: () => toast.error("标记已读失败"),
+                            })
+                          }
+                          aria-label="标记已读"
                           title="标记已读"
                           className="w-8 h-8 rounded-xl flex items-center justify-center text-twilight-400 hover:bg-sakura-100/60 hover:text-sakura-600 transition-colors"
                         >
@@ -249,7 +260,12 @@ function NotificationsPage() {
                       <motion.button
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
-                        onClick={() => deleteNotif.mutate(notif.id)}
+                        onClick={() =>
+                          deleteNotif.mutate(notif.id, {
+                            onError: () => toast.error("删除通知失败"),
+                          })
+                        }
+                        aria-label="删除通知"
                         title="删除通知"
                         className="w-8 h-8 rounded-xl flex items-center justify-center text-twilight-400 hover:bg-red-50 hover:text-red-500 transition-colors"
                       >
@@ -263,6 +279,21 @@ function NotificationsPage() {
           })}
         </motion.div>
       )}
+
+      <ConfirmDialog
+        open={confirmClearAll}
+        title="清除全部通知"
+        description={`将删除全部 ${totalCount} 条通知（含未读），此操作不可恢复。`}
+        confirmText="全部清除"
+        danger
+        onConfirm={() => {
+          setConfirmClearAll(false);
+          clearAll.mutate(undefined, {
+            onError: () => toast.error("清除通知失败"),
+          });
+        }}
+        onCancel={() => setConfirmClearAll(false)}
+      />
     </div>
   );
 }

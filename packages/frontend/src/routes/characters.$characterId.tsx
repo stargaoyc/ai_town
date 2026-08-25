@@ -21,6 +21,7 @@ import {
 } from "@/lib/queries";
 import type { Message } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { toast } from "@/stores/toast";
 
 export const Route = createFileRoute("/characters/$characterId")({
   component: CharacterDetailPage,
@@ -91,6 +92,7 @@ function CharacterDetailPage() {
         onError: () => {
           // 发送失败也移除乐观消息
           setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+          toast.error("消息发送失败，请重试");
         },
       },
     );
@@ -294,7 +296,7 @@ function CharacterDetailPage() {
             <AnimeInput
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && handleSend()}
               placeholder="输入消息..."
               className="flex-1 text-sm"
             />

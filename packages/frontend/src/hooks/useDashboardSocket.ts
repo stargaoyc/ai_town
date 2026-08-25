@@ -76,6 +76,13 @@ export function useDashboardSocket() {
       const url = `${proto}://${window.location.host}/ws/dashboard?token=${encodeURIComponent(token)}`;
       ws = new WebSocket(url);
 
+      // 连接成功即复位重试计数：否则多次偶发断线会累计退避，
+      // 让后续真正的断线在几次内耗尽 MAX_RETRIES 后永久放弃
+      ws.onopen = () => {
+        retryCount = 0;
+        console.debug("[ws/dashboard] connected");
+      };
+
       ws.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data as string) as DashboardMessage;

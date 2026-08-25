@@ -1,17 +1,73 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
+// queryKeys 是 TanStack Query 缓存失效的契约：所有 queryKey / invalidateQueries
+// 必须从这里取值，禁止内联字面量数组。key 值与迁移前完全一致（含 undefined 占位），
+// 前缀匹配语义依赖数组元素顺序，不得增删元素。
+//
+// *All / *ByCharacter 后缀是「前缀失效锚点」：比参数化 key 少一层元素，用于
+// 失效该域的全部变体。不能用参数化 key 传 undefined 代替——
+// ["characters", undefined] 无法前缀匹配 ["characters", { active_only: true }]。
 export const queryKeys = {
+  // ===== 全局 =====
   health: ["health"] as const,
-  characters: (params?: { active_only?: boolean }) => ["characters", params] as const,
-  character: (id: string) => ["character", id] as const,
   world: ["world"] as const,
-  actions: ["actions"] as const,
-  memories: (id: string) => ["memories", id] as const,
-  conversations: ["conversations"] as const,
-  messages: (characterId: string) => ["messages", characterId] as const,
   scenes: ["scenes"] as const,
   adminStatus: ["adminStatus"] as const,
+  config: ["config"] as const,
+  modules: ["modules"] as const,
+  detailedMetrics: ["detailedMetrics"] as const,
+
+  // ===== 角色域 =====
+  characters: (params?: { active_only?: boolean }) => ["characters", params] as const,
+  charactersAll: ["characters"] as const,
+  character: (id: string) => ["character", id] as const,
+  memories: (id: string) => ["memories", id] as const,
+  messages: (characterId: string) => ["messages", characterId] as const,
+  actions: ["actions"] as const,
+  characterActions: (characterId: string, limit: number) =>
+    ["characterActions", characterId, limit] as const,
+  stateHistory: (characterId: string, limit: number) =>
+    ["stateHistory", characterId, limit] as const,
+  nearbyCharacters: (characterId: string) => ["nearbyCharacters", characterId] as const,
+  relations: (characterId: string) => ["relations", characterId] as const,
+  reflections: (characterId: string) => ["reflections", characterId] as const,
+  plans: (characterId: string) => ["plans", characterId] as const,
+
+  // ===== 日记与角色对用户的记忆 =====
+  diaries: (characterId: string, params?: { period?: string; limit?: number }) =>
+    ["diaries", characterId, params] as const,
+  diariesByCharacter: (characterId: string) => ["diaries", characterId] as const,
+  personMemory: (characterId: string, userId: string) =>
+    ["personMemory", characterId, userId] as const,
+  personMemoriesList: (characterId: string, limit: number) =>
+    ["personMemoriesList", characterId, limit] as const,
+
+  // ===== 会话与消息统计 =====
+  conversations: ["conversations"] as const,
+  messageStats: (params?: { character_id?: string; start_date?: string; end_date?: string }) =>
+    ["messageStats", params] as const,
+
+  // ===== 世界 =====
+  worldEvents: (params: {
+    start_tick?: number;
+    end_tick?: number;
+    event_type?: string;
+    limit?: number;
+  }) => ["worldEvents", params] as const,
+  worldSnapshots: (limit: number) => ["worldSnapshots", limit] as const,
+
+  // ===== 运维与平台集成 =====
+  logs: (lines: number, level?: string) => ["logs", lines, level] as const,
+  onebotMessages: (limit: number) => ["onebotMessages", limit] as const,
+  proactiveShares: (limit: number) => ["proactiveShares", limit] as const,
+  mcpServers: ["mcpServers"] as const,
+  mcpTools: ["mcpTools"] as const,
+  mcpServersHealth: ["mcpServersHealth"] as const,
+
+  // ===== 通知 =====
+  notifications: (limit: number) => ["notifications", limit] as const,
+  notificationsAll: ["notifications"] as const,
 };
 
 export function useHealth() {
@@ -103,7 +159,7 @@ export function useForceTick() {
 
 export function useReflections(characterId: string) {
   return useQuery({
-    queryKey: ["reflections", characterId],
+    queryKey: queryKeys.reflections(characterId),
     queryFn: () => api.getReflections(characterId),
     enabled: !!characterId,
   });
@@ -111,7 +167,7 @@ export function useReflections(characterId: string) {
 
 export function usePlans(characterId: string) {
   return useQuery({
-    queryKey: ["plans", characterId],
+    queryKey: queryKeys.plans(characterId),
     queryFn: () => api.getPlans(characterId),
     enabled: !!characterId,
   });
@@ -119,7 +175,7 @@ export function usePlans(characterId: string) {
 
 export function useCharacterActions(characterId: string, limit = 50) {
   return useQuery({
-    queryKey: ["characterActions", characterId, limit],
+    queryKey: queryKeys.characterActions(characterId, limit),
     queryFn: () => api.getCharacterActions(characterId, limit),
     enabled: !!characterId,
   });
@@ -127,7 +183,7 @@ export function useCharacterActions(characterId: string, limit = 50) {
 
 export function useRelations(characterId: string) {
   return useQuery({
-    queryKey: ["relations", characterId],
+    queryKey: queryKeys.relations(characterId),
     queryFn: () => api.getRelations(characterId),
     enabled: !!characterId,
   });
@@ -135,7 +191,7 @@ export function useRelations(characterId: string) {
 
 export function useNearbyCharacters(characterId: string) {
   return useQuery({
-    queryKey: ["nearbyCharacters", characterId],
+    queryKey: queryKeys.nearbyCharacters(characterId),
     queryFn: () => api.getNearbyCharacters(characterId),
     enabled: !!characterId,
     refetchInterval: 10000, // 10 秒刷新一次，实时感知场景变化
@@ -144,7 +200,7 @@ export function useNearbyCharacters(characterId: string) {
 
 export function useStateHistory(characterId: string, limit = 50) {
   return useQuery({
-    queryKey: ["stateHistory", characterId, limit],
+    queryKey: queryKeys.stateHistory(characterId, limit),
     queryFn: () => api.getCharacterStateHistory(characterId, limit),
     enabled: !!characterId,
   });
@@ -157,14 +213,14 @@ export function useWorldEventsRange(params: {
   limit?: number;
 }) {
   return useQuery({
-    queryKey: ["worldEvents", params],
+    queryKey: queryKeys.worldEvents(params),
     queryFn: () => api.getWorldEventsRange(params),
   });
 }
 
 export function useOnebotMessages(limit = 50) {
   return useQuery({
-    queryKey: ["onebotMessages", limit],
+    queryKey: queryKeys.onebotMessages(limit),
     queryFn: () => api.getOnebotMessages(limit),
     refetchInterval: 10000,
   });
@@ -172,14 +228,14 @@ export function useOnebotMessages(limit = 50) {
 
 export function useProactiveShares(limit = 50) {
   return useQuery({
-    queryKey: ["proactiveShares", limit],
+    queryKey: queryKeys.proactiveShares(limit),
     queryFn: () => api.getProactiveShares(limit),
   });
 }
 
 export function useWorldSnapshots(limit = 20) {
   return useQuery({
-    queryKey: ["worldSnapshots", limit],
+    queryKey: queryKeys.worldSnapshots(limit),
     queryFn: () => api.getWorldSnapshots(limit),
   });
 }
@@ -190,35 +246,35 @@ export function useMessageStats(params?: {
   end_date?: string;
 }) {
   return useQuery({
-    queryKey: ["messageStats", params],
+    queryKey: queryKeys.messageStats(params),
     queryFn: () => api.getMessageStats(params),
   });
 }
 
 export function useModules() {
   return useQuery({
-    queryKey: ["modules"],
+    queryKey: queryKeys.modules,
     queryFn: () => api.getModules(),
   });
 }
 
 export function useMcpServers() {
   return useQuery({
-    queryKey: ["mcpServers"],
+    queryKey: queryKeys.mcpServers,
     queryFn: () => api.getMcpServers(),
   });
 }
 
 export function useMcpTools() {
   return useQuery({
-    queryKey: ["mcpTools"],
+    queryKey: queryKeys.mcpTools,
     queryFn: () => api.getMcpTools(),
   });
 }
 
 export function useMcpServersHealth(refetchInterval = 10000) {
   return useQuery({
-    queryKey: ["mcpServersHealth"],
+    queryKey: queryKeys.mcpServersHealth,
     queryFn: () => api.getMcpServersHealth(),
     refetchInterval,
   });
@@ -244,8 +300,8 @@ export function useToggleMcpServer() {
     mutationFn: ({ serverName, enabled }: { serverName: string; enabled: boolean }) =>
       api.toggleMcpServer(serverName, enabled),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["mcpServers"] });
-      qc.invalidateQueries({ queryKey: ["mcpTools"] });
+      qc.invalidateQueries({ queryKey: queryKeys.mcpServers });
+      qc.invalidateQueries({ queryKey: queryKeys.mcpTools });
     },
   });
 }
@@ -255,7 +311,7 @@ export function useImportCharacter() {
   return useMutation({
     mutationFn: (yaml: string) => api.importCharacter(yaml),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["characters"] });
+      qc.invalidateQueries({ queryKey: queryKeys.charactersAll });
     },
   });
 }
@@ -265,7 +321,7 @@ export function useImportCharacterBatch() {
   return useMutation({
     mutationFn: (yaml: string) => api.importCharacterBatch(yaml),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["characters"] });
+      qc.invalidateQueries({ queryKey: queryKeys.charactersAll });
     },
   });
 }
@@ -275,7 +331,7 @@ export function useDeleteCharacter() {
   return useMutation({
     mutationFn: (characterId: string) => api.deleteCharacter(characterId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["characters"] });
+      qc.invalidateQueries({ queryKey: queryKeys.charactersAll });
     },
   });
 }
@@ -296,7 +352,7 @@ export function useVectorSearch() {
 
 export function useLogs(lines = 100, level?: string, refetchInterval = 5000) {
   return useQuery({
-    queryKey: ["logs", lines, level],
+    queryKey: queryKeys.logs(lines, level),
     queryFn: () => api.getLogs(lines, level),
     refetchInterval,
   });
@@ -304,7 +360,7 @@ export function useLogs(lines = 100, level?: string, refetchInterval = 5000) {
 
 export function useDetailedMetrics(refetchInterval = 5000) {
   return useQuery({
-    queryKey: ["detailedMetrics"],
+    queryKey: queryKeys.detailedMetrics,
     queryFn: () => api.getDetailedMetrics(),
     refetchInterval,
   });
@@ -312,7 +368,7 @@ export function useDetailedMetrics(refetchInterval = 5000) {
 
 export function useConfig() {
   return useQuery({
-    queryKey: ["config"],
+    queryKey: queryKeys.config,
     queryFn: () => api.getConfig(),
   });
 }
@@ -322,7 +378,7 @@ export function useUpdateConfig() {
   return useMutation({
     mutationFn: (updates: Record<string, unknown>) => api.updateConfig(updates),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["config"] });
+      qc.invalidateQueries({ queryKey: queryKeys.config });
     },
   });
 }
@@ -332,7 +388,7 @@ export function useResetConfig() {
   return useMutation({
     mutationFn: (key: string) => api.resetConfig(key),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["config"] });
+      qc.invalidateQueries({ queryKey: queryKeys.config });
     },
   });
 }
@@ -341,7 +397,7 @@ export function useResetConfig() {
 
 export function useNotifications(limit = 50, refetchInterval = 10000) {
   return useQuery({
-    queryKey: ["notifications", limit],
+    queryKey: queryKeys.notifications(limit),
     queryFn: () => api.getNotifications(limit),
     refetchInterval,
   });
@@ -353,7 +409,7 @@ export function useCreateNotification() {
     mutationFn: ({ type, title, content }: { type: string; title: string; content: string }) =>
       api.createNotification(type, title, content),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: queryKeys.notificationsAll });
     },
   });
 }
@@ -363,7 +419,7 @@ export function useMarkNotificationRead() {
   return useMutation({
     mutationFn: (id: string) => api.markNotificationRead(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: queryKeys.notificationsAll });
     },
   });
 }
@@ -373,7 +429,7 @@ export function useMarkAllNotificationsRead() {
   return useMutation({
     mutationFn: () => api.markAllNotificationsRead(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: queryKeys.notificationsAll });
     },
   });
 }
@@ -383,7 +439,7 @@ export function useDeleteNotification() {
   return useMutation({
     mutationFn: (id: string) => api.deleteNotification(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: queryKeys.notificationsAll });
     },
   });
 }
@@ -393,7 +449,7 @@ export function useClearAllNotifications() {
   return useMutation({
     mutationFn: () => api.clearAllNotifications(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: queryKeys.notificationsAll });
     },
   });
 }
@@ -402,7 +458,7 @@ export function useClearAllNotifications() {
 
 export function useDiaries(characterId: string, params?: { period?: string; limit?: number }) {
   return useQuery({
-    queryKey: ["diaries", characterId, params],
+    queryKey: queryKeys.diaries(characterId, params),
     queryFn: () => api.getDiaries(characterId, params),
     enabled: !!characterId,
   });
@@ -421,7 +477,7 @@ export function useGenerateDiary() {
       characterName?: string;
     }) => api.generateDiary(characterId, period, characterName),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["diaries", vars.characterId] });
+      qc.invalidateQueries({ queryKey: queryKeys.diariesByCharacter(vars.characterId) });
     },
   });
 }
@@ -430,7 +486,7 @@ export function useGenerateDiary() {
 
 export function usePersonMemory(characterId: string, userId: string) {
   return useQuery({
-    queryKey: ["personMemory", characterId, userId],
+    queryKey: queryKeys.personMemory(characterId, userId),
     queryFn: () => api.getPersonMemory(characterId, userId),
     enabled: !!characterId && !!userId,
   });
@@ -438,7 +494,7 @@ export function usePersonMemory(characterId: string, userId: string) {
 
 export function usePersonMemoriesList(characterId: string, limit = 50) {
   return useQuery({
-    queryKey: ["personMemoriesList", characterId, limit],
+    queryKey: queryKeys.personMemoriesList(characterId, limit),
     queryFn: () => api.listPersonMemories(characterId, limit),
     enabled: !!characterId,
   });

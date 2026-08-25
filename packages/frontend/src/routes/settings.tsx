@@ -23,7 +23,9 @@ import {
   ErrorDisplay,
   EmptyState,
   StatusBadge,
+  ConfirmDialog,
 } from "@/components/ui";
+import { toast } from "@/stores/toast";
 import {
   useAdminStatus,
   useModules,
@@ -82,6 +84,7 @@ function SettingsPage() {
   const configItems = configData?.data ?? [];
   const [editValues, setEditValues] = useState<Record<string, unknown>>({});
   const [hasEdits, setHasEdits] = useState(false);
+  const [pendingResetKey, setPendingResetKey] = useState<string | null>(null);
 
   // 同步配置项到编辑状态
   useEffect(() => {
@@ -106,6 +109,10 @@ function SettingsPage() {
     updateConfig.mutate(updates, {
       onSuccess: () => {
         setHasEdits(false);
+        toast.success("配置已保存");
+      },
+      onError: () => {
+        toast.error("配置保存失败");
       },
     });
   };
@@ -114,6 +121,9 @@ function SettingsPage() {
     resetConfig.mutate(key, {
       onSuccess: () => {
         setHasEdits(false);
+      },
+      onError: () => {
+        toast.error("重置配置失败");
       },
     });
   };
@@ -426,15 +436,19 @@ function SettingsPage() {
                           {health?.endpoint ?? "—"}
                         </p>
                       </div>
-                      {/* 启用/禁用开关 */}
                       <button
                         onClick={() =>
-                          toggleMcpServer.mutate({
-                            serverName: srv.name,
-                            enabled: !isEnabled,
-                          })
+                          toggleMcpServer.mutate(
+                            { serverName: srv.name, enabled: !isEnabled },
+                            {
+                              onError: () => toast.error(`切换插件 ${srv.name} 失败`),
+                            },
+                          )
                         }
                         disabled={toggleMcpServer.isPending}
+                        role="switch"
+                        aria-checked={isEnabled}
+                        aria-label={`${isEnabled ? "禁用" : "启用"}插件 ${srv.name}`}
                         title={isEnabled ? "点击禁用此 MCP 插件" : "点击启用此 MCP 插件"}
                         className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
                           isEnabled ? "bg-sakura-400" : "bg-gray-300"
@@ -557,9 +571,10 @@ function SettingsPage() {
                         </div>
                         {isOverridden && (
                           <button
-                            onClick={() => handleResetConfig(item.key)}
+                            onClick={() => setPendingResetKey(item.key)}
                             disabled={resetConfig.isPending}
                             className="text-xs text-twilight-400 hover:text-sakura-500 flex items-center gap-1 transition-colors"
+                            aria-label={`重置 ${item.label} 为默认值`}
                             title="重置为默认值"
                           >
                             <RotateCcw className="w-3 h-3" />
@@ -577,6 +592,9 @@ function SettingsPage() {
                               }));
                               setHasEdits(true);
                             }}
+                            role="switch"
+                            aria-checked={Boolean(editValues[item.key])}
+                            aria-label={item.label}
                             className={`relative w-12 h-6 rounded-full transition-colors ${
                               editValues[item.key] ? "bg-sakura-400" : "bg-gray-300"
                             }`}
@@ -634,6 +652,22 @@ function SettingsPage() {
           </GlassCard>
         </motion.div>
       </motion.div>
+
+      <ConfirmDialog
+        open={pendingResetKey !== null}
+        title="重置配置项"
+        description={
+          pendingResetKey
+            ? `将「${configItems.find((c) => c.key === pendingResetKey)?.label ?? pendingResetKey}」恢复为环境变量默认值，Redis 覆盖将被移除。`
+            : ""
+        }
+        confirmText="确认重置"
+        onConfirm={() => {
+          if (pendingResetKey !== null) handleResetConfig(pendingResetKey);
+          setPendingResetKey(null);
+        }}
+        onCancel={() => setPendingResetKey(null)}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { createRootRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useRouterState } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { NavLayout } from "@/components/ui";
+import { NavLayout, Toaster } from "@/components/ui";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AnimeBackground } from "@/components/AnimeBackground";
 import { useAuthStore } from "@/stores/auth";
@@ -41,6 +41,7 @@ function RootComponent() {
           {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
         </div>
       )}
+      <Toaster />
     </ErrorBoundary>
   );
 }

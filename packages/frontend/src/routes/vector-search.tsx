@@ -158,7 +158,7 @@ function VectorSearchPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch();
                 }}
                 icon={<Search className="w-4 h-4" />}
               />
