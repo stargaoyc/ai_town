@@ -59,6 +59,9 @@ DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后
 # 群聊智能回复各分支的回复概率（互斥分支非叠加，最终回复率为各触发路径的组合上界）
 GROUP_REPLY_PROBABILITY_CAP = 0.7  # 疑问句启发式回复概率
 GROUP_REPLY_EMOTION_PROBABILITY = 0.5  # 情绪句启发式回复概率
+# 问候语命中回复概率（round-3 H5：原为确定性直接回复，是乒乓死循环的主要燃料——
+# 两个关键词机器人互道早安永不停歇；0.9 闸门打破确定性互答，仅轻微降低活跃度）
+GROUP_REPLY_GREETING_PROBABILITY = 0.9
 GROUP_REPLY_LLM_NO_FALLBACK = 0.15  # LLM 判定不回复后的活跃度兜底
 GROUP_REPLY_LLM_ERROR_FALLBACK = 0.3  # LLM 调用失败时的 fail-open 兜底
 
@@ -151,7 +154,7 @@ class MessageService:
         """群聊智能回复决策 - 判断角色是否应该回复这条非 @ 消息
 
         决策逻辑（四层过滤，从轻到重）：
-        1. 关键词命中：消息包含角色名 / 问候语 → 直接回复
+        1. 关键词命中：消息包含角色名 → 直接回复；问候语 → 0.9 概率回复
         2. 启发式规则：疑问句 / 情绪强烈 → 概率回复
         3. LLM 判断：调用轻量级 LLM 判断相关性
         4. 概率兜底：LLM 未命中时小概率主动回复
@@ -188,11 +191,16 @@ class MessageService:
         if character_name and character_name in text:
             return True, "name_mentioned"
 
-        # 1b. 问候语关键词 → 直接回复（性格外向的角色会回应问候）
+        # 1b. 问候语关键词 → 概率回复（round-3 H5：不再确定性直接回复。
+        # 问候层无任何上下文判断，回显实现或第二个关键词机器人会与本角色
+        # 互相触发问候形成乒乓死循环；0.9 概率闸门打破确定性互答。
+        # 名字命中（1a）保持确定性：显式点名理应得到回应。）
         text_lower = text.lower()
         for keyword in GREETING_KEYWORDS:
             if keyword in text_lower:
-                return True, f"greeting:{keyword}"
+                if _probability_roll(GROUP_REPLY_GREETING_PROBABILITY):
+                    return True, f"greeting:{keyword}"
+                return False, f"greeting_skip_probability:{keyword}"
 
         # 2. 启发式规则（概率回复）
         # 2a. 疑问句（包含问号或疑问词结尾）

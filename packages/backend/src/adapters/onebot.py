@@ -59,6 +59,13 @@ logger = get_logger(__name__)
 MAX_SEGMENT_LENGTH = 500
 # 多段回复：段落间发送间隔（秒），模拟真人打字
 SEGMENT_SEND_INTERVAL = 0.6
+# 回复去重键 TTL（秒）：与原实现一致，防止 OneBot 实现重发同一事件导致重复回复
+_REPLY_DEDUP_TTL_SECONDS = 600
+
+
+def _reply_dedup_key(message_id: str) -> str:
+    """回复去重键（键格式与原实现保持一致）"""
+    return f"onebot:msg:{message_id}"
 
 
 def _get_default_character_id() -> UUID | None:
@@ -526,7 +533,8 @@ class OneBotAdapter:
                     logger.warning("onebot_event_not_dict", event=event)
                     continue
 
-                # 断连兜底：消息事件先持久化到 Streams（处理成功后确认；
+                # 断连兜底：消息事件先持久化到 Streams（处理成功后 XACK+XDEL 从
+                # 流中移除，见 event_queue 模块 docstring 的 round-3 H3 说明；
                 # 崩溃/重启后由 _recovery_loop 重放，幂等性由 SETNX 去重保证）
                 queue = None
                 entry_id = None
@@ -557,9 +565,11 @@ class OneBotAdapter:
                 else:
                     if queue is not None and entry_id is not None:
                         try:
-                            await queue.ack(entry_id)
+                            # 必须用 remove()（XACK+XDEL）：该条目未经 XREADGROUP 投递、
+                            # 不在 PEL 里，只 ack 等于没处理，会被恢复循环重投（round-3 H3）
+                            await queue.remove(entry_id)
                         except Exception as e:
-                            logger.warning("onebot_event_ack_failed", error=str(e))
+                            logger.warning("onebot_event_remove_failed", error=str(e))
         except WebSocketDisconnect:
             logger.info("onebot_client_disconnected_outer")
         except Exception as e:
@@ -632,23 +642,13 @@ class OneBotAdapter:
             logger.info("onebot_empty_message_skipped", user_id=user_id, group_id=group_id)
             return
 
-        # 消息去重：OneBot 实现可能重发同一事件，SETNX + TTL 防止重复回复与重复写库
-        message_id = str(event.get("message_id") or "")
-        if message_id:
-            from src.runtime import get_redis
+        # round-3 H5：排除机器人自身的消息。回显实现或第二个关键词机器人
+        # 会与本角色互相触发回复形成乒乓死循环（问候层无概率闸门，必然互答）
+        if user_id is not None and str(user_id) == self_id:
+            logger.debug("onebot_self_message_skipped", self_id=self_id, group_id=group_id)
+            return
 
-            redis_client = get_redis()
-            if redis_client is not None:
-                dedup_key = f"onebot:msg:{message_id}"
-                first_seen = await redis_client.set(dedup_key, "1", ex=600, nx=True)
-                if not first_seen:
-                    logger.info(
-                        "onebot_duplicate_message_skipped",
-                        message_id=message_id,
-                        user_id=user_id,
-                        group_id=group_id,
-                    )
-                    return
+        message_id = str(event.get("message_id") or "")
 
         # 群聊接入：智能回复决策
         if is_group:
@@ -773,6 +773,19 @@ class OneBotAdapter:
             logger.warning("onebot_empty_reply", user_id=internal_user_id)
             return
 
+        # round-3 H4：去重认领放在「回复文本已生成、即将发送」处。群聊智能回复
+        # 与私聊两条路径在此汇合，单点认领同时覆盖两者；若在处理开始就 SETNX，
+        # 进程在生成与发送之间崩溃会把消息永久锁死（重放被去重挡住而回复未发出）。
+        if message_id:
+            claimed = await self._claim_reply_slot(message_id)
+            if not claimed:
+                logger.info(
+                    "onebot_duplicate_reply_skipped",
+                    message_id=message_id,
+                    user_id=internal_user_id,
+                )
+                return
+
         try:
             await self.send_message(
                 onebot_ws,
@@ -782,12 +795,39 @@ class OneBotAdapter:
                 message=reply_text,
             )
         except Exception as e:
+            # 发送失败必须释放槽位，否则重放被去重挡住、回复永久丢失（round-3 H4）
+            if message_id:
+                await self._release_reply_slot(message_id)
             logger.error(
                 "onebot_send_reply_failed",
                 user_id=internal_user_id,
                 error=str(e),
                 exc_info=True,
             )
+
+    async def _claim_reply_slot(self, message_id: str) -> bool:
+        """认领回复槽位：SETNX 成功者才获得发送资格
+
+        时序约束（round-3 H4）：必须在回复文本生成成功、即将发送时才认领，
+        崩溃丢失窗口从整个处理流程压缩到发送本身。
+
+        Redis 不可用时视为无去重层（与原行为一致），直接放行。
+        """
+        from src.runtime import get_redis
+
+        redis_client = get_redis()
+        if redis_client is None:
+            return True
+        return bool(await redis_client.set(_reply_dedup_key(message_id), "1", ex=_REPLY_DEDUP_TTL_SECONDS, nx=True))
+
+    async def _release_reply_slot(self, message_id: str) -> None:
+        """释放回复槽位：发送失败后调用，让重放路径可以重试发送（round-3 H4）"""
+        from src.runtime import get_redis
+
+        redis_client = get_redis()
+        if redis_client is None:
+            return
+        await redis_client.delete(_reply_dedup_key(message_id))
 
     async def _handle_meta_event(self, event: dict[str, Any]) -> None:
         """处理 OneBot 元事件（心跳 / 生命周期）

@@ -1,10 +1,17 @@
 """OneBot 事件兜底队列 - Redis Streams 至少一次语义
 
 解决「后端重启/处理失败导致入站消息丢失」：
-- 入站消息事件先 XADD 持久化（内联处理前），处理成功后 XACK；
+- 入站消息事件先 XADD 持久化（内联处理前），处理成功后 XACK + XDEL；
 - 崩溃/重启后由 recover_drain() 重放未确认条目（消费幂等由
   OneBot 侧 SETNX 去重保证，重放不会重复回复）；
 - 投递次数超过上限的毒消息转入死信流，不阻塞后续。
+
+为什么成功处理必须 XDEL 而非只 XACK（round-3 H3）：XACK 只清除 PEL
+（待确认列表），从不移除流内条目；而内联快速路径的条目从未经
+XREADGROUP 投递、根本不进 PEL，对它 XACK 是空操作。只 XACK 的后果是
+条目永久留在流中，恢复循环用 ">" 把它当新条目再次投递——重复回复
+仅靠 SETNX 去重兜住。remove() 用 XACK + XDEL 让已处理条目彻底离开
+流：既不会被重放，也不会无限累积。
 
 设计取舍：内联快速路径保持不变（回复延迟最低），队列只承担
 「崩溃恢复 + 失败重放」职责，不做全量异步化。
@@ -50,14 +57,36 @@ class EventQueue:
                 raise
 
     async def enqueue(self, event: dict[str, Any]) -> str:
-        """持久化一条事件，返回流内条目 ID"""
-        return str(await self.redis.xadd(STREAM, {"event": json.dumps(event, ensure_ascii=False)}))
+        """持久化一条事件，返回流内条目 ID（maxlen 防止流无限增长）"""
+        from src.config import settings
+
+        return str(
+            await self.redis.xadd(
+                STREAM,
+                {"event": json.dumps(event, ensure_ascii=False)},
+                maxlen=settings.onebot_stream_maxlen,
+                approximate=True,
+            )
+        )
 
     async def ack(self, entry_id: str) -> None:
+        """仅清除 PEL 记录，不移除流内条目（保留为原语，用于与 remove() 对比语义）"""
         await self.redis.xack(STREAM, GROUP, entry_id)
 
+    async def remove(self, entry_id: str) -> None:
+        """确认并从流中删除已成功处理的条目
+
+        为什么必须 XDEL：见模块 docstring（round-3 H3）。XACK 清除 PEL
+        记录（对已投递条目生效），XDEL 移除流内数据本体；缺后者时条目
+        会被恢复循环当作新条目无限重投。
+        """
+        await self.redis.xack(STREAM, GROUP, entry_id)
+        await self.redis.xdel(STREAM, entry_id)
+
     async def dead_letter(self, entry_id: str, fields: dict[str, str], reason: str) -> None:
-        """毒消息转死信流并确认，避免无限重放阻塞队列"""
+        """毒消息转死信流并从源流移除，避免无限重放阻塞队列"""
+        from src.config import settings
+
         await self.redis.xadd(
             DLQ_STREAM,
             {
@@ -65,8 +94,11 @@ class EventQueue:
                 "source_id": entry_id,
                 "reason": reason[:500],
             },
+            maxlen=settings.onebot_stream_maxlen,
+            approximate=True,
         )
-        await self.ack(entry_id)
+        # 拷贝完成后同样要从源流移除：只 XACK 不 XDEL 会留下永久重投的残骸
+        await self.remove(entry_id)
         logger.warning("event_queue_dead_letter", source_id=entry_id, reason=reason)
 
     async def recover_drain(
@@ -132,4 +164,5 @@ class EventQueue:
                 error=str(e),
             )
             return
-        await self.ack(entry_id)
+        # 成功即确认并从流中移除：只 XACK 的话条目会被 ">" 再次投递（round-3 H3）
+        await self.remove(entry_id)
