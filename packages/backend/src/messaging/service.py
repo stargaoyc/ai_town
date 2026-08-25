@@ -53,6 +53,12 @@ DEFAULT_HISTORY_LIMIT = 20  # 默认拉取最近 20 条消息构造 history
 CONTEXT_COMPRESS_THRESHOLD = 50  # 会话累计消息超过 50 条时触发压缩
 COMPRESSED_HISTORY_LIMIT = 10  # 压缩后保留最近 10 条原文
 
+# 认知注入（反思/日报）单条截断上限：浓缩长文的尾部对对话增益递减，
+# 截断以守住用户对话的 token 预算（与 tick 决策注入同型护栏，规格更紧）
+_COGNITION_ITEM_MAX_CHARS = 300
+# 认知未开启/无数据/加载失败时统一占位：模板键恒存在，render_system 才能渲染
+_COGNITION_EMPTY_TEXT = "暂无"
+
 # 默认错误回复（LLM 失败时返回，避免用户会话阻塞）
 DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后再试）"
 
@@ -483,7 +489,8 @@ class MessageService:
 
         返回包含所有 chat 模板占位符的字典：
         name, personality, backstory, world_time, weather,
-        location, energy, mood, context_summary
+        location, energy, mood, context_summary,
+        person_memory, reflections, diary
 
         Args:
             conversation: 会话对象
@@ -535,6 +542,15 @@ class MessageService:
         except Exception as e:
             logger.warning("person_memory_context_load_failed", error=str(e))
 
+        # 近期认知注入（反思+最新日报）：默认关闭保持上下文精简；开启后角色
+        # 带着「最近想过什么/经历过什么」回应用户。占位恒传，保证模板键完整。
+        from src.config import settings
+
+        if settings.chat_inject_cognition:
+            reflections_text, diary_text = await self._load_cognition_texts(character.id)
+        else:
+            reflections_text, diary_text = _COGNITION_EMPTY_TEXT, _COGNITION_EMPTY_TEXT
+
         return {
             "name": character.name,
             "personality": personality_text,
@@ -546,7 +562,61 @@ class MessageService:
             "mood": state.mood or "calm",
             "context_summary": context_summary or "（新对话，暂无摘要）",
             "person_memory": person_memory_text,
+            "reflections": reflections_text,
+            "diary": diary_text,
         }
+
+    async def _load_cognition_texts(self, character_id: UUID) -> tuple[str, str]:
+        """加载角色近期认知（top-3 反思 + 最新日报）供对话注入
+
+        失败隔离：任一来源失败仅记录 warning 并降级为「暂无」，
+        不阻断对话主流程（与 tick 决策注入的分块降级模式一致）。
+
+        Args:
+            character_id: 角色 ID
+
+        Returns:
+            (reflections_text, diary_text)，无数据/失败时为「暂无」
+        """
+        reflections_text = _COGNITION_EMPTY_TEXT
+        diary_text = _COGNITION_EMPTY_TEXT
+
+        try:
+            from src.db.repositories import DiaryRepository, ReflectionRepository
+            from src.db.session import db
+
+            async with db.session() as session:
+                try:
+                    refs = await ReflectionRepository(session).get_by_character(character_id, limit=3)
+                    if refs:
+                        reflections_text = "\n".join(f"- {r.content[:_COGNITION_ITEM_MAX_CHARS]}" for r in refs)
+                except Exception as e:
+                    await session.rollback()
+                    logger.warning(
+                        "chat_reflections_load_failed_continue",
+                        character_id=str(character_id),
+                        error=str(e),
+                    )
+
+                try:
+                    latest_diary = await DiaryRepository(session).get_latest(character_id, period="day")
+                    if latest_diary and latest_diary.content:
+                        diary_text = latest_diary.content[:_COGNITION_ITEM_MAX_CHARS]
+                except Exception as e:
+                    await session.rollback()
+                    logger.warning(
+                        "chat_diary_load_failed_continue",
+                        character_id=str(character_id),
+                        error=str(e),
+                    )
+        except Exception as e:
+            logger.warning(
+                "chat_cognition_session_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
+        return reflections_text, diary_text
 
     async def _generate_reply(
         self,
