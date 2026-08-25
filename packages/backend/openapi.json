@@ -2549,19 +2549,9 @@
           "admin"
         ],
         "summary": "Vector Search",
-        "description": "向量检索测试 - 调试 pgvector 检索\n\nArgs:\n    character_id: 角色 ID\n    query: 查询文本\n    top_k: 返回结果数\n\nReturns:\n    检索结果列表（含相似度分数）",
+        "description": "向量检索测试 - 调试 pgvector 检索\n\nArgs:\n    query: 查询文本\n    character_id: 可选角色 ID；缺省时执行跨角色全局检索（探测全部分区）\n    top_k: 返回结果数\n\nReturns:\n    检索结果列表（含相似度分数；character_id/character_name 标注归属）",
         "operationId": "vector_search_api_v1_admin_vector_search_post",
         "parameters": [
-          {
-            "name": "character_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Character Id"
-            }
-          },
           {
             "name": "query",
             "in": "query",
@@ -2569,6 +2559,23 @@
             "schema": {
               "type": "string",
               "title": "Query"
+            }
+          },
+          {
+            "name": "character_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Character Id"
             }
           },
           {
@@ -2588,7 +2595,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VectorSearchOut"
+                  "$ref": "#/components/schemas/_VectorSearchOut"
                 }
               }
             }
@@ -5252,75 +5259,6 @@
         ],
         "title": "ValidationError"
       },
-      "VectorSearchOut": {
-        "properties": {
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/VectorSearchResultOut"
-            },
-            "type": "array",
-            "title": "Data"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "query": {
-            "type": "string",
-            "title": "Query"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data",
-          "total",
-          "query"
-        ],
-        "title": "VectorSearchOut"
-      },
-      "VectorSearchResultOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "importance": {
-            "type": "integer",
-            "title": "Importance"
-          },
-          "timestamp": {
-            "type": "string",
-            "title": "Timestamp"
-          },
-          "similarity": {
-            "type": "number",
-            "title": "Similarity"
-          },
-          "is_reflected": {
-            "type": "boolean",
-            "title": "Is Reflected"
-          },
-          "source_type": {
-            "type": "string",
-            "title": "Source Type"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "content",
-          "importance",
-          "timestamp",
-          "similarity",
-          "is_reflected",
-          "source_type"
-        ],
-        "title": "VectorSearchResultOut"
-      },
       "WorldEventEntryOut": {
         "properties": {
           "id": {
@@ -5488,6 +5426,104 @@
           "active_characters"
         ],
         "title": "WorldStateOut"
+      },
+      "_VectorSearchItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "importance": {
+            "type": "integer",
+            "title": "Importance"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          },
+          "is_reflected": {
+            "type": "boolean",
+            "title": "Is Reflected"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          },
+          "character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Id"
+          },
+          "character_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content",
+          "importance",
+          "similarity",
+          "is_reflected",
+          "source_type"
+        ],
+        "title": "_VectorSearchItemOut",
+        "description": "向量检索单条结果：原字段超集 + 角色归属（单角色模式下为请求范围值/None）"
+      },
+      "_VectorSearchOut": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/_VectorSearchItemOut"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "query"
+        ],
+        "title": "_VectorSearchOut"
       }
     }
   }

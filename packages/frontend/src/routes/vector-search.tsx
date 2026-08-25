@@ -81,6 +81,8 @@ function similarityColor(sim: number): { bar: string; text: string } {
 }
 
 function VectorSearchPage() {
+  // "all" 表示跨角色全局检索（后端 character_id 缺省）
+  const ALL_CHARACTERS = "all";
   const [selectedCharacter, setSelectedCharacter] = useState("");
   const [query, setQuery] = useState("");
   // top_k 滑块（1-20，默认 10）
@@ -104,7 +106,7 @@ function VectorSearchPage() {
   const handleSearch = () => {
     if (!selectedCharacter || !query.trim()) return;
     searchMutation.mutate({
-      characterId: selectedCharacter,
+      characterId: selectedCharacter === ALL_CHARACTERS ? null : selectedCharacter,
       query: query.trim(),
       topK,
     });
@@ -143,6 +145,7 @@ function VectorSearchPage() {
                   className="w-full px-4 py-3 rounded-xl bg-white/60 border border-sakura-200/60 text-twilight-700 focus:outline-none focus:ring-2 focus:ring-sakura-400/50 focus:border-transparent focus:bg-white/80 transition-all"
                 >
                   <option value="">— 请选择角色 —</option>
+                  <option value={ALL_CHARACTERS}>🌐 全部角色（跨角色检索）</option>
                   {characters.map((char) => (
                     <option key={char.id} value={char.id}>
                       {char.name}（{char.id}）
@@ -255,17 +258,26 @@ function VectorSearchPage() {
             return (
               <motion.div key={result.id} variants={item}>
                 <GlassCard className="space-y-3" hover>
-                  {/* 顶部：来源类型标签 + 时间 */}
+                  {/* 顶部：来源类型标签 + 归属角色（全局模式）+ 时间 */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium border ${src.color}`}
-                    >
-                      {src.emoji} {src.label}
-                    </span>
-                    <span className="text-xs text-twilight-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatTime(result.timestamp)}
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium border ${src.color}`}
+                      >
+                        {src.emoji} {src.label}
+                      </span>
+                      {result.character_name && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-twilight-100 text-twilight-600 border-twilight-200/50">
+                          🧑 {result.character_name}
+                        </span>
+                      )}
+                    </div>
+                    {result.timestamp && (
+                      <span className="text-xs text-twilight-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatTime(result.timestamp)}
+                      </span>
+                    )}
                   </div>
 
                   {/* 记忆内容 */}

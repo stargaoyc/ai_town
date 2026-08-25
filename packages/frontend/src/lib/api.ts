@@ -225,12 +225,14 @@ export const api = {
   getProactiveShares: (limit = 50) =>
     request<{ data: ShareEntry[]; total: number }>(`/admin/proactive-shares?limit=${limit}`),
 
-  // 向量检索测试
-  vectorSearch: (characterId: string, query: string, topK = 10) =>
-    request<{ data: VectorSearchResult[]; total: number; query: string }>(
-      `/admin/vector-search?character_id=${characterId}&query=${encodeURIComponent(query)}&top_k=${topK}`,
+  // 向量检索测试（characterId 为 null 时执行跨角色全局检索）
+  vectorSearch: (characterId: string | null, query: string, topK = 10) => {
+    const scopeParam = characterId ? `character_id=${characterId}&` : "";
+    return request<{ data: VectorSearchResult[]; total: number; query: string }>(
+      `/admin/vector-search?${scopeParam}query=${encodeURIComponent(query)}&top_k=${topK}`,
       { method: "POST" },
-    ),
+    );
+  },
 
   // 世界快照
   getWorldSnapshots: (limit = 20) =>
@@ -401,7 +403,7 @@ export type OnebotMessageEntry = components["schemas"]["OnebotMessageEntryOut"];
 
 export type ShareEntry = components["schemas"]["ShareEntryOut"];
 
-export type VectorSearchResult = components["schemas"]["VectorSearchResultOut"];
+export type VectorSearchResult = components["schemas"]["_VectorSearchItemOut"];
 
 export type SnapshotEntry = components["schemas"]["SnapshotEntryOut"];
 

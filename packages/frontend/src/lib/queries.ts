@@ -343,7 +343,7 @@ export function useVectorSearch() {
       query,
       topK,
     }: {
-      characterId: string;
+      characterId: string | null;
       query: string;
       topK?: number;
     }) => api.vectorSearch(characterId, query, topK),

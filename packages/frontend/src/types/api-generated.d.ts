@@ -1322,12 +1322,12 @@ export interface paths {
          * @description 向量检索测试 - 调试 pgvector 检索
          *
          *     Args:
-         *         character_id: 角色 ID
          *         query: 查询文本
+         *         character_id: 可选角色 ID；缺省时执行跨角色全局检索（探测全部分区）
          *         top_k: 返回结果数
          *
          *     Returns:
-         *         检索结果列表（含相似度分数）
+         *         检索结果列表（含相似度分数；character_id/character_name 标注归属）
          */
         post: operations["vector_search_api_v1_admin_vector_search_post"];
         delete?: never;
@@ -2275,32 +2275,6 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
-        /** VectorSearchOut */
-        VectorSearchOut: {
-            /** Data */
-            data: components["schemas"]["VectorSearchResultOut"][];
-            /** Total */
-            total: number;
-            /** Query */
-            query: string;
-        };
-        /** VectorSearchResultOut */
-        VectorSearchResultOut: {
-            /** Id */
-            id: string;
-            /** Content */
-            content: string;
-            /** Importance */
-            importance: number;
-            /** Timestamp */
-            timestamp: string;
-            /** Similarity */
-            similarity: number;
-            /** Is Reflected */
-            is_reflected: boolean;
-            /** Source Type */
-            source_type: string;
-        };
         /** WorldEventEntryOut */
         WorldEventEntryOut: {
             /** Id */
@@ -2355,6 +2329,39 @@ export interface components {
             temperature?: number | null;
             /** Active Characters */
             active_characters: number;
+        };
+        /**
+         * _VectorSearchItemOut
+         * @description 向量检索单条结果：原字段超集 + 角色归属（单角色模式下为请求范围值/None）
+         */
+        _VectorSearchItemOut: {
+            /** Id */
+            id: string;
+            /** Content */
+            content: string;
+            /** Importance */
+            importance: number;
+            /** Timestamp */
+            timestamp?: string | null;
+            /** Similarity */
+            similarity: number;
+            /** Is Reflected */
+            is_reflected: boolean;
+            /** Source Type */
+            source_type: string;
+            /** Character Id */
+            character_id?: string | null;
+            /** Character Name */
+            character_name?: string | null;
+        };
+        /** _VectorSearchOut */
+        _VectorSearchOut: {
+            /** Data */
+            data: components["schemas"]["_VectorSearchItemOut"][];
+            /** Total */
+            total: number;
+            /** Query */
+            query: string;
         };
     };
     responses: never;
@@ -3968,8 +3975,8 @@ export interface operations {
     vector_search_api_v1_admin_vector_search_post: {
         parameters: {
             query: {
-                character_id: string;
                 query: string;
+                character_id?: string | null;
                 top_k?: number;
             };
             header?: never;
@@ -3984,7 +3991,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VectorSearchOut"];
+                    "application/json": components["schemas"]["_VectorSearchOut"];
                 };
             };
             /** @description Validation Error */
