@@ -67,6 +67,10 @@ _REPLY_DEDUP_TTL_SECONDS = 600
 # 出站帧发送超时（秒，M17）：半开连接的 send_text 会永久阻塞，必须限时后
 # 走跨连接 failover / 驱逐。config.py 本轮禁改，先以模块常量落地。
 _SEND_TIMEOUT_SECONDS = 10.0
+
+# 群共享上下文环容量与过期（R4-M14）
+_GROUP_CONTEXT_MAX_MESSAGES = 20
+_GROUP_CONTEXT_TTL_SECONDS = 24 * 3600
 # 心跳新鲜度阈值（秒，M17）：约 2 倍常见 OneBot 心跳间隔（30s）。超过该时长
 # 未收到心跳的连接在选择发送目标时排到新鲜连接之后。
 _HEARTBEAT_FRESH_SECONDS = 60.0
@@ -749,6 +753,22 @@ class OneBotAdapter:
 
         message_id = str(event.get("message_id") or "")
 
+        # R4-M14：群消息先读共享上下文环、再把当前消息入环（无论是否回复），
+        # 使角色回复时能看到其他群成员的近期发言
+        group_context: list[dict[str, str]] = []
+        if is_group and group_id is not None:
+            try:
+                from src.runtime import get_redis
+
+                group_redis = get_redis()
+                if group_redis is not None:
+                    group_context = await self._read_group_context(group_redis, str(group_id))
+                    sender_name = str((event.get("sender") or {}).get("nickname") or user_id or "群友")
+                    await self._record_group_message(group_redis, str(group_id), sender_name, raw_message)
+            except Exception as e:
+                logger.warning("onebot_group_context_failed", group_id=group_id, error=str(e))
+            group_context = group_context or []
+
         # 群聊接入：智能回复决策
         if is_group:
             at_only = _get_at_only()
@@ -846,6 +866,7 @@ class OneBotAdapter:
                     user_id=internal_user_id,
                     platform="qq",
                     content=raw_message,
+                    group_context=group_context or None,
                 )
         except Exception as e:
             logger.error(
@@ -955,6 +976,35 @@ class OneBotAdapter:
             )
         else:
             logger.debug("onebot_meta_event", detail_type=detail_type)
+
+    @staticmethod
+    def _group_context_key(group_id: str) -> str:
+        return f"onebot:group:{group_id}:recent"
+
+    async def _record_group_message(self, redis: Any, group_id: str, sender: str, text: str) -> None:
+        """群消息写入共享上下文环（R4-M14）
+
+        LPUSH+LTRIM 保留最近 20 条，24h 过期；单条文本截断 200 字符控制体积。
+        """
+        entry = json.dumps({"sender": sender[:50], "text": text[:200]}, ensure_ascii=False)
+        key = self._group_context_key(group_id)
+        await redis.lpush(key, entry)
+        await redis.ltrim(key, 0, _GROUP_CONTEXT_MAX_MESSAGES - 1)
+        await redis.expire(key, _GROUP_CONTEXT_TTL_SECONDS)
+
+    async def _read_group_context(self, redis: Any, group_id: str) -> list[dict[str, str]]:
+        """读取群共享上下文环（旧→新顺序）；坏行跳过"""
+        raw_items = await redis.lrange(self._group_context_key(group_id), 0, _GROUP_CONTEXT_MAX_MESSAGES - 1)
+        out: list[dict[str, str]] = []
+        for item in raw_items:
+            try:
+                text = item.decode("utf-8") if isinstance(item, bytes | bytearray) else str(item)
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    out.append({"sender": str(parsed.get("sender", "")), "text": str(parsed.get("text", ""))})
+            except Exception:
+                continue
+        return out
 
     async def _should_reply_in_group(
         self,

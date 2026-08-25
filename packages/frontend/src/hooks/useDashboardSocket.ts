@@ -73,8 +73,10 @@ export function useDashboardSocket() {
     const connect = () => {
       if (disposed) return;
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      const url = `${proto}://${window.location.host}/ws/dashboard?token=${encodeURIComponent(token)}`;
-      ws = new WebSocket(url);
+      const url = `${proto}://${window.location.host}/ws/dashboard`;
+      // R4-L8：token 经 Sec-WebSocket-Protocol 子协议传递（服务端约定
+      // "bearer, <token>"），不再拼进 URL——访问日志/代理不会记录凭据
+      ws = new WebSocket(url, ["bearer", token]);
 
       // 连接成功即复位重试计数：否则多次偶发断线会累计退避，
       // 让后续真正的断线在几次内耗尽 MAX_RETRIES 后永久放弃

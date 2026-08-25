@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -486,12 +485,7 @@ class ProactiveSharingService:
                         "sent_at": now.isoformat(),
                     },
                 )
-
-                # 同一用户的多个会话只推送/通知一次（扇出聚合）
-                if conv.user_id not in seen_users:
-                    seen_users.add(conv.user_id)
-                    asyncio.create_task(self._push_ws_share(conv.user_id, character, content, now))
-                    asyncio.create_task(self._push_share_notification(conv.user_id, character.name, content))
+                seen_users.add(conv.user_id)
             except Exception as e:
                 logger.error(
                     "share_delivery_failed",
@@ -501,7 +495,23 @@ class ProactiveSharingService:
                     exc_info=True,
                 )
 
+        # R4-M13：先 commit 落库、后触发推送——此前推送任务在 commit 前创建，
+        # 中途崩溃会出现「QQ/WS 已收到分享但消息行回滚」的幽灵投递
         await self.session.commit()
+
+        # 受管后台任务（R4-M12）：裸 create_task 无强引用，可能被 GC 静默回收
+        from src.core.background import spawn_background
+
+        for user_id in seen_users:
+            spawn_background(
+                self._push_ws_share(user_id, character, content, now),
+                name=f"share_ws:{character_id}:{user_id}",
+            )
+            spawn_background(
+                self._push_share_notification(user_id, character.name, content),
+                name=f"share_notif:{character_id}:{user_id}",
+            )
+
         return len(seen_users)
 
     async def _push_ws_share(

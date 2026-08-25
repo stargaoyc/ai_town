@@ -122,13 +122,16 @@ class WebSocketManager:
     ) -> bool:
         """向指定 (user_id, character_id) 推送 JSON 消息
 
+        带 10s 发送超时（R4-M12）：半开浏览器连接会让无超时的 send_json
+        无限挂起，拖死调用方（分享扇出/通知推送）。
+
         Args:
             user_id: 用户标识
             character_id: 角色 ID
             message: 待发送的字典（会被 JSON 序列化）
 
         Returns:
-            True 表示发送成功，False 表示连接不存在或发送失败
+            True 表示发送成功，False 表示连接不存在、超时或发送失败
         """
         async with self._lock:
             ws = self._connections.get((user_id, character_id))
@@ -137,7 +140,7 @@ class WebSocketManager:
             return False
 
         try:
-            await ws.send_json(message)
+            await asyncio.wait_for(ws.send_json(message), timeout=_WS_SEND_TIMEOUT_SECONDS)
             return True
         except Exception as e:
             logger.warning(
@@ -146,7 +149,7 @@ class WebSocketManager:
                 character_id=character_id,
                 error=str(e),
             )
-            # 发送失败通常意味着连接已断开，主动清理
+            # 发送失败/超时通常意味着连接已断开，主动清理
             await self.disconnect(user_id, character_id)
             return False
 
@@ -155,7 +158,7 @@ class WebSocketManager:
 
         Args:
             character_id: 角色 ID
-            message: 待广播的字典
+            message: 待广播的字典（会被 JSON 序列化）
 
         Returns:
             成功推送的连接数
@@ -171,7 +174,7 @@ class WebSocketManager:
         failed_keys: list[tuple[str, str]] = []
         for uid, cid, ws in targets:
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message), timeout=_WS_SEND_TIMEOUT_SECONDS)
                 success += 1
             except Exception as e:
                 logger.warning(
@@ -247,6 +250,20 @@ def _parse_incoming(raw: str) -> str | None:
 def _safe_error(message: str) -> dict[str, Any]:
     """构造标准错误消息"""
     return {"type": "error", "message": message}
+
+
+def _extract_bearer_subprotocol(websocket: WebSocket) -> str | None:
+    """从 Sec-WebSocket-Protocol 头解析 bearer 子协议携带的 JWT（R4-L8）
+
+    约定格式：`bearer, <token>`（浏览器 WebSocket 构造器的 subprotocols
+    数组逐项以逗号拼接）。token 不再出现在 URL 中，避免被访问日志/
+    中间代理记录。
+    """
+    header = websocket.headers.get("sec-websocket-protocol", "")
+    parts = [p.strip() for p in header.split(",") if p.strip()]
+    if len(parts) >= 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
 
 
 async def _get_llm_globals() -> tuple[LLMClient | None, PromptTemplates | None]:
@@ -458,6 +475,10 @@ async def ws_chat_endpoint(
 
 _DASHBOARD_PUSH_INTERVAL = 5.0  # 世界状态推送周期（秒），与原轮询频率一致
 
+# WS 发送超时（R4-M12）：与 OneBot 侧 10s 发送超时对齐；
+# 半开连接上的 send_json 无超时会无限挂起调用方
+_WS_SEND_TIMEOUT_SECONDS = 10.0
+
 
 async def _dashboard_snapshot(redis: Any, notif_key: str) -> dict[str, Any]:
     """采集一帧仪表盘数据（世界状态 + 通知未读数）"""
@@ -499,14 +520,19 @@ async def ws_dashboard_endpoint(
 ) -> None:
     """仪表盘实时推送端点
 
-    查询参数：
-    - token: JWT（也可通过 Authorization: Bearer 头传递）
+    JWT 传递方式（按优先级）：
+    - Sec-WebSocket-Protocol: bearer, <token>（R4-L8 首选：token 不进 URL/访问日志）
+    - Authorization: Bearer 头
+    - 查询参数 token（兼容旧客户端）
 
     协议：
     - 出站：{"type":"dashboard","world":{...},"notifications_unread":N}
       每 _DASHBOARD_PUSH_INTERVAL 秒推一帧；无订阅者时零开销
     - 入站消息被忽略（纯推送通道）
     """
+    subprotocol_token = _extract_bearer_subprotocol(websocket)
+    if not token and subprotocol_token:
+        token = subprotocol_token
     if not token:
         auth_header = websocket.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
@@ -538,14 +564,17 @@ async def ws_dashboard_endpoint(
         return
 
     notif_key = notification_key(user_id)
-    await websocket.accept()
+    # 客户端经 subprotocol 传 token 时，accept 需回选该子协议（RFC 6455），
+    # 否则浏览器端握手直接失败
+    await websocket.accept(subprotocol="bearer" if subprotocol_token else None)
     logger.info("ws_dashboard_connected", user_id=user_id)
 
     async def _push_frames() -> None:
         while True:
             snapshot = await _dashboard_snapshot(redis, notif_key)
-            # 客户端断开由接收任务感知并取消本循环；此处异常同样退出
-            await websocket.send_json(snapshot)
+            # 客户端断开可经异常感知退出循环；发送同样带超时（R4-M12），
+            # 半开连接挂起会拖死整个推送协程
+            await asyncio.wait_for(websocket.send_json(snapshot), timeout=_WS_SEND_TIMEOUT_SECONDS)
             await asyncio.sleep(_DASHBOARD_PUSH_INTERVAL)
 
     async def _receive_drain() -> None:

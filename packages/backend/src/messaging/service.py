@@ -288,6 +288,7 @@ class MessageService:
         user_id: str,
         platform: str,
         content: str,
+        group_context: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """处理用户消息的完整流程
 
@@ -397,6 +398,7 @@ class MessageService:
             character=character,
             state=state,
             history=history,
+            group_context=group_context,
         )
 
         # 5. 调用 LLM 生成回复
@@ -484,12 +486,13 @@ class MessageService:
         character: Character,
         state: CharacterState,
         history: list[Message],
+        group_context: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """构造 LLM 上下文字段（供 chat.yaml 模板渲染使用）
 
         返回包含所有 chat 模板占位符的字典：
         name, personality, backstory, world_time, weather,
-        location, energy, mood, context_summary,
+        location, energy, mood, context_summary, group_context,
         person_memory, reflections, diary
 
         Args:
@@ -497,6 +500,7 @@ class MessageService:
             character: 角色档案
             state: 角色实时状态
             history: 最近消息列表
+            group_context: 群聊近期消息（R4-M14，仅 QQ 群聊传入）
 
         Returns:
             模板参数字典
@@ -551,6 +555,18 @@ class MessageService:
         else:
             reflections_text, diary_text = _COGNITION_EMPTY_TEXT, _COGNITION_EMPTY_TEXT
 
+        # 群聊共享上下文（R4-M14）：群消息按发送者建独立会话，其他成员的消息
+        # 此前完全不进上下文，多方对话答非所问；此处注入群内近期发言
+        if group_context:
+            group_lines = [
+                f"- {item.get('sender', '群友')}：{item.get('text', '')[:100]}"
+                for item in group_context
+                if isinstance(item, dict)
+            ]
+            group_context_text = "\n".join(group_lines) if group_lines else _COGNITION_EMPTY_TEXT
+        else:
+            group_context_text = "（非群聊场景）"
+
         return {
             "name": character.name,
             "personality": personality_text,
@@ -561,6 +577,7 @@ class MessageService:
             "energy": state.stamina,
             "mood": state.mood or "calm",
             "context_summary": context_summary or "（新对话，暂无摘要）",
+            "group_context": group_context_text,
             "person_memory": person_memory_text,
             "reflections": reflections_text,
             "diary": diary_text,

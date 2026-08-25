@@ -63,6 +63,9 @@ template: |
   [对话摘要]
   {context_summary}
 
+  [群聊上下文]
+  {group_context}
+
   [对话历史]
   {history}
 
