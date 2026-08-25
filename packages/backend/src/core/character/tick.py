@@ -21,6 +21,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
 from src.actions import Action, ActionRegistry, DecisionResult
@@ -370,7 +371,7 @@ class CharacterTickEngine:
 
         # 3. LLM 决策（ReAct 循环：工具调用 → 观察结果 → 再次决策）
         decision = await self._decide(character_id, context, candidates, [])
-        decision = await self._run_react_loop(character_id, context, candidates, decision)
+        decision = await self._run_react_loop(character_id, context, candidates, decision, lock_lost=lock_lost)
 
         # H10 闸口：失锁后禁止执行 Action 与记忆沉淀——另一实例可能已接管该角色，
         # 此处继续写入即构成跨实例 double-tick
@@ -712,11 +713,10 @@ class CharacterTickEngine:
         )
 
         # 构建工具列表文本（角色可调用本地工具获取信息或执行操作）
-        try:
-            tool_registry = ToolRegistry()
-            tools_text = await tool_registry.format_tools_for_prompt()
-        except Exception:
-            tools_text = "（工具不可用）"
+        # R5-M3：无启用工具时 formatter 返回 None，调用方整段跳过工具说明；
+        # 此前无条件追加会让 LLM 在零工具环境下仍尝试 use_tool，烧掉最多 3 轮 ReAct
+        tool_registry = ToolRegistry()
+        tools_text = await tool_registry.format_tools_for_prompt()
 
         # 构建记忆文本（单条截断，见 _DECISION_ITEM_MAX_CHARS）
         memories_text = (
@@ -778,6 +778,9 @@ class CharacterTickEngine:
                 "reason": {"type": "string"},
                 "params": {"type": "object"},
                 "duration": {"type": "integer"},
+                # R5-H2：必须在 schema 中显式声明——structured_output 按 schema 属性
+                # 生成 pydantic 模型，未声明的键会被静默丢弃，分享意图将永远为 False
+                "proactiveShareIntent": {"type": "boolean"},
                 "planChanges": {
                     "type": "array",
                     "items": {
@@ -833,15 +836,18 @@ class CharacterTickEngine:
             output_json_example=_schema_example(schema),
         )
 
-        # 追加工具信息到 Prompt
-        prompt += self.prompts.render("decision_tools", tools_text=tools_text)
+        # 工具说明仅在确有可用工具时追加（R5-M3）：整段跳过而非渲染占位，
+        # 避免 Prompt 指示 LLM 输出 use_tool 却没有任何工具可执行
+        if tools_text is not None:
+            prompt += self.prompts.render("decision_tools", tools_text=tools_text)
 
         # ReAct 模式：如果有前序工具调用结果，加入 Prompt 让 LLM 基于结果推理
         if tool_observations:
             obs_lines = []
             for i, obs in enumerate(tool_observations, 1):
                 success_tag = "成功" if obs.get("success") else "失败"
-                result_str = str(obs.get("result", ""))[:800]
+                # 失败观察可能只有 error（如缺 tool_name 的合成观察），回退展示原因
+                result_str = str(obs.get("result") or obs.get("error") or "")[:800]
                 obs_lines.append(
                     f"{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) [{success_tag}]\n   结果: {result_str}"
                 )
@@ -882,11 +888,14 @@ class CharacterTickEngine:
         context: dict[str, Any],
         candidates: list[Action],
         decision: DecisionResult,
+        *,
+        lock_lost: asyncio.Event | None = None,
     ) -> DecisionResult:
         """ReAct 循环：工具调用 → 观察结果 → 再次决策（最多 3 轮，防止无限循环）。
 
         循环退出后若仍停留在 use_tool（LLM 反复要求调工具），强制降级为 wait。
         """
+        lost = lock_lost if lock_lost is not None else asyncio.Event()
         tool_observations: list[dict[str, Any]] = []
 
         for _react_iter in range(3):
@@ -894,7 +903,7 @@ class CharacterTickEngine:
                 break
 
             # 执行工具调用
-            tool_result = await self._execute_tool(character_id, decision, context)
+            tool_result = await self._execute_tool(character_id, decision, context, lock_lost=lost)
             if tool_result:
                 tool_observations.append(
                     {
@@ -902,6 +911,18 @@ class CharacterTickEngine:
                         "tool_args": decision.params.get("tool_args", {}),
                         "result": tool_result.get("result", tool_result),
                         "success": tool_result.get("success", False),
+                        "error": tool_result.get("error"),
+                    }
+                )
+            else:
+                # R5-L12：缺 tool_name 是唯一返回 None 的路径——不补观察会让
+                # 后续轮次在零反馈下盲猜，白白烧完剩余轮数
+                tool_observations.append(
+                    {
+                        "tool_name": decision.params.get("tool_name", ""),
+                        "tool_args": decision.params.get("tool_args", {}),
+                        "success": False,
+                        "error": "missing tool_name",
                     }
                 )
 
@@ -923,21 +944,30 @@ class CharacterTickEngine:
         return decision
 
     async def _execute_tool(
-        self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
+        self,
+        character_id: UUID,
+        decision: DecisionResult,
+        context: dict[str, Any],
+        *,
+        lock_lost: asyncio.Event | None = None,
     ) -> dict[str, Any] | None:
         """执行工具调用
 
         当 LLM 决定使用工具时，通过 ToolRegistry 直接调用本地 async 函数，
-        将工具结果存入角色记忆，并对状态变更类工具应用 deltas 到角色状态。
+        状态变更类工具的 deltas 交由 ReAct 循环应用到内存 state。
 
         Args:
             character_id: 角色 ID
             decision: 决策结果（params 中包含 tool_name 和 tool_args）
             context: 感知环境结果（含 state、relations）
+            lock_lost: 看门狗失锁信号；置位时跳过工具记忆暂存，
+                与主事务闸口共同保证失锁后不产生任何持久化痕迹（R5-M6）
 
         Returns:
-            工具返回结果字典，失败时返回 None
+            工具返回结果字典；params 缺 tool_name 时返回 None
+            （ReAct 循环据此合成失败观察，R5-L12）
         """
+        lost = lock_lost if lock_lost is not None else asyncio.Event()
 
         tool_name = decision.params.get("tool_name", "")
         tool_args = decision.params.get("tool_args", {})
@@ -974,28 +1004,23 @@ class CharacterTickEngine:
                 result_preview=str(tool_result)[:200],
             )
 
-            # 状态变更类工具的 deltas 由 ReAct 循环统一应用（避免重复）
-            # 将工具结果存入角色记忆
-            try:
-                async with db.session() as session:
-                    mem_repo = MemoryRepository(session)
-                    episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
-                    await episode_service.create_episode(
-                        character_id,
-                        f"[工具调用] {tool_name}({tool_args}) → {str(tool_result)[:500]}",
-                        action_id="use_tool",
-                        location=context["state"].get("location"),
-                        importance=_TOOL_MEMORY_IMPORTANCE,
-                        character_name=character.name,
-                        reason=f"使用工具 {tool_name}",
-                        mood=context["state"].get("mood"),
-                    )
-                    await session.commit()
-            except Exception as e:
+            # 工具记忆不再在循环内独立提交（R5-L11）：暂存到 context，
+            # 由 _execute_action 主事务与 ActionRecord 同事务落库——
+            # 主事务回滚时一并回滚，杜绝「记忆描述了从未持久化的效果」
+            if lost.is_set():
                 logger.warning(
-                    "tool_memory_save_failed",
+                    "tool_memory_staging_skipped_lock_lost",
                     character_id=str(character_id),
-                    error=str(e),
+                    tool_name=tool_name,
+                )
+            else:
+                context.setdefault("pending_tool_memories", []).append(
+                    {
+                        "content": f"[工具调用] {tool_name}({tool_args}) → {str(tool_result)[:500]}",
+                        "location": context["state"].get("location"),
+                        "reason": f"使用工具 {tool_name}",
+                        "mood": context["state"].get("mood"),
+                    }
                 )
         else:
             logger.warning(
@@ -1088,6 +1113,52 @@ class CharacterTickEngine:
                 delta=relation_delta,
             )
 
+    async def _apply_pending_artifacts(
+        self,
+        session: AsyncSession,
+        character_id: UUID,
+        context: dict[str, Any],
+    ) -> None:
+        """将 ReAct 阶段暂存的工具产物落入 _execute_action 主事务（单一事务语义）
+
+        - pending_relation_deltas：工具产生的关系增量（R4-M11）
+        - pending_tool_memories：工具调用记忆（R5-L11），经 EpisodeService
+          复用 exists_recent_duplicate 近邻去重，与原独立提交路径语义一致
+
+        任一写入失败随主事务整体回滚，杜绝部分提交。
+        """
+        rel_repo = RelationRepository(session)
+        for item in context.get("pending_relation_deltas") or []:
+            rel_target = UUID(str(item["target_id"]))
+            rel = await rel_repo.get_or_create(character_id, rel_target)
+            new_strength = max(0, min(100, rel.strength + int(item["delta"])))
+            await rel_repo.update_relation(character_id, rel_target, strength=new_strength)
+            context.setdefault("relations", {})[str(rel_target)] = new_strength
+            logger.info(
+                "tool_delta_relation_applied",
+                character_id=str(character_id),
+                target_id=str(rel_target),
+                delta=item["delta"],
+                new_strength=new_strength,
+            )
+
+        pending_memories = context.get("pending_tool_memories") or []
+        if not pending_memories:
+            return
+        mem_repo = MemoryRepository(session)
+        episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
+        for item in pending_memories:
+            await episode_service.create_episode(
+                character_id,
+                item["content"],
+                action_id="use_tool",
+                location=item["location"],
+                importance=_TOOL_MEMORY_IMPORTANCE,
+                character_name=context["character"].name,
+                reason=item["reason"],
+                mood=item["mood"],
+            )
+
     @staticmethod
     def _current_world_hour(context: dict[str, Any]) -> int | None:
         """从世界状态解析当前虚拟小时；解析失败返回 None（移动校验跳过开放时间检查）"""
@@ -1114,8 +1185,9 @@ class CharacterTickEngine:
             decision: 决策结果
             context: 感知环境结果
             lock_lost: 看门狗失锁信号；缺省时视为未启用失锁闸口（保持既有直接调用方兼容）。
-                置位后在入口、PG 事务前与 Redis 镜像写入前三处中止，
-                保证失锁后不再发生任何 PG/Redis 状态写入——含 chat_with 的关系/记忆写入（H10）
+                置位后在入口、chat_with 关系/记忆写入前、PG 事务前与 Redis 镜像写入前
+                四处中止，保证失锁后不再发生任何 PG/Redis 状态写入——含 chat_with 的
+                关系/记忆写入与工具暂存记忆（H10/R5-M6/R5-L11）
         """
         lost = lock_lost if lock_lost is not None else asyncio.Event()
         # H10 闸口（入口）：失锁后不生成对话、不做移动校验，直接放弃本次执行
@@ -1135,7 +1207,7 @@ class CharacterTickEngine:
         # 在状态变更前执行，确保对话内容能写入 ActionRecord.result
         chat_dialogue: str | None = None
         if decision.action == "chat_with":
-            chat_dialogue = await self._handle_character_chat(character_id, decision, context)
+            chat_dialogue = await self._handle_character_chat(character_id, decision, context, lock_lost=lost)
             # 失败时降级为 wait，不阻塞 Tick
             if chat_dialogue is None:
                 logger.warning(
@@ -1332,24 +1404,9 @@ class CharacterTickEngine:
                     plan_repo = PlanRepository(session)
                     await self._create_plans(plan_repo, character_id, decision.create_plan_changes)
 
-                # 应用工具产生的待定关系增量（R4-M11）：与 ActionRecord 同事务提交，
-                # 任一失败整体回滚，杜绝「关系已写、行为记录回滚」的不一致
-                pending_deltas = context.get("pending_relation_deltas") or []
-                if pending_deltas:
-                    rel_repo = RelationRepository(session)
-                    for item in pending_deltas:
-                        rel_target = UUID(str(item["target_id"]))
-                        rel = await rel_repo.get_or_create(character_id, rel_target)
-                        new_strength = max(0, min(100, rel.strength + int(item["delta"])))
-                        await rel_repo.update_relation(character_id, rel_target, strength=new_strength)
-                        context.setdefault("relations", {})[str(rel_target)] = new_strength
-                        logger.info(
-                            "tool_delta_relation_applied",
-                            character_id=str(character_id),
-                            target_id=str(rel_target),
-                            delta=item["delta"],
-                            new_strength=new_strength,
-                        )
+                # 应用 ReAct 阶段暂存的工具产物（关系增量 R4-M11 / 工具记忆 R5-L11）：
+                # 与 ActionRecord 同事务提交，任一失败整体回滚
+                await self._apply_pending_artifacts(session, character_id, context)
 
             # H10 闸口（Redis 镜像写入前）：PG 已提交但此刻失锁则停止写 Redis，
             # 漂移交由 reconcile 的 pg_advanced 仲裁修复，避免覆盖接管者刚写入的新状态。
@@ -1395,6 +1452,8 @@ class CharacterTickEngine:
         character_id: UUID,
         decision: DecisionResult,
         context: dict[str, Any],
+        *,
+        lock_lost: asyncio.Event | None = None,
     ) -> str | None:
         """处理角色间对话（多智能体交互核心）
 
@@ -1410,6 +1469,7 @@ class CharacterTickEngine:
             character_id: 发起方角色 ID
             decision: 决策结果（params.target_character_id 必填）
             context: 感知环境结果（用于读取 nearby_characters 验证同场景）
+            lock_lost: 看门狗失锁信号，透传给 _do_chat_with 的写入闸口
 
         Returns:
             对话文本（含双方发言），失败返回 None
@@ -1449,7 +1509,15 @@ class CharacterTickEngine:
                     target_id=target_id_str,
                 )
                 return None
-            return await self._do_chat_with(character_id, target_id, target_id_str, character, decision, context)
+            return await self._do_chat_with(
+                character_id,
+                target_id,
+                target_id_str,
+                character,
+                decision,
+                context,
+                lock_lost=lock_lost,
+            )
 
     async def _do_chat_with(
         self,
@@ -1459,13 +1527,20 @@ class CharacterTickEngine:
         character: Any,
         decision: DecisionResult,
         context: dict[str, Any],
+        *,
+        lock_lost: asyncio.Event | None = None,
     ) -> str | None:
         """chat_with 实际执行逻辑（在跨角色锁保护下运行）
 
         多轮对话：每轮发起方先说一句、对方回一句（逐轮小 LLM 调用，
         各自看到不断增长的对话记录）；结束后由 LLM 评估本次交流对
         双方关系的增量，评估不可用时回退固定值。
+
+        失锁闸口（R5-M6）：多轮对话的 LLM 往返可能横跨锁 TTL，锁易主后
+        关系与记忆写入一律跳过——实现与 _execute_action docstring 的
+        「失锁后无任何 PG 写入」承诺保持一致。
         """
+        lost = lock_lost if lock_lost is not None else asyncio.Event()
         async with db.session() as session:
             char_repo = CharacterRepository(session)
             target_data = await char_repo.get_character_with_state(target_id)
@@ -1560,6 +1635,17 @@ class CharacterTickEngine:
                     target_id=target_id_str,
                     strength_delta=strength_delta,
                 )
+
+        # H10 闸口：对话生成完成后、任何持久化写入前自查——多轮 LLM 往返期间
+        # 锁可能已被他实例接走，继续写关系/记忆即 double-tick；
+        # 对话文本照常返回，其后的 ActionRecord/Redis 写入由调用方失锁闸口拦截
+        if lost.is_set():
+            logger.warning(
+                "chat_with_writes_skipped_lock_lost",
+                character_id=str(character_id),
+                target_id=target_id_str,
+            )
+            return dialogue
 
         # 更新双向关系（双方同步）
         try:

@@ -80,3 +80,5 @@ template: |
   {output_json_example}
   planChanges 用于调整[当前计划]中已列出的计划；createPlanChanges 用于新建计划（最多 3 条，title 必填）。
   无相关变更时两个数组留空即可。
+  proactiveShareIntent 表示主动分享意图：本周期刚经历值得分享的事——新奇见闻、重要进展、强烈情绪，
+  而当前场景没有其他角色可以当面倾诉时设为 true；其余时候保持 false。

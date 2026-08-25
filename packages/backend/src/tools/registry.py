@@ -9,7 +9,7 @@
 - 未配置时默认全部启用
 
 接口与原 MCPClient 保持兼容：
-- format_tools_for_prompt() -> str
+- format_tools_for_prompt() -> str | None（无启用工具时 None，R5-M3）
 - call_tool_by_full_name(full_name, args, context) -> dict
 """
 
@@ -305,11 +305,16 @@ class ToolRegistry:
             )
         return tools
 
-    async def format_tools_for_prompt(self) -> str:
-        """格式化工具列表供 LLM Prompt 使用（仅含已启用工具）"""
+    async def format_tools_for_prompt(self) -> str | None:
+        """格式化工具列表供 LLM Prompt 使用（仅含已启用工具）
+
+        Returns:
+            工具列表文本；无任何启用工具时返回 None，
+            调用方据此整段跳过工具说明（R5-M3）
+        """
         tools = await self.list_tools()
         if not tools:
-            return "（暂无可用工具，可在设置页启用工具插件）"
+            return None
         lines = []
         for t in tools:
             params_str = ", ".join(f"{k}: {v}" for k, v in t["llm_params"].items())
