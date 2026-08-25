@@ -17,6 +17,8 @@
 - **数据库定时备份**：新增 `db-backup` 服务（`--profile backup` 启用）——pg_dump | gzip 按间隔写入 `./data/backups`（.part 临时文件原子改名防半成品），按保留天数自动清理；配置 `BACKUP_INTERVAL_HOURS` / `BACKUP_RETENTION_DAYS`。
 - **冷启动恢复演练脚本**：`packages/backend/scripts/cold_start_drill.py`——清空 Redis 世界/角色状态键后执行与启动路径一致的 `rehydrate_states()`，校验快照 tick_id/weather 回灌、角色镜像全量恢复与字段抽查；本地实跑 5/5 通过。
 - **容器日志轮转**：compose 全部服务统一 `json-file` 驱动 + 单文件 10MB×3 份上限（YAML 锚点一处定义），防止日志无限增长吃满磁盘。
+- **移动端导航与操作反馈**：md 断点以下汉堡抽屉导航（此前七个板块不可达）；全局 toast 提示与共享确认对话框（清除全部通知 / 配置重置接入）。
+- **QQ 发送链路可观测**：识别 OneBot action 响应帧并按成败计数（`ai_town_onebot_action_response_total`）；媒体生成调用量计数（`ai_town_media_generation_total`）。
 
 - **反思跨期主题归纳**：批次反思改为编号记忆主题归纳（每主题一条 Reflection、来源精确挂链）；新增 tier=2 跨期元反思——累计反思足够多且冷却期满时，对既有反思再归纳「长期倾向」，决策注入时元反思优先。
 - **记忆压缩归档**：retention 循环改两阶段——到期低价值记忆先按角色×月份 LLM 压缩成 `[归档]` 摘要行（豁免后续删除），压缩失败整组跳过绝不未压缩先删除；低于最小批的小组保持直删。配置 `MEMORY_COMPRESSION_ENABLED` / `MEMORY_COMPRESSION_MIN_BATCH`。
@@ -68,6 +70,17 @@
 - 同场景角色感知 N+1 查询（注释宣称批量而实现逐角色开 session）。
 - world_events 去重基线仅存内存，重启后首轮重复写入，现持久化到 Redis。
 - 全仓 ruff 口径 42 错：删除包根遗留探针脚本 `_cycle_probe.py`。
+- **日记世界时钟错位（20260825 三轮审查 H1）**：日记幂等键与记忆窗口此前用现实日期，而世界时钟以 20 倍速推进——每天最多产出 1 篇日报且「今天」实际汇总约 20 个世界日；现幂等键、归属日期与查询窗口全部对齐世界日历（1 世界日 = 72 现实分钟）。
+- **反思幽灵计数（H2）**：`count_unreflected` 不过滤改写式去重标记且 `mark_duplicate` 不置已反思位，重复记忆永久滞留计数器使反思每 Tick 触发；双向修复并补一致性测试。
+- **入站队列 XACK 空操作（H3）**：内联路径确认的条目从未经投递，XACK 无效导致每条消息被恢复循环二次处理、正确性悬于 600s 去重 TTL；成功处理改为 XACK+XDEL 彻底移除，事件流与死信流加 maxlen 裁剪。
+- **崩溃恢复静默丢消息（H4）**：回复去重 SETNX 在处理开始抢占，「已去重未回复」窗口崩溃后重放被挡、消息永久丢失；认领移至发送前一刻，发送失败释放槽位允许重试。
+- **机器人乒乓死循环（H5）**：无自消息排除且问候层零概率门控；现排除自身消息并对问候命中加 0.9 概率闸门。
+- **看门狗失锁不中止（H10）**：续租失败仅记日志，Tick 失锁后继续写状态造成跨实例 double-tick 窗口；现置位 lock_lost 并在 Action 执行 / PG 事务 / Redis 镜像三处闸口中止。
+- **部署暴露面（H6-H8）**：Redis 强制密码 + 基础设施端口绑定 127.0.0.1 + PG/Grafana 密码必填插值；`.env.example` 补齐 ENVIRONMENT 等 18 个缺失变量使生产密钥门禁可武装；Prometheus 抓取目标改为 backend:8000（Linux 上告警栈此前全盲）；nginx 安全响应头 + `/metrics` 不再公网代理。
+- Tick/API 写入竞态收尾：move 端点 CAS 失败返回 409 不再写 Redis（M8）；reconcile 修复走版本自增路径并校验快照新鲜度（M9）；admin 双端点接入 leader fencing（M10）；importer 显式递增版本（M11）。
+- 消息域长尾：OneBot action 响应帧识别与失败计数（M12）；回复路径跨连接 failover + 发送超时 + 半开连接驱逐（M13/M17）；恢复重放按 self_id 选同账号连接（M14）；群聊判定模型档位可配（M15）；媒体生成调用量计数（M18）。
+- 前端：WS 重连计数成功后复位（M19）；中文输入法回车误发送（M20）；移动端汉堡导航（M21）；聊天发送失败静默吞没补 toast 提示 + 清除全部/配置重置加确认（M22/L10）；queryKeys 契约全量迁移（M23）。
+- 数据层长尾：RANGE 分区保留生命周期（超期分区 DETACH+DROP，H9）；messages 定期清理任务（M1）；启动校验 EMBEDDING_DIM 与物理列一致（M2）；改写式去重 SQL 改 HNSW 可加速形态（M3）；world_events(created_at) 索引（M4）；ORM 元数据对齐 DDL（M5）；决策 Prompt 条目 500 字符截断（M7）；归档压缩传真实角色名（M24）；Person Memory preferences 增量合并（M6）；search_hybrid 负天数钳制（L1）；Prompt 用户标识剥离平台前缀（L3）；JWT 测试密钥加长（L7）。
 - 集成测试探针仅做 TCP 检查（复审二轮 N1）：端口通但服务坏时 IT 以 error 收场，改 asyncpg `SELECT 1` + Redis `PING` 真实握手，环境缺失时正确 skip。
 - compose 凭据硬编码（N3）：`POSTGRES_PASSWORD` / Grafana 密码改为变量插值（自动读根目录 .env），backend `DATABASE_URL` 与 PG 服务共用同一变量消除双真相源。
 - 工具开关缓存无主动失效（N8）：toggle API 现即时清空进程内 5s TTL 缓存。
