@@ -249,6 +249,89 @@ class TestSearchHybrid:
         assert final > 1.0
 
 
+class TestUnreflectedCountExcludesDuplicates:
+    """Round-3 H2 回归：改写式重复不得计入未反思计数
+
+    mark_duplicate 曾不清 is_reflected，count_unreflected 也不过滤
+    is_duplicate——重复记忆永久滞留计数，≥20 时反思每个 Tick 空转。
+    """
+
+    async def test_mark_duplicate_removes_episode_from_unreflected_count(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        repo = MemoryRepository(it_session)
+        normal = MemoryEpisode(character_id=memory_character.id, content="正常记忆")
+        duplicate = MemoryEpisode(character_id=memory_character.id, content="改写式重复记忆")
+        it_session.add_all([normal, duplicate])
+        await it_session.flush()
+
+        assert await repo.count_unreflected(memory_character.id) == 2
+
+        await repo.mark_duplicate(duplicate.id, memory_character.id)
+
+        refreshed = await it_session.get(MemoryEpisode, (duplicate.id, memory_character.id))
+        assert refreshed is not None
+        await it_session.refresh(refreshed)
+        assert refreshed.is_duplicate is True
+        # 双保险之一：mark_duplicate 直接置位，重复行即刻退出「未反思」口径
+        assert refreshed.is_reflected is True
+        assert await repo.count_unreflected(memory_character.id) == 1
+
+    async def test_duplicate_flag_filters_count_even_if_reflected_not_set(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        """双保险之二：即使历史脏数据 is_duplicate=true 且 is_reflected=false，
+        count_unreflected 与 fetch_unreflected 同口径排除之"""
+        stale = MemoryEpisode(
+            character_id=memory_character.id,
+            content="历史脏数据",
+            is_duplicate=True,
+            is_reflected=False,
+        )
+        normal = MemoryEpisode(character_id=memory_character.id, content="正常记忆")
+        it_session.add_all([stale, normal])
+        await it_session.flush()
+
+        repo = MemoryRepository(it_session)
+        assert await repo.count_unreflected(memory_character.id) == 1
+        fetched = await repo.fetch_unreflected(memory_character.id)
+        assert {e.id for e in fetched} == {normal.id}
+
+
+class TestFindParaphraseDuplicate:
+    async def test_near_identical_vector_detected_within_window(
+        self, it_session: AsyncSession, memory_character: Character
+    ) -> None:
+        repo = MemoryRepository(it_session)
+        base_vec = _unit_vec(index=41)
+        existing = MemoryEpisode(
+            character_id=memory_character.id,
+            content="原始记忆",
+            embedding=base_vec,
+            materialized=True,
+            timestamp=datetime.now(UTC) - timedelta(hours=1),
+        )
+        it_session.add(existing)
+        await it_session.flush()
+
+        assert await repo.find_paraphrase_duplicate(memory_character.id, base_vec, datetime.now(UTC)) is True
+
+    async def test_orthogonal_vector_not_flagged(self, it_session: AsyncSession, memory_character: Character) -> None:
+        repo = MemoryRepository(it_session)
+        existing = MemoryEpisode(
+            character_id=memory_character.id,
+            content="无关记忆",
+            embedding=_unit_vec(index=42),
+            materialized=True,
+            timestamp=datetime.now(UTC) - timedelta(hours=1),
+        )
+        it_session.add(existing)
+        await it_session.flush()
+
+        orthogonal = _unit_vec(index=99)
+        assert await repo.find_paraphrase_duplicate(memory_character.id, orthogonal, datetime.now(UTC)) is False
+
+
 class TestExistsRecentDuplicate:
     async def test_exact_normalized_match_detected(self, it_session: AsyncSession, memory_character: Character) -> None:
         it_session.add(MemoryEpisode(character_id=memory_character.id, content="今天  在咖啡店  和艾莉丝聊天"))

@@ -7,10 +7,11 @@
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 from uuid6 import uuid7
@@ -136,6 +137,22 @@ class MessageRepository(BaseRepository[Message]):
         )
         msgs.reverse()  # 原地反转，最新在末尾
         return msgs
+
+    async def delete_older_than(self, cutoff: datetime) -> int:
+        """删除早于 cutoff 的消息（消息保留期治理，round-3 M1）
+
+        利用 idx_msg_created (created_at) 索引按时间范围删除。
+
+        Returns:
+            删除的行数
+        """
+        stmt = delete(Message).where(Message.created_at < cutoff)
+        result = cast("CursorResult[Any]", await self.session.execute(stmt))
+        await self.session.flush()
+        deleted = int(result.rowcount or 0)
+        if deleted:
+            logger.info("messages_deleted_older_than", cutoff=cutoff.isoformat(), count=deleted)
+        return deleted
 
     async def sum_tokens_by_conversation(
         self,

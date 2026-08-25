@@ -187,8 +187,21 @@ class PersonMemoryService:
         platform: str,
         preferences: dict[str, Any] | None = None,
     ) -> None:
-        """确保主档行存在并累积热度（content 由压缩任务维护，此处不写）"""
+        """确保主档行存在并累积热度（content 由压缩任务维护，此处不写）
+
+        preferences 为顶层合并语义（round-3 review M6）：新偏好覆盖同键、保留旧键，
+        避免 LLM 只返回增量偏好时把既有偏好整表清空。
+        """
         async with self.session_factory() as session:
+            merged_prefs: dict[str, Any] | None = None
+            if preferences:
+                existing: dict[str, Any] | None = await session.scalar(
+                    select(PersonMemory.preferences).where(
+                        PersonMemory.character_id == character_id,
+                        PersonMemory.user_id == user_id,
+                    )
+                )
+                merged_prefs = {**(existing or {}), **preferences}
             stmt = (
                 update(PersonMemory)
                 .where(
@@ -199,7 +212,7 @@ class PersonMemoryService:
                     heat=PersonMemory.heat + 1,
                     last_interaction_at=func.now(),
                     updated_at=func.now(),
-                    **({"preferences": preferences} if preferences else {}),
+                    **({"preferences": merged_prefs} if merged_prefs else {}),
                 )
             )
             result = await session.execute(stmt)

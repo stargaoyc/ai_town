@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
@@ -25,12 +25,15 @@ class ActionRecord(Base):
 
     分区策略：
     - 按月分区（action_records_YYYY_MM）
-    - 默认分区兜底（action_records_default）
+    - DEFAULT 分区已于 0002_optimize 迁移删除（写入全走月度分区，
+      pre_create_partitions 保证分区先行存在）
     """
 
     __tablename__ = "action_records"
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid7, comment="记录 ID（UUID v7）")
+    # Round-3 M5：主键必须与 DDL 一致为 (id, timestamp)——分区表要求
+    # 分区键进主键，仅声明 id 会让 ORM 元数据与物理 schema 漂移
+    id: Mapped[UUID] = mapped_column(default=uuid7, comment="记录 ID（UUID v7）")
     character_id: Mapped[UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), comment="角色 ID")
     action_id: Mapped[str] = mapped_column(String(100), comment="Action 标识符")
     action_name: Mapped[str] = mapped_column(String(100), comment="Action 显示名")
@@ -45,6 +48,7 @@ class ActionRecord(Base):
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="执行时间")
 
     __table_args__ = (
+        PrimaryKeyConstraint("id", "timestamp"),
         # 角色行为时间线查询优化
         Index("idx_action_char_time", "character_id", "timestamp"),
         # v8: 补充文档声明的索引

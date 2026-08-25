@@ -97,13 +97,19 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         return list(result.scalars())
 
     async def count_unreflected(self, character_id: UUID) -> int:
-        """统计角色未反思记忆数（ORM，利用 idx_mem_unreflected 部分索引）"""
+        """统计角色未反思记忆数（ORM，利用 idx_mem_unreflected 部分索引）
+
+        Round-3 H2：必须与 fetch_unreflected 同口径排除 is_duplicate——
+        mark_duplicate 此前不清 is_reflected，改写式重复会永久滞留在
+        「未反思」计数里，一旦 ≥20 反思每个 Tick 都会触发。
+        """
         stmt = (
             select(func.count())
             .select_from(MemoryEpisode)
             .where(
                 MemoryEpisode.character_id == character_id,
                 MemoryEpisode.is_reflected.is_(False),
+                MemoryEpisode.is_duplicate.is_(False),
             )
         )
         result = await self.session.execute(stmt)
@@ -139,6 +145,11 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
 
         相似度 >= threshold 判定为改写式重复（复审 N7 的正确实现路径——
         pg_trgm 对中文无效，向量比对才是可靠信号）。
+
+        Round-3 M3：距离过滤改为「ORDER BY 距离 LIMIT 1 后在应用层比对阈值」。
+        HNSW 只加速有序 Top-K 查询，原先 WHERE distance <= x 无排序会让
+        planner 退化为对窗口的顺序扫描；布尔语义不变——
+        「存在任一行 ≤ 阈值」⟺「最近邻 ≤ 阈值」。
         """
         since = before_ts - timedelta(hours=window_hours)
         vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
@@ -149,30 +160,35 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         assert dbapi_conn is not None
         row = await dbapi_conn.fetchrow(
             """
-            SELECT id FROM memory_episodes
+            SELECT id, (embedding <=> $4::halfvec) AS dist FROM memory_episodes
             WHERE character_id = $1
               AND materialized = TRUE
               AND is_duplicate = FALSE
               AND embedding IS NOT NULL
               AND timestamp >= $2
               AND timestamp <= $3
-              AND (embedding <=> $4::halfvec) <= $5
+            ORDER BY embedding <=> $4::halfvec
             LIMIT 1
             """,
             character_id,
             since,
             before_ts,
             vec_str,
-            distance_limit,
         )
-        return row is not None
+        if row is None:
+            return False
+        return float(row["dist"]) <= distance_limit
 
     async def mark_duplicate(self, episode_id: UUID, character_id: UUID) -> None:
-        """标记为改写式重复：不落向量，materialized 置位防止 worker 重复拉取"""
+        """标记为改写式重复：不落向量，materialized 置位防止 worker 重复拉取
+
+        Round-3 H2：同时置 is_reflected=True——重复记忆不应进入反思池，
+        否则 count_unreflected 会把它们永久计入，反思被幻影计数反复触发。
+        """
         stmt = (
             update(MemoryEpisode)
             .where(MemoryEpisode.id == episode_id, MemoryEpisode.character_id == character_id)
-            .values(is_duplicate=True, materialized=True, embedding=None)
+            .values(is_duplicate=True, is_reflected=True, materialized=True, embedding=None)
         )
         await self.session.execute(stmt)
         await self.session.flush()
@@ -439,12 +455,15 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             )
             SELECT id, content, importance, timestamp, source_type, is_reflected, sim_score,
                    (sim_score * 0.6 + importance * 0.05)
-                   * (0.25 + 0.75 * exp(- EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 / 30.0))
+                   * (0.25 + 0.75 * exp(- GREATEST(0,
+                       EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0))
                    AS final_score
             FROM candidates
             ORDER BY final_score DESC
             LIMIT $4
         """
+        # L1（round-3）：days 项必须钳到 >=0——时钟漂移/回拨产生的未来 timestamp
+        # 会让 exp(+x) 突破衰减因子的 1.0 上限，未来记忆反而获得最高分
         vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
         result = await dbapi_conn.fetch(
             query_sql,

@@ -14,8 +14,9 @@ from src.auth.jwt_handler import JWTHandler
 from src.auth.jwt_handler import create_token as module_create_token
 from src.auth.jwt_handler import decode_token as module_decode_token
 
-# 测试用密钥与算法（不依赖全局 settings）
-_TEST_SECRET = "test-secret-key-for-unit-tests"
+# 测试用密钥与算法（不依赖全局 settings）；长度须 ≥32 字节，
+# 否则 PyJWT 对 HS256 短密钥刷 InsecureKeyLengthWarning 淹没测试输出（三轮审查 L7）
+_TEST_SECRET = "test-secret-key-for-unit-tests-0123456789abcdef"
 _ALGORITHM = "HS256"
 
 
@@ -82,7 +83,7 @@ def test_decode_token_invalid_signature_raises_401(handler: JWTHandler) -> None:
     # 用错误密钥生成，签名不匹配
     bad_token = pyjwt.encode(
         {"sub": "user1", "iat": datetime.now(UTC), "exp": datetime.now(UTC) + timedelta(hours=1)},
-        "wrong-secret",
+        "wrong-secret-but-long-enough-for-hs256",
         algorithm=_ALGORITHM,
     )
     with pytest.raises(HTTPException) as exc_info:

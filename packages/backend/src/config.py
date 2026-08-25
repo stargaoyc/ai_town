@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     world_events_retention_days: int = 90
     world_snapshots_keep_latest: int = 3
 
+    # RANGE 分区表保留策略（三轮审查 H9：分区此前只建不删，action_records/state_history
+    # 以约 175 万行/年速度无限累积——按月分区必须配套按月丢弃才有生命周期闭环）
+    action_records_retention_months: int = 12
+    state_history_retention_months: int = 6
+
+    # 消息表保留天数（三轮审查 M1：messages 刻意不分区却无清理任务；0 = 永久保留）
+    messages_retention_days: int = 180
+
     # Observability
     otel_endpoint: str | None = None
     otel_service_name: str = "ai-town-backend"
@@ -136,6 +144,10 @@ class Settings(BaseSettings):
     gossip_max_per_tick: int = 1  # 单次 Tick 最多传播条数（控制记忆膨胀速率）
     gossip_relation_min: int = 20  # 好友关系强度门槛（传闻沿既有社交关系流动）
 
+    # 群聊回复判定的 LLM 档位（"chat" 或 "flash"；README 宣称 flash 轻量判断，
+    # 三轮审查 M15 发现实现强制 chat——现恢复为可配置，默认维持 chat 行为不变）
+    group_judge_model: str = "chat"
+
     # OneBot 适配器
     onebot_default_character_id: str | None = None
     # 机器人自身 QQ 号（用于群聊 @ 检测，从 OneBot 事件的 self_id 也能获取）
@@ -146,6 +158,9 @@ class Settings(BaseSettings):
     onebot_group_character_map: str = "{}"
     # OneBot 反向 WS 接入令牌：配置后强制校验 Authorization: Bearer / access_token 参数
     onebot_access_token: str | None = None
+    # OneBot 事件流长度上限（round-3 H3：Streams 必须配 maxlen，否则已处理条目与
+    # 死信永久累积；XDEL 只删单条，历史长度仍需上限收敛）
+    onebot_stream_maxlen: int = 10_000
 
 
 settings = Settings()  # type: ignore[call-arg]

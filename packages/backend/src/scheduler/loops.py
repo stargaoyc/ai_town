@@ -20,10 +20,10 @@ from structlog import get_logger
 
 from src import runtime
 from src.config import settings
-from src.db.models import MemoryEpisode, PersonMemory, PersonMemoryEntry, Plan
+from src.db.models import Character, MemoryEpisode, PersonMemory, PersonMemoryEntry, Plan
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
-from src.memory.diary_service import DiaryService
+from src.memory.diary_service import DiaryService, _diary_trigger_periods, _world_real_window_seconds
 
 logger = get_logger(__name__)
 
@@ -146,7 +146,9 @@ async def diary_scheduler_loop() -> None:
     - 每月：每 30 个世界日
     - 每年：每 365 个世界日
 
-    生成是幂等的：DiaryService 会跳过当前周期已存在日记的角色。
+    日记归属与幂等键均使用世界时间；记忆查询窗口按世界天数 × 时钟倍率换算为真实秒
+    （round-3 review H1：此前窗口与幂等键错用真实日期，一天最多生成一篇日记）。
+    生成是幂等的：DiaryService 会跳过当前世界日已存在日记的角色。
     循环内部捕获所有异常，保证不会崩溃退出。
     """
     interval = 1800
@@ -178,13 +180,10 @@ async def diary_scheduler_loop() -> None:
                 pass
 
             try:
-                world_time = datetime.fromisoformat(world_time_raw)
+                world_now = datetime.fromisoformat(world_time_raw)
             except ValueError:
                 logger.warning("diary_scheduler_invalid_world_time", raw=world_time_raw)
                 continue
-
-            hour = world_time.hour
-            day_of_year = world_time.timetuple().tm_yday
 
             # 当日计划滚动过期（随世界时间检查，30 分钟粒度足够日级语义）
             try:
@@ -192,16 +191,7 @@ async def diary_scheduler_loop() -> None:
             except Exception as e:
                 logger.warning("daily_plan_expire_failed", error=str(e))
 
-            # 根据世界时间确定需要生成的周期
-            periods_to_generate: list[str] = []
-            if hour >= 22 or hour < 6:
-                periods_to_generate.append("day")
-            if day_of_year % 7 == 0:
-                periods_to_generate.append("week")
-            if day_of_year % 30 == 0:
-                periods_to_generate.append("month")
-            if day_of_year % 365 == 0:
-                periods_to_generate.append("year")
+            periods_to_generate = _diary_trigger_periods(world_now)
 
             if not periods_to_generate:
                 continue
@@ -209,14 +199,21 @@ async def diary_scheduler_loop() -> None:
             logger.info(
                 "diary_scheduler_trigger",
                 periods=periods_to_generate,
-                world_hour=hour,
-                world_day_of_year=day_of_year,
+                world_hour=world_now.hour,
+                world_day_of_year=world_now.timetuple().tm_yday,
             )
 
             service = DiaryService(session_factory=db.session)
+            real_now = datetime.now(UTC)
             for period in periods_to_generate:
                 try:
-                    summary = await service.generate_diaries_for_all_characters(period)
+                    # 记忆按真实时间戳存储：世界天数经时钟倍率换算为真实窗口再查询
+                    window_start = real_now - timedelta(seconds=_world_real_window_seconds(period))
+                    summary = await service.generate_diaries_for_all_characters(
+                        period,
+                        world_now=world_now,
+                        window_start=window_start,
+                    )
                     logger.info("diary_scheduler_period_done", period=period, summary=summary)
                 except Exception as e:
                     logger.error(
@@ -508,6 +505,7 @@ async def memory_retention_loop() -> None:
     每 24 小时执行一次：
     1. 记忆两阶段治理：压缩归档 + 分级删除（importance>=7 永久保留）
     2. 世界历史清理：超期 world_events 删除、world_snapshots 仅保留最近 N 份
+    3. 消息表清理：超期 messages 删除（三轮审查 M1：messages 无界增长）
 
     memory_episodes 为 HASH 分区表，无法像 RANGE 分区那样按时间 drop，
     膨胀治理只能在应用层定期处理。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
@@ -522,11 +520,34 @@ async def memory_retention_loop() -> None:
             await asyncio.sleep(interval)
             await run_memory_retention_cycle()
             await run_world_retention_cycle()
+            await run_messages_retention_cycle()
         except asyncio.CancelledError:
             logger.info("memory_retention_loop_cancelled")
             raise
         except Exception as e:
             logger.error("memory_retention_loop_error", error=str(e), exc_info=True)
+
+
+async def run_messages_retention_cycle(session_factory: Any | None = None) -> int:
+    """单次消息表清理（可测试入口）；返回删除行数
+
+    messages_retention_days=0 表示永久保留，直接跳过。
+    """
+    from src.config import settings as _settings
+    from src.db.repositories.message_repo import MessageRepository
+
+    retention_days = _settings.messages_retention_days
+    if retention_days <= 0:
+        return 0
+
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    factory = session_factory or db.session
+    async with factory() as session:
+        deleted = await MessageRepository(session).delete_older_than(cutoff)
+
+    if deleted:
+        logger.info("messages_retention_done", deleted=deleted, retention_days=retention_days)
+    return deleted
 
 
 async def run_world_retention_cycle(session_factory: Any | None = None) -> tuple[int, int]:
@@ -614,7 +635,20 @@ async def run_memory_retention_cycle(
                     mid_cutoff,
                     limit=_settings.memory_compression_batch_limit,
                 )
-                archived_groups, deletable_small_ids = await _compress_candidates(session, repo, llm, candidates)
+                # 归档 prompt 需要真实角色名而非 UUID（round-3 review M24），单次批量取全
+                name_by_id: dict[UUID, str] = {
+                    row[0]: row[1]
+                    for row in (
+                        await session.execute(
+                            select(Character.id, Character.name).where(
+                                Character.id.in_({e.character_id for e in candidates})
+                            )
+                        )
+                    ).all()
+                }
+                archived_groups, deletable_small_ids = await _compress_candidates(
+                    session, repo, llm, candidates, name_by_id
+                )
 
         # 阶段二：分级删除（归档行豁免）
         # 压缩激活时只删「低于最小批的小组」——大组必须先压缩成功才允许删除；
@@ -664,6 +698,7 @@ async def _compress_candidates(
     repo: MemoryRepository,
     llm: Any,
     candidates: list[MemoryEpisode],
+    character_names: dict[UUID, str],
 ) -> tuple[int, list[UUID]]:
     """把到期候选按角色×月份分组压缩为归档行
 
@@ -687,7 +722,7 @@ async def _compress_candidates(
             # 小组无需摘要（收益低于成本），标记为可直删
             small_ids.extend(e.id for e in episodes)
             continue
-        digest = await _summarize_group(prompts, llm, character_id, month, episodes)
+        digest = await _summarize_group(prompts, llm, character_id, month, episodes, character_names[character_id])
         if not digest:
             continue
         archive = MemoryEpisode(
@@ -710,6 +745,7 @@ async def _summarize_group(
     character_id: UUID,
     month: str,
     episodes: list[MemoryEpisode],
+    character_name: str,
 ) -> str | None:
     """LLM 生成单组月度摘要；任何失败返回 None（调用方跳过该组）"""
     if prompts is None:
@@ -718,7 +754,7 @@ async def _summarize_group(
     memories_text = "\n".join(f"- [{e.timestamp:%d %H:%M}] {e.content}" for e in episodes)
     prompt = prompts.render(
         "memory_compress",
-        character_name=str(character_id),
+        character_name=character_name,  # 真实角色名而非 UUID（round-3 review M24）
         month=month,
         memories_text=memories_text,
     )

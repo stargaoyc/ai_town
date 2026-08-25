@@ -60,6 +60,10 @@ from src.tools import ToolRegistry
 
 logger = get_logger(__name__)
 
+# 决策 Prompt 中单条反思/记忆的截断上限。二者均为 LLM 生成文本、长度无上界，
+# 不截断会撑爆决策上下文预算（round-3 review M7）
+_DECISION_ITEM_MAX_CHARS = 500
+
 _ACTIVITY_LABELS = {
     "sleeping": "睡眠",
     "drowsy": "低耗（准备入睡）",
@@ -461,7 +465,7 @@ class CharacterTickEngine:
             try:
                 refs = await ReflectionRepository(session).get_by_character(character_id, limit=5)
                 if refs:
-                    reflections_text = "\n".join(f"- {r.content}" for r in refs)
+                    reflections_text = "\n".join(f"- {r.content[:_DECISION_ITEM_MAX_CHARS]}" for r in refs)
             except Exception as e:
                 await session.rollback()
                 logger.warning(
@@ -621,9 +625,16 @@ class CharacterTickEngine:
         except Exception:
             tools_text = "（工具不可用）"
 
-        # 构建记忆文本
+        # 构建记忆文本（单条截断，见 _DECISION_ITEM_MAX_CHARS）
         memories_text = (
-            "\n".join([m.get("content", str(m)) if isinstance(m, dict) else str(m) for m in context["memories"]])
+            "\n".join(
+                [
+                    m.get("content", str(m))[:_DECISION_ITEM_MAX_CHARS]
+                    if isinstance(m, dict)
+                    else str(m)[:_DECISION_ITEM_MAX_CHARS]
+                    for m in context["memories"]
+                ]
+            )
             if context["memories"]
             else "暂无相关记忆"
         )

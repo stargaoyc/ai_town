@@ -82,6 +82,8 @@ class MemoryEpisode(Base):
         Index("idx_mem_char_time", "character_id", "timestamp"),
         # 角色重要性排序
         Index("idx_mem_char_imp", "character_id", "importance"),
+        # Round-3 M5：对齐 DDL 0002 的 GIN 索引（按相关角色查记忆），缺失会造成 ORM 元数据漂移
+        Index("idx_mem_related", "related_characters", postgresql_using="gin"),
         # 部分索引：仅索引未反思的记忆，加速反思触发检查
         Index(
             "idx_mem_unreflected",
