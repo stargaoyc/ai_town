@@ -107,16 +107,19 @@ function LoginPage() {
             </AnimeButton>
           </form>
 
-          <div className="mt-6 text-center text-xs text-twilight-400">
-            默认账号:{" "}
-            <code className="px-2 py-0.5 rounded-lg bg-white/50 text-sakura-500 font-medium">
-              admin
-            </code>
-            {" / "}
-            <code className="px-2 py-0.5 rounded-lg bg-white/50 text-sakura-500 font-medium">
-              admin123
-            </code>
-          </div>
+          {/* R4-L7：默认凭据提示仅在开发构建显示，生产部署不向未登录访客泄露管理员账号名 */}
+          {import.meta.env.DEV && (
+            <div className="mt-6 text-center text-xs text-twilight-400">
+              默认账号:{" "}
+              <code className="px-2 py-0.5 rounded-lg bg-white/50 text-sakura-500 font-medium">
+                admin
+              </code>
+              {" / "}
+              <code className="px-2 py-0.5 rounded-lg bg-white/50 text-sakura-500 font-medium">
+                admin123
+              </code>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

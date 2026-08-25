@@ -1961,6 +1961,7 @@ class CharacterTickEngine:
                 participants=participants,
                 location=location,
                 narrative=narrative,
+                redis=self.redis,
             )
 
         logger.info(

@@ -182,6 +182,9 @@ class CharacterRepository(BaseRepository[Character]):
 
         if redis is not None:
             await redis.delete(f"char:{character_id}:state")
+            # R4-L5：reconcile 基线键一并清理，否则删除角色后孤儿 rec_ver
+            # 永久残留（无 TTL），随删除次数线性累积
+            await redis.delete(f"char:{character_id}:rec_ver")
 
         logger.info(
             "character_deleted",

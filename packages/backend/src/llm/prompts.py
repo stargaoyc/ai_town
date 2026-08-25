@@ -19,7 +19,6 @@ REQUIRED_TEMPLATES = frozenset(
         "decision",
         "reflection",
         "safety",
-        "chat_with",
         "decision_tools",
         "decision_react",
         "group_reply",

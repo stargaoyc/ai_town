@@ -37,7 +37,9 @@ export default defineConfig({
     target: 'es2024', // 现代浏览器支持
   },
   test: {
-    environment: 'node', // 冒烟测试聚焦纯逻辑（queryKeys/store/api 错误处理），DOM 组件测试待引入 jsdom
+    // R4-L6：ui.test.tsx / AnimeBackground.test.tsx 等 DOM 组件测试需要 jsdom
+    // （依赖已安装）；纯逻辑测试在 jsdom 下同样可运行
+    environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
   },
   server: {

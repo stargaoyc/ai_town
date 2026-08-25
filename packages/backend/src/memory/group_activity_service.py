@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,9 @@ logger = get_logger(__name__)
 
 _RELATION_BOOST = 2
 _NARRATIVE_IN_MEMORY_MAX_CHARS = 150
+# 每对角色的群活动好感加成日限额（R4-M16）：反复同场不再机械刷好感，
+# 25h TTL 覆盖跨日边界
+_PAIR_BOOST_TTL_SECONDS = 25 * 3600
 
 
 class GroupActivityService:
@@ -39,12 +43,14 @@ class GroupActivityService:
         location: str,
         narrative: str,
         importance: int = 6,
+        redis: Any | None = None,
     ) -> int:
         """为每个参与者写共同经历记忆并两两加固关系
 
         Args:
             participants: [{"id": "<UUID 字符串>", "name": "<名字>"}, ...]（含发起者）
             narrative: 集体活动叙事（LLM 生成或模板回退）
+            redis: 传入时启用每对每日加成限额（R4-M16）
 
         Returns:
             写入的记忆条数（参与者数；个别被去重跳过时更少）
@@ -71,7 +77,7 @@ class GroupActivityService:
             if episode is not None:
                 written += 1
 
-        await self._boost_relations(participants)
+        await self._boost_relations(participants, redis=redis)
         # 不在此处 commit：调用方持有会话生命周期
         # （引擎经 db.session 退出自动提交；测试用回滚隔离）
         logger.info(
@@ -82,13 +88,24 @@ class GroupActivityService:
         )
         return written
 
-    async def _boost_relations(self, participants: list[dict[str, Any]]) -> None:
-        """两两关系 +2（上限 100），双向同步；缺失的关系行先按默认值创建"""
+    async def _boost_relations(self, participants: list[dict[str, Any]], redis: Any | None = None) -> None:
+        """两两关系 +2（上限 100），双向同步；缺失的关系行先按默认值创建
+
+        传入 redis 时启用每对每日一次限额（R4-M16）：反复同场的临时聚会
+        不再机械累积好感，关系增长必须由对话质量驱动。
+        """
         ids = [p["id"] for p in participants]
         for i in range(len(ids)):
             for j in range(i + 1, len(ids)):
                 a, b = UUID(ids[i]), UUID(ids[j])
                 for src, dst in ((a, b), (b, a)):
+                    if redis is not None and not await self._acquire_pair_boost_budget(redis, src, dst):
+                        logger.debug(
+                            "group_activity_pair_boost_capped",
+                            src=str(src),
+                            dst=str(dst),
+                        )
+                        continue
                     existing = await self.session.scalar(
                         select(Relation.strength).where(Relation.character_id == src, Relation.target_id == dst)
                     )
@@ -108,6 +125,14 @@ class GroupActivityService:
                             .values(strength=func.least(100, Relation.strength + _RELATION_BOOST))
                         )
                         await self.session.execute(stmt)
+
+    @staticmethod
+    async def _acquire_pair_boost_budget(redis: Any, src: UUID, dst: UUID) -> bool:
+        """尝试占用该方向今日的加成名额；当日已加固过则返回 False"""
+        day = datetime.now(UTC).strftime("%Y%m%d")
+        key = f"groupact:rel:{src}:{dst}:{day}"
+        acquired = await redis.set(key, "1", nx=True, ex=_PAIR_BOOST_TTL_SECONDS)
+        return bool(acquired)
 
 
 def parse_group_narrative(raw: str) -> str | None:
