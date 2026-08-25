@@ -5,13 +5,19 @@
 # ===== Builder 阶段 =====
 FROM python:3.13-slim AS builder
 
-# 安装系统依赖（编译 psycopg2 等）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 中国网络加速：apt 换清华源（trixie 源清单在 sources.list.d/debian.sources，
+# deb.debian.org 域名同时覆盖 main 与 debian-security，整域替换即可）
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
         build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv 包管理器
-RUN pip install --no-cache-dir uv
+# 安装 uv 包管理器（pip 走清华 PyPI 镜像）
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple uv
+
+# uv 依赖下载走清华 PyPI 镜像（两个变量兼容不同 uv 版本）
+ENV UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
+    UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 WORKDIR /app
 
@@ -24,8 +30,9 @@ RUN uv sync --frozen --no-dev
 # ===== 运行阶段 =====
 FROM python:3.13-slim
 
-# 安装运行时系统依赖（libpq for asyncpg, libpq5）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 中国网络加速：运行阶段 apt 同样换清华源
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 aitown

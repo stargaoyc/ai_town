@@ -18,6 +18,8 @@ from typing import Any
 import structlog
 import structlog.dev  # noqa: F401 - ConsoleRenderer 位于 structlog.dev
 
+from src.paths import find_project_root
+
 try:
     from opentelemetry import trace as _otel_trace
 
@@ -71,8 +73,8 @@ def _ensure_log_dir() -> Path:
 
     日志文件路径：{project_root}/data/logs/backend.log
     """
-    # 从 src/observability/ 向上 4 层到项目根目录
-    log_dir = Path(__file__).resolve().parents[4] / "data" / "logs"
+    # 经 find_project_root 兼容仓库/容器两种布局（容器挂载 ./data/logs:/app/data/logs）
+    log_dir = find_project_root() / "data" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 

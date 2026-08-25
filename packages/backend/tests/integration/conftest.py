@@ -40,7 +40,12 @@ _IT_DB_NAME = "ai_town_it"
 _ADMIN_URL = f"postgresql+asyncpg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/postgres"
 _IT_URL = f"postgresql+asyncpg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/{_IT_DB_NAME}"
 
-_REDIS_URL = os.environ.get("IT_REDIS_URL", "redis://localhost:6379/15")
+# 本地 compose 的 Redis 现已启用 requirepass（部署加固 H6）：
+# 通过 IT_REDIS_PASSWORD 注入密码；CI 服务容器无密码，缺省保持无认证 URL
+_IT_REDIS_PASSWORD = os.environ.get("IT_REDIS_PASSWORD", "")
+_REDIS_URL = os.environ.get("IT_REDIS_URL") or (
+    f"redis://:{_IT_REDIS_PASSWORD}@localhost:6379/15" if _IT_REDIS_PASSWORD else "redis://localhost:6379/15"
+)
 
 
 def _services_reachable() -> bool:

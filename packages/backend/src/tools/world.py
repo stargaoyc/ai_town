@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import structlog
@@ -26,6 +25,7 @@ import yaml
 
 from src.db.repositories import CharacterRepository
 from src.db.session import db
+from src.paths import find_project_root
 from src.runtime import get_redis, get_scene_loader
 
 logger = structlog.get_logger()
@@ -34,9 +34,8 @@ logger = structlog.get_logger()
 WORLD_STATE_KEY = "world:state"
 WORLD_TIME_KEY = "world:state:time"
 
-# 场景配置文件路径
-# 文件位于 packages/backend/src/tools/world.py，parents[4] 为项目根目录 aitown
-_SCENES_PATH = Path(__file__).resolve().parents[4] / "configs" / "scenes.yaml"
+# 场景配置文件路径（经 find_project_root 兼容仓库/容器两种布局）
+_SCENES_PATH = find_project_root() / "configs" / "scenes.yaml"
 
 
 def _decode(value: Any) -> str:

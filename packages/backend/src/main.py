@@ -21,7 +21,6 @@ API 路由：
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,6 +67,7 @@ from src.observability import (
     setup_tracing,
 )
 from src.observability.sanitizer import sanitize_url
+from src.paths import find_project_root
 from src.scheduler import PartitionScheduler
 from src.scheduler.loops import (
     character_tick_loop,
@@ -409,8 +409,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         scene_loader = SceneLoader(redis)
         # 尝试加载场景配置（文件可能不存在）
-        # 使用项目根目录定位配置文件（运行目录为 packages/backend/）
-        project_root = Path(__file__).resolve().parents[3]
+        # 经 find_project_root 兼容仓库/容器两种布局
+        project_root = find_project_root()
         scenes_path = project_root / "configs" / "scenes.yaml"
         map_path = project_root / "configs" / "world-map.yaml"
         if scenes_path.exists() and map_path.exists():

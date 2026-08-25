@@ -91,9 +91,11 @@ services:
       - path: .env # 根目录 .env（生产部署）；本地仅起基础设施时可以没有
         required: false
     environment:
-      # 与 postgres 服务共用 POSTGRES_PASSWORD 变量，消除 .env/compose 双真相源；密码缺失即 fail-fast
+      # 与 postgres 服务共用 POSTGRES_PASSWORD 变量；密码缺失时 compose fail-fast（:? 插值校验）
       DATABASE_URL: postgresql+asyncpg://ai_town:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_required}@postgres:5432/ai_town
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD_required}@redis:6379/0
+      # 容器内 localhost 指自身：OTel 上报必须走服务名（.env 的 localhost 值仅适用裸机开发）
+      OTEL_ENDPOINT: http://jaeger:4318
       TZ: Asia/Shanghai
     depends_on:
       postgres:
@@ -101,7 +103,9 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000" # 开发便利保留常规发布；生产应改绑 127.0.0.1 或仅经前端反代访问
+      # 宿主机 8000 被 Incredibuild 自带的 Apache(httpd) 以 SSL 占用，故映射到 8001；
+      # 容器间通信与前端反代均走内网 backend:8000，不受影响
+      - "127.0.0.1:8001:8000" # 开发便利保留常规发布；生产应改绑 127.0.0.1 或仅经前端反代访问
     volumes:
       - ./data/logs:/app/data/logs
       # Prompt 模板与节日日历（fail-fast 配置）：容器镜像只含 packages/backend，
@@ -113,8 +117,9 @@ services:
 
   frontend:
     build:
-      context: ./packages/frontend
-      dockerfile: Dockerfile
+      # 上下文为仓库根：pnpm 工作区锁文件在根目录（见 packages/frontend/Dockerfile）
+      context: .
+      dockerfile: packages/frontend/Dockerfile
     container_name: aitown-frontend
     restart: unless-stopped
     depends_on:

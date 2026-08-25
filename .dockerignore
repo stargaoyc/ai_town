@@ -1,0 +1,16 @@
+# 根上下文构建排除（frontend 镜像 context=仓库根）
+# 关键：node_modules 与数据目录必须排除，否则构建上下文传输 GB 级
+.git
+.omo
+.claude
+.codegraph
+.mypy_cache
+.ruff_cache
+.pytest_cache
+**/node_modules
+**/dist
+**/__pycache__
+**/.venv
+data
+docs
+packages/backend
