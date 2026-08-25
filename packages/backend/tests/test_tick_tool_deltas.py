@@ -80,3 +80,20 @@ async def test_apply_tool_deltas_money_never_negative() -> None:
     )
 
     assert context["state"]["money"] == 0
+
+
+async def test_apply_tool_deltas_relation_deferred_to_main_txn() -> None:
+    """R4-M11：关系增量只暂存 context，不再即时开 PG 连接写 relations 表"""
+    redis = FakeRedis()
+    engine = _make_engine(redis)
+    context: dict[str, Any] = {"state": {}, "relations": {"01964000-0000-7000-8000-000000000002": 30}}
+
+    await engine._apply_tool_deltas(
+        _CHARACTER_ID,
+        {"relation_strength_delta": 5, "target_id": "01964000-0000-7000-8000-000000000002"},
+        context,
+    )
+
+    assert context["pending_relation_deltas"] == [{"target_id": "01964000-0000-7000-8000-000000000002", "delta": 5}]
+    # 未直接改写关系映射（由主事务应用后统一更新）
+    assert context["relations"]["01964000-0000-7000-8000-000000000002"] == 30

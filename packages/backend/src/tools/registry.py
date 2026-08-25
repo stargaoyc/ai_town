@@ -39,6 +39,7 @@ ToolFunc = Callable[..., Awaitable[dict[str, Any]]]
 #   func: 异步函数引用
 #   description: LLM Prompt 中展示的功能描述
 #   llm_params: LLM 可填写的参数（名称 -> 中文说明）
+#   required_params: LLM 必填参数（调用前校验，缺失即返回失败观察而非抛异常——R4-H1）
 #   injected_params: 需从角色状态自动注入的参数（工具参数名 -> 状态字段名）
 #   state_mutating: 是否会产生状态 deltas（money_delta/inventory_delta/relation_strength_delta 等）
 
@@ -48,6 +49,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": shop.list_items,
         "description": "查看商店商品列表（可按分类过滤）",
         "llm_params": {"category": "商品分类（可选：food/drink/book/toy/medicine/clothing/other）"},
+        "required_params": [],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -55,6 +57,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": shop.get_item_details,
         "description": "查询单个商品详情（价格/描述/是否可售）",
         "llm_params": {"item_id": "商品 ID"},
+        "required_params": ["item_id"],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -62,6 +65,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": shop.buy_item,
         "description": "购买商品（扣金钱、加库存）",
         "llm_params": {"item_id": "商品 ID", "quantity": "购买数量（默认 1）"},
+        "required_params": ["item_id"],
         "injected_params": {"current_money": "money", "current_inventory": "inventory"},
         "state_mutating": True,
     },
@@ -69,6 +73,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": shop.sell_item,
         "description": "出售商品（加金钱、减库存）",
         "llm_params": {"item_id": "商品 ID", "quantity": "出售数量（默认 1）"},
+        "required_params": ["item_id"],
         "injected_params": {"current_money": "money", "current_inventory": "inventory"},
         "state_mutating": True,
     },
@@ -76,6 +81,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": shop.get_shop_categories,
         "description": "列出商店所有商品分类及价格区间",
         "llm_params": {},
+        "required_params": [],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -84,6 +90,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": knowledge.query_kb,
         "description": "查询小镇设定库（世界规则/角色系统/场景系统/行动系统/记忆系统）",
         "llm_params": {"query": "查询关键词（空格分隔）", "category": "可选类别过滤", "limit": "返回数量（默认 5）"},
+        "required_params": ["query"],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -91,6 +98,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": knowledge.list_categories,
         "description": "列出知识库所有类别",
         "llm_params": {},
+        "required_params": [],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -99,6 +107,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": social.give_gift,
         "description": "给其他角色送礼（消耗库存、增加好感度）",
         "llm_params": {"target_id": "目标角色 ID", "item_id": "礼物 ID"},
+        "required_params": ["target_id", "item_id"],
         "injected_params": {
             "current_relation_strength": "_relation_strength_with_target",
             "current_inventory": "inventory",
@@ -109,6 +118,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": social.invite_date,
         "description": "邀请其他角色约会（需关系强度 >= 40）",
         "llm_params": {"target_id": "目标角色 ID", "scene_id": "约会场景 ID"},
+        "required_params": ["target_id", "scene_id"],
         "injected_params": {
             "current_relation_strength": "_relation_strength_with_target",
             "current_mood": "mood",
@@ -119,6 +129,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": social.resolve_conflict,
         "description": "解决与另一角色的冲突（argument/misunderstanding/betrayal）",
         "llm_params": {"target_id": "目标角色 ID", "conflict_type": "冲突类型"},
+        "required_params": ["target_id", "conflict_type"],
         "injected_params": {"current_relation_strength": "_relation_strength_with_target"},
         "state_mutating": True,
     },
@@ -127,6 +138,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": world.get_world_info,
         "description": "查询当前世界状态（虚拟时间/天气/季节/Tick ID）",
         "llm_params": {},
+        "required_params": [],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -134,6 +146,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": world.find_character_by_name,
         "description": "按名字查找角色（返回 ID/性格/背景，不暴露位置）",
         "llm_params": {"query_name": "角色名"},
+        "required_params": ["query_name"],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -141,6 +154,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": world.get_scene_info,
         "description": "查询场景详情（开放时间/容量/可做活动/邻接出口）",
         "llm_params": {"scene_id": "场景 ID"},
+        "required_params": ["scene_id"],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -148,6 +162,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": world.list_scenes,
         "description": "列出全部场景摘要",
         "llm_params": {},
+        "required_params": [],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -156,6 +171,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": self_info.get_relationships,
         "description": "查询自己与所有其他角色的关系（强度/类型/备注）",
         "llm_params": {},
+        "required_params": [],
         "injected_params": {"character_id": "_character_id"},
         "state_mutating": False,
     },
@@ -163,6 +179,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "func": self_info.search_memories,
         "description": "按关键词搜索自己的记忆片段（文本匹配，非向量检索）",
         "llm_params": {"keyword": "搜索关键词", "limit": "返回数量，默认 5"},
+        "required_params": ["keyword"],
         "injected_params": {"character_id": "_character_id"},
         "state_mutating": False,
     },
@@ -174,6 +191,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
             "prompt": "画面描述（具体、含风格与氛围）",
             "ratio": "可选画面比例 1:1/3:4/4:3/16:9 等，默认 1:1",
         },
+        "required_params": ["prompt"],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -184,6 +202,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
             "prompt": "视频内容描述（具体、含镜头与氛围）",
             "frames": "目标帧数（默认 25，约 1 秒；越大越长越慢）",
         },
+        "required_params": ["prompt"],
         "injected_params": {},
         "state_mutating": False,
     },
@@ -323,6 +342,10 @@ class ToolRegistry:
         if not await is_tool_enabled(full_name):
             return {"success": False, "error": f"Tool '{full_name}' is disabled", "result": None}
 
+        missing = _missing_required_params(meta, args)
+        if missing:
+            return {"success": False, "error": f"缺少必填参数: {', '.join(missing)}", "result": None}
+
         # 合并 LLM 参数与注入参数
         final_args = dict(args)
         injected = self._resolve_injected_params(meta["injected_params"], context)
@@ -394,6 +417,10 @@ class ToolRegistry:
         if not await is_tool_enabled(full_name):
             return {"success": False, "error": f"Tool '{full_name}' is disabled", "result": None}
 
+        missing = _missing_required_params(meta, args)
+        if missing:
+            return {"success": False, "error": f"缺少必填参数: {', '.join(missing)}", "result": None}
+
         # 合并 LLM 参数
         final_args = dict(args)
 
@@ -429,6 +456,16 @@ class ToolRegistry:
         except Exception as e:
             logger.warning("tool_call_failed", tool=full_name, error=str(e), exc_info=True)
             return {"success": False, "error": str(e), "result": None}
+
+
+def _missing_required_params(meta: dict[str, Any], args: dict[str, Any]) -> list[str]:
+    """校验 LLM 提供的必填参数；返回缺失名单（空列表 = 通过）"""
+    missing: list[str] = []
+    for name in meta.get("required_params", []):
+        value = args.get(name)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            missing.append(name)
+    return missing
 
 
 def list_all_tool_names() -> list[str]:

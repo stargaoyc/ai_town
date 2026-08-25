@@ -64,6 +64,62 @@ logger = get_logger(__name__)
 # 不截断会撑爆决策上下文预算（round-3 review M7）
 _DECISION_ITEM_MAX_CHARS = 500
 
+# LLM 动态耗时的绝对上限（虚拟分钟）。实际生效仍受 Action.allow_dynamic_duration
+# 门控，但 schema 层不设上限会放行 10^9 级极端值（R4-L4）
+_MAX_DYNAMIC_DURATION = 480
+
+
+def _resolve_action_id(raw_action: Any, candidates: list[Action]) -> str:
+    """LLM 返回 action 的落地规则。
+
+    use_tool 是 ReAct 循环的保留字而非注册 Action——它必须原样放行给循环守卫，
+    否则工具调用自特性落地起即为死代码（R4-H1 出生缺陷）；
+    其余未命中候选列表的值一律回退 wait，保证 LLM 无法绕过 precondition 过滤。
+    """
+    action_id = raw_action if raw_action is not None else "wait"
+    if action_id == "use_tool":
+        return action_id
+    valid_action_ids = [a.id for a in candidates]
+    if action_id not in valid_action_ids:
+        logger.warn("invalid_action", action=action_id, fallback="wait")
+        if "wait" in valid_action_ids:
+            return "wait"
+        return valid_action_ids[0] if valid_action_ids else "wait"
+    return str(action_id)
+
+
+def _clamp_dynamic_duration(raw: Any) -> int | None:
+    """钳制 LLM 返回的动态耗时：非法值归 None，合法值收敛到 [1, _MAX_DYNAMIC_DURATION]"""
+    try:
+        value = int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+    if value is None:
+        return None
+    return max(1, min(_MAX_DYNAMIC_DURATION, value))
+
+
+def _action_param_hint(action: Action) -> str:
+    """从 params_schema 提取必填参数提示（R4-M10：参数契约进 Prompt）。
+
+    此前 move 的 target_scene 契约只存在于执行器代码里，LLM 只能靠猜，
+    缺参决策 fail-safe 到 wait 白白浪费整个 Tick。
+    """
+    schema = action.params_schema
+    if not schema:
+        return ""
+    required = schema.get("required") or []
+    props = schema.get("properties") or {}
+    parts: list[str] = []
+    for name in required:
+        prop = props.get(name)
+        desc = str(prop.get("description", "") or "") if isinstance(prop, dict) else ""
+        parts.append(f"{name}（{desc}）" if desc else name)
+    if not parts:
+        return ""
+    return f"；需在 params 填写: {'、'.join(parts)}"
+
+
 _ACTIVITY_LABELS = {
     "sleeping": "睡眠",
     "drowsy": "低耗（准备入睡）",
@@ -313,41 +369,8 @@ class CharacterTickEngine:
             return
 
         # 3. LLM 决策（ReAct 循环：工具调用 → 观察结果 → 再次决策）
-        # 最多 3 轮工具调用，防止无限循环
-        tool_observations: list[dict[str, Any]] = []
-        decision = await self._decide(character_id, context, candidates, tool_observations)
-
-        for _react_iter in range(3):
-            if decision.action != "use_tool":
-                break
-
-            # 执行工具调用
-            tool_result = await self._execute_tool(character_id, decision, context)
-            if tool_result:
-                tool_observations.append(
-                    {
-                        "tool_name": decision.params.get("tool_name", ""),
-                        "tool_args": decision.params.get("tool_args", {}),
-                        "result": tool_result.get("result", tool_result),
-                        "success": tool_result.get("success", False),
-                    }
-                )
-
-            # 对状态变更类工具，应用 deltas
-            if tool_result and tool_result.get("state_mutating"):
-                await self._apply_tool_deltas(character_id, tool_result.get("result", {}), context)
-
-            # 再次决策（带工具观察结果）
-            decision = await self._decide(character_id, context, candidates, tool_observations)
-
-        # 如果 3 轮后仍在 use_tool，强制改为 wait
-        if decision.action == "use_tool":
-            logger.warning(
-                "react_max_iterations_reached",
-                character_id=str(character_id),
-                tool_observations=tool_observations,
-            )
-            decision.action = "wait"
+        decision = await self._decide(character_id, context, candidates, [])
+        decision = await self._run_react_loop(character_id, context, candidates, decision)
 
         # H10 闸口：失锁后禁止执行 Action 与记忆沉淀——另一实例可能已接管该角色，
         # 此处继续写入即构成跨实例 double-tick
@@ -680,9 +703,12 @@ class CharacterTickEngine:
         state = context["state"]
         world = context["world"]
 
-        # 构建候选 Action 列表文本
+        # 构建候选 Action 列表文本（附必填参数契约，见 _action_param_hint）
         candidates_text = "\n".join(
-            [f"- {a.id}: {a.name}（耗时{a.duration_minutes}分钟，体力消耗{a.energy_cost}）" for a in candidates]
+            [
+                f"- {a.id}: {a.name}（耗时{a.duration_minutes}分钟，体力消耗{a.energy_cost}）{_action_param_hint(a)}"
+                for a in candidates
+            ]
         )
 
         # 构建工具列表文本（角色可调用本地工具获取信息或执行操作）
@@ -824,12 +850,8 @@ class CharacterTickEngine:
         # 调用 LLM
         result = await self.llm.structured_output(prompt, schema, model="chat")
 
-        # 验证 Action ID 合法性
-        action_id = result.get("action", "wait")
-        valid_action_ids = [a.id for a in candidates]
-        if action_id not in valid_action_ids:
-            logger.warn("invalid_action", action=action_id, fallback="wait")
-            action_id = "wait" if "wait" in valid_action_ids else valid_action_ids[0]
+        # 验证 Action ID 合法性（use_tool 保留字豁免逻辑收敛在 _resolve_action_id）
+        action_id = _resolve_action_id(result.get("action"), candidates)
 
         # 防御性处理 LLM 返回值类型
         # 注意：LLM 可能返回 "planChanges": null，此时 dict.get() 返回 None 而非默认值 []
@@ -842,15 +864,63 @@ class CharacterTickEngine:
         raw_share_intent = result.get("proactiveShareIntent", False)
         proactive_share_intent = bool(raw_share_intent) if raw_share_intent is not None else False
 
+        clamped_duration = _clamp_dynamic_duration(result.get("duration"))
+
         return DecisionResult(
             action=action_id,
             reason=result.get("reason", ""),
             params=result.get("params") or {},
-            duration=result.get("duration"),
+            duration=clamped_duration,
             plan_changes=plan_changes,
             create_plan_changes=create_plan_changes,
             proactive_share_intent=proactive_share_intent,
         )
+
+    async def _run_react_loop(
+        self,
+        character_id: UUID,
+        context: dict[str, Any],
+        candidates: list[Action],
+        decision: DecisionResult,
+    ) -> DecisionResult:
+        """ReAct 循环：工具调用 → 观察结果 → 再次决策（最多 3 轮，防止无限循环）。
+
+        循环退出后若仍停留在 use_tool（LLM 反复要求调工具），强制降级为 wait。
+        """
+        tool_observations: list[dict[str, Any]] = []
+
+        for _react_iter in range(3):
+            if decision.action != "use_tool":
+                break
+
+            # 执行工具调用
+            tool_result = await self._execute_tool(character_id, decision, context)
+            if tool_result:
+                tool_observations.append(
+                    {
+                        "tool_name": decision.params.get("tool_name", ""),
+                        "tool_args": decision.params.get("tool_args", {}),
+                        "result": tool_result.get("result", tool_result),
+                        "success": tool_result.get("success", False),
+                    }
+                )
+
+            # 对状态变更类工具，应用 deltas
+            if tool_result and tool_result.get("state_mutating"):
+                await self._apply_tool_deltas(character_id, tool_result.get("result", {}), context)
+
+            # 再次决策（带工具观察结果）
+            decision = await self._decide(character_id, context, candidates, tool_observations)
+
+        if decision.action == "use_tool":
+            logger.warning(
+                "react_max_iterations_reached",
+                character_id=str(character_id),
+                tool_observations=tool_observations,
+            )
+            decision.action = "wait"
+
+        return decision
 
     async def _execute_tool(
         self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]
@@ -1004,37 +1074,19 @@ class CharacterTickEngine:
                 new_mood=mood_delta,
             )
 
-        # 关系强度变化（需写入 PG relations 表）
+        # 关系强度变化（R4-M11：不再即时写 PG，暂存到 context，
+        # 由 _execute_action 的主事务统一落库，消除「关系已写、行为记录回滚」的部分提交窗口）
         relation_delta = tool_result.get("relation_strength_delta")
         target_id = tool_result.get("target_id")
         if relation_delta and target_id:
-            try:
-                async with db.session() as session:
-                    rel_repo = RelationRepository(session)
-                    rel = await rel_repo.get_or_create(character_id, UUID(target_id))
-                    new_strength = max(0, min(100, rel.strength + int(relation_delta)))
-                    await rel_repo.update_relation(
-                        character_id,
-                        UUID(target_id),
-                        strength=new_strength,
-                    )
-                    # 更新 context 中的关系映射
-                    relations = context.get("relations", {})
-                    relations[str(target_id)] = new_strength
-                    logger.info(
-                        "tool_delta_relation",
-                        character_id=str(character_id),
-                        target_id=str(target_id),
-                        delta=relation_delta,
-                        new_strength=new_strength,
-                    )
-            except Exception as e:
-                logger.warning(
-                    "tool_relation_update_failed",
-                    character_id=str(character_id),
-                    target_id=str(target_id),
-                    error=str(e),
-                )
+            pending = context.setdefault("pending_relation_deltas", [])
+            pending.append({"target_id": str(target_id), "delta": int(relation_delta)})
+            logger.info(
+                "tool_delta_relation_pending",
+                character_id=str(character_id),
+                target_id=str(target_id),
+                delta=relation_delta,
+            )
 
     @staticmethod
     def _current_world_hour(context: dict[str, Any]) -> int | None:
@@ -1279,6 +1331,25 @@ class CharacterTickEngine:
                 if decision.create_plan_changes:
                     plan_repo = PlanRepository(session)
                     await self._create_plans(plan_repo, character_id, decision.create_plan_changes)
+
+                # 应用工具产生的待定关系增量（R4-M11）：与 ActionRecord 同事务提交，
+                # 任一失败整体回滚，杜绝「关系已写、行为记录回滚」的不一致
+                pending_deltas = context.get("pending_relation_deltas") or []
+                if pending_deltas:
+                    rel_repo = RelationRepository(session)
+                    for item in pending_deltas:
+                        rel_target = UUID(str(item["target_id"]))
+                        rel = await rel_repo.get_or_create(character_id, rel_target)
+                        new_strength = max(0, min(100, rel.strength + int(item["delta"])))
+                        await rel_repo.update_relation(character_id, rel_target, strength=new_strength)
+                        context.setdefault("relations", {})[str(rel_target)] = new_strength
+                        logger.info(
+                            "tool_delta_relation_applied",
+                            character_id=str(character_id),
+                            target_id=str(rel_target),
+                            delta=item["delta"],
+                            new_strength=new_strength,
+                        )
 
             # H10 闸口（Redis 镜像写入前）：PG 已提交但此刻失锁则停止写 Redis，
             # 漂移交由 reconcile 的 pg_advanced 仲裁修复，避免覆盖接管者刚写入的新状态。
@@ -1633,7 +1704,10 @@ class CharacterTickEngine:
                 strength=int(strength),
                 transcript=_clip_tail(transcript, _CHAT_TRANSCRIPT_MAX_CHARS),
             )
-            result = await self.llm.structured_output(prompt, schema, model="chat")
+            # R4-L3：关系评审与对话生成解耦——评审用强模型，避免「自己给自己打分」
+            # 的同源偏差；强模型未配置时回退 chat 档
+            judge_model = settings.model_strong or "chat"
+            result = await self.llm.structured_output(prompt, schema, model=judge_model)
             # 缺键直接 KeyError → 由降级路径捕获回退固定值
             return max(-_CHAT_QUALITY_DELTA_LIMIT, min(_CHAT_QUALITY_DELTA_LIMIT, int(result["delta"])))
         except Exception as e:
