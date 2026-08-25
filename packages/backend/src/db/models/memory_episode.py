@@ -59,6 +59,11 @@ class MemoryEpisode(Base):
     )
     importance: Mapped[int] = mapped_column(Integer, default=5, comment="重要性 1-10")
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="发生时间")
+    # round-5 M2：归档行继承原事件 timestamp（仅展示/排序语义），保留期必须按
+    # created_at 计龄——按事件时间计龄会让旧积压压缩出的归档生来即到期
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default="now()", comment="入库时间（归档保留期计龄基准）"
+    )
     action_id: Mapped[str | None] = mapped_column(String(100), comment="关联 Action")
     location: Mapped[str | None] = mapped_column(String(50), comment="发生场景")
     related_characters: Mapped[list[UUID]] = mapped_column(ARRAY(Uuid), default=list, comment="相关角色 ID 列表")

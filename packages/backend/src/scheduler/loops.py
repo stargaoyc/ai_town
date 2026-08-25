@@ -148,6 +148,9 @@ async def diary_scheduler_loop() -> None:
 
     日记归属与幂等键均使用世界时间；记忆查询窗口按世界天数 × 时钟倍率换算为真实秒
     （round-3 review H1：此前窗口与幂等键错用真实日期，一天最多生成一篇日记）。
+    批量路径必须把 world_now/window_start 透传给 DiaryService（round-5 H3：
+    此前批量调用缺省透传，diary_date 回落真实日历，与幂等键的世界日历错位，
+    触发窗内每轮轮询都会重复生成）。
     生成是幂等的：DiaryService 会跳过当前世界日已存在日记的角色。
     循环内部捕获所有异常，保证不会崩溃退出。
     """
@@ -536,7 +539,8 @@ async def run_cognition_retention_cycle(session_factory: Any | None = None) -> d
     - tier=1 批次反思（tier=2 元反思跨期归纳，永久保留）
     - 角色日记
     - Person Memory 已压缩条目（compacted=TRUE 的软归档行此前永不清理）
-    - 归档记忆行（source_type='archive'，此前豁免一切删除路径）
+    - 归档记忆行（source_type='archive'）：保留期按 created_at 计龄，
+      不继承原事件时间戳——archive.timestamp 仅承载展示/排序语义（round-5 M2）
 
     各 retention_days<=0 时跳过对应类。返回各类删除行数。
     """
@@ -586,12 +590,14 @@ async def run_cognition_retention_cycle(session_factory: Any | None = None) -> d
 
         days = _settings.archive_episode_retention_days
         if days > 0:
+            # 归档保留期按创建时间计龄，不继承原事件时间戳（round-5 M2）：
+            # archive.timestamp 继承自原事件，旧积压压缩出的归档按它计龄会生来即到期
             res = cast(
                 "CursorResult[Any]",
                 await session.execute(
                     delete(MemoryEpisode).where(
                         MemoryEpisode.source_type == "archive",
-                        MemoryEpisode.timestamp < now - timedelta(days=days),
+                        MemoryEpisode.created_at < now - timedelta(days=days),
                     )
                 ),
             )
@@ -805,6 +811,7 @@ async def _compress_candidates(
             character_id=character_id,
             content=f"[归档] {month}：{digest}",
             importance=3,
+            # timestamp 继承原事件仅用于展示/排序；保留期按 created_at 计龄（round-5 M2）
             timestamp=episodes[-1].timestamp,
             source_type="archive",
             materialized=False,

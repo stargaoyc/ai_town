@@ -157,3 +157,51 @@ class TestRetentionCompression:
         )
         # 压缩失败的组原样保留（下周期重试）
         assert sum(1 for r in rows if r.source_type == "action") == 6
+
+    async def test_archive_aged_by_created_at_not_event_timestamp(
+        self, it_session: AsyncSession, archive_character: Character
+    ) -> None:
+        """归档保留期按创建时间计龄，不继承原事件时间戳（round-5 M2）
+
+        旧积压压缩出的归档（timestamp 很老、刚诞生）必须存活；
+        反之 created_at 超期的归档即使 timestamp 很新也应删除。
+        """
+        from src.config import settings as _settings
+        from src.scheduler.loops import run_cognition_retention_cycle
+
+        now = datetime.now(UTC)
+        retention = timedelta(days=_settings.archive_episode_retention_days)
+        it_session.add_all(
+            [
+                MemoryEpisode(
+                    character_id=archive_character.id,
+                    content="[归档] 2025-01：旧积压摘要",
+                    importance=3,
+                    timestamp=now - timedelta(days=400),
+                    created_at=now - timedelta(days=1),
+                    source_type="archive",
+                ),
+                MemoryEpisode(
+                    character_id=archive_character.id,
+                    content="[归档] 新鲜事件摘要",
+                    importance=3,
+                    timestamp=now - timedelta(days=1),
+                    created_at=now - retention - timedelta(days=5),
+                    source_type="archive",
+                ),
+            ]
+        )
+        await it_session.flush()
+
+        deleted = await run_cognition_retention_cycle(lambda: _session_ctx(it_session))
+
+        assert deleted["archive_episodes"] == 1
+        rows = list(
+            (
+                await it_session.execute(
+                    select(MemoryEpisode).where(MemoryEpisode.character_id == archive_character.id)
+                )
+            ).scalars()
+        )
+        survivors = [r.content for r in rows if r.source_type == "archive"]
+        assert survivors == ["[归档] 2025-01：旧积压摘要"]

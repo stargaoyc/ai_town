@@ -15,6 +15,24 @@ from src.runtime import get_llm
 
 logger = get_logger(__name__)
 
+# 日记素材抓取与采样（round-5 M1）：repo 默认 LIMIT 100 且按时间正序截断，
+# character_tick_seconds=30 下连一个日窗都装不下（约 144 条），再取尾部
+# memories[-20:] 只会拿到「窗口起点附近」的内容。先放宽抓取，再等距采样。
+MATERIAL_FETCH_LIMIT = 400
+MATERIAL_SAMPLE_SIZE = 20
+
+
+def _sample_material(memories: list[Any]) -> list[Any]:
+    """从时间正序的记忆列表中等距采样至多 MATERIAL_SAMPLE_SIZE 条
+
+    等距取点让素材覆盖整个查询窗口（含首尾四分位），顺序保持时间正序；
+    直接取尾部会系统性丢弃窗口中后段经历，日记因此失真。
+    """
+    n = len(memories)
+    if n <= MATERIAL_SAMPLE_SIZE:
+        return list(memories)
+    return [memories[i * n // MATERIAL_SAMPLE_SIZE] for i in range(MATERIAL_SAMPLE_SIZE)]
+
 
 def _world_real_window_seconds(period: str) -> float:
     """周期（世界天数）换算为真实秒数
@@ -130,7 +148,9 @@ class DiaryService:
 
         async with self.session_factory() as session:
             repo = MemoryRepository(session)
-            memories = await repo.get_by_character_and_time_range(character_id, effective_window_start, real_now)
+            memories = await repo.get_by_character_and_time_range(
+                character_id, effective_window_start, real_now, limit=MATERIAL_FETCH_LIMIT
+            )
 
         if not memories or len(memories) < 1:
             logger.info(
@@ -140,9 +160,9 @@ class DiaryService:
             )
             return None
 
-        # 构造记忆摘要（最多取 20 条，避免 prompt 过长）
+        # 构造记忆摘要（等距采样至多 20 条，prompt 长度不变且覆盖全窗口）
         memory_texts = []
-        for m in memories[-20:]:
+        for m in _sample_material(memories):
             content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
             memory_texts.append(f"- {content}")
 
@@ -270,10 +290,14 @@ class DiaryService:
                         )
                         continue
 
+                # 必须透传世界时间（round-5 H3）：缺省会回落 real_now，
+                # diary_date 落真实日历而幂等键比对世界日历 → 触发窗内每轮重复生成
                 diary = await self.generate_diary(
                     character_id=char.id,
                     character_name=char.name,
                     period=period,
+                    world_now=world_now,
+                    window_start=window_start,
                 )
                 if diary is not None:
                     success += 1
