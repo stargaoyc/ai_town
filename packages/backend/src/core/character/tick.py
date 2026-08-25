@@ -26,7 +26,7 @@ from structlog import get_logger
 from src.actions import Action, ActionRegistry, DecisionResult
 from src.actions.base import apply_cost_fields
 from src.config import settings
-from src.core.locks import acquire_resource_locks, lock_watchdog, release_lock
+from src.core.locks import acquire_resource_locks, release_lock, watch_locks
 from src.core.state_codec import decode_state_value, encode_state_mapping
 from src.core.world.evolutions.scene_evolution import VISITORS_KEY
 from src.cost_control import CircuitOpen
@@ -197,16 +197,20 @@ class CharacterTickEngine:
             logger.debug("character_tick_skipped", character_id=str(character_id))
             return
 
-        # 看门狗：单次 Tick 含多次 LLM 调用，耗时可能超过 LOCK_TTL，定期续租防止锁过期易主
+        # 看门狗：单次 Tick 含多次 LLM 调用，耗时可能超过 LOCK_TTL，定期续租防止锁过期易主。
+        # 续租失败 → lock_lost 置位，Tick 在写入闸口自查中止，防止跨实例 double-tick（round-3 review H10）
         renew_stop = asyncio.Event()
-        watchdog = asyncio.create_task(lock_watchdog(self.redis, renew_stop, {lock_key: lock_token}, self.LOCK_TTL))
+        lock_lost = asyncio.Event()
+        watchdog = asyncio.create_task(
+            watch_locks(self.redis, renew_stop, {lock_key: lock_token}, self.LOCK_TTL, lock_lost=lock_lost)
+        )
 
         try:
             self._ensure_semaphore()
             semaphore = CharacterTickEngine.SEMAPHORE
             assert semaphore is not None
             async with semaphore:
-                await self._execute_tick(character_id)
+                await self._execute_tick(character_id, lock_lost=lock_lost)
         except CircuitOpen:
             # 熔断器开启时 LLM 调用必然失败，重试无意义，跳过本角色本周期
             logger.warning("character_tick_skipped_circuit_open", character_id=str(character_id))
@@ -234,11 +238,12 @@ class CharacterTickEngine:
                 max_concurrent=settings.character_max_concurrent,
             )
 
-    async def _execute_tick(self, character_id: UUID) -> None:
+    async def _execute_tick(self, character_id: UUID, *, lock_lost: asyncio.Event) -> None:
         """五阶段闭环核心逻辑
 
         Args:
             character_id: 角色 ID
+            lock_lost: 看门狗失锁信号；置位后本 Tick 禁止任何 PG/Redis 状态写入（H10）
         """
         logger.info("character_tick_start", character_id=str(character_id))
 
@@ -300,8 +305,14 @@ class CharacterTickEngine:
             )
             decision.action = "wait"
 
+        # H10 闸口：失锁后禁止执行 Action 与记忆沉淀——另一实例可能已接管该角色，
+        # 此处继续写入即构成跨实例 double-tick
+        if lock_lost.is_set():
+            logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
+            return
+
         # 4. 执行 Action
-        await self._execute_action(character_id, decision, context)
+        await self._execute_action(character_id, decision, context, lock_lost=lock_lost)
 
         # 5. 记忆沉淀
         await self._memorize(character_id, decision, context)
@@ -974,7 +985,14 @@ class CharacterTickEngine:
         """从世界状态解析当前虚拟小时；解析失败返回 None（移动校验跳过开放时间检查）"""
         return _parse_world_hour(str(context.get("world", {}).get("world_time") or ""))
 
-    async def _execute_action(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
+    async def _execute_action(
+        self,
+        character_id: UUID,
+        decision: DecisionResult,
+        context: dict[str, Any],
+        *,
+        lock_lost: asyncio.Event | None = None,
+    ) -> None:
         """执行 Action - 事务化
 
         流程：
@@ -987,7 +1005,16 @@ class CharacterTickEngine:
             character_id: 角色 ID
             decision: 决策结果
             context: 感知环境结果
+            lock_lost: 看门狗失锁信号；缺省时视为未启用失锁闸口（保持既有直接调用方兼容）。
+                置位后在入口、PG 事务前与 Redis 镜像写入前三处中止，
+                保证失锁后不再发生任何 PG/Redis 状态写入——含 chat_with 的关系/记忆写入（H10）
         """
+        lost = lock_lost if lock_lost is not None else asyncio.Event()
+        # H10 闸口（入口）：失锁后不生成对话、不做移动校验，直接放弃本次执行
+        if lost.is_set():
+            logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
+            return
+
         start_perf = time.perf_counter()
         action_def = self.registry.get(decision.action)
         if not action_def:
@@ -1118,6 +1145,12 @@ class CharacterTickEngine:
             "end_time": action_end.isoformat(),
         }
 
+        # H10 闸口（PG 事务前）：决策/对话生成耗时可能横跨整个锁 TTL，
+        # 期间锁可能已被他实例接走，此时写入即 double-tick
+        if lost.is_set():
+            logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
+            return
+
         # 事务化执行
         try:
             async with db.session() as session:
@@ -1190,6 +1223,13 @@ class CharacterTickEngine:
                 if decision.create_plan_changes:
                     plan_repo = PlanRepository(session)
                     await self._create_plans(plan_repo, character_id, decision.create_plan_changes)
+
+            # H10 闸口（Redis 镜像写入前）：PG 已提交但此刻失锁则停止写 Redis，
+            # 漂移交由 reconcile 的 pg_advanced 仲裁修复，避免覆盖接管者刚写入的新状态。
+            # 此闸口同时挡住其后的场景在场人数记账
+            if lost.is_set():
+                logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
+                return
 
             # 更新 Redis 实时状态
             await self.redis.hset(

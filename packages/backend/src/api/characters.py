@@ -305,7 +305,12 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
                 related_characters=[],
             )
         )
-        await CharacterRepository(session).update_state_cas(cid, location=to_scene)
+        cas_ok = await CharacterRepository(session).update_state_cas(cid, location=to_scene)
+        if not cas_ok:
+            # round-3 review M8：CAS 全部重试失败说明状态版本已被并发写推进，
+            # 此时继续 hset 会用陈旧位置覆盖 Redis 真相源。在会话内抛出以连带
+            # 回滚本次移动的 ActionRecord（半截审计记录比没有更糟），不写 Redis
+            raise HTTPException(status_code=409, detail="角色状态已变化，请刷新后重试")
     await redis.hset(f"char:{cid}:state", "location", to_scene)
 
     return {

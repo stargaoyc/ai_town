@@ -157,3 +157,47 @@ async def lock_watchdog(redis: Redis, renew_stop: asyncio.Event, acquired: dict[
                 renewed = await renew_lock(redis, lock_key, token, ttl)
                 if not renewed:
                     logger.warning("resource_lock_renew_failed", lock_key=lock_key)
+
+
+async def watch_locks(
+    redis: Redis,
+    stop: asyncio.Event,
+    locks: dict[str, str],
+    ttl: int,
+    lock_lost: asyncio.Event | None = None,
+) -> asyncio.Event:
+    """锁看门狗（带失锁信号变体）：任一续租失败即置位 lock_lost 并返回该事件
+
+    与 lock_watchdog 的区别：后者只记日志，调用方无从感知锁已易主；
+    本变体把「续租失败（renew_lock 返回 False 或抛异常）」转化为失锁信号，
+    供 Tick 在 await 边界检查并中止后续状态写入——失锁后继续写会造成
+    跨实例 double-tick（round-3 review H10）。
+
+    Args:
+        redis: Redis 客户端
+        stop: 停止信号，置位后看门狗退出
+        locks: 锁键 -> 持有者 token
+        ttl: 锁 TTL（秒），续租间隔为 ttl/3
+        lock_lost: 外部预先创建的失锁事件（调用方需在看门狗启动前持有引用）；
+            缺省时内部创建并通过返回值交还
+
+    Returns:
+        lock_lost 事件：任一锁续租失败后被置位
+    """
+    lost = lock_lost if lock_lost is not None else asyncio.Event()
+    interval = ttl / 3
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except TimeoutError:
+            for lock_key, token in list(locks.items()):
+                try:
+                    renewed = await renew_lock(redis, lock_key, token, ttl)
+                except Exception as e:
+                    # Redis 故障按失锁处理：宁可误停一个 Tick，不可双写（H10）
+                    logger.warning("lock_watchdog_renew_error", lock_key=lock_key, error=str(e))
+                    renewed = False
+                if not renewed:
+                    logger.warning("lock_watchdog_renew_failed", lock_key=lock_key)
+                    lost.set()
+    return lost

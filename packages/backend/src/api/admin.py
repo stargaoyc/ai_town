@@ -167,6 +167,12 @@ async def force_world_tick(user: AdminOrOperator) -> dict[str, Any]:
             detail="This instance is not the World Tick leader; the leader executes ticks on its own schedule",
         )
 
+    # round-3 review M10：内存 is_leader 只能证明「曾经当选」，须向 Redis 复核锁仍归
+    # 本实例（fencing）。world/engine.py 不在本批次改动范围，故直接调用其私有校验方法
+    # 而非新增公共包装；校验与 execute_tick 之间仍有极小窗口，但已把双写窗口收窄到单次检查之后
+    if not await world_engine._is_still_leader():
+        raise HTTPException(status_code=409, detail="leader 已易主")
+
     try:
         await world_engine.execute_tick()
         return {
@@ -198,6 +204,14 @@ async def reset_world_time(
     redis = get_redis()
     if redis is None:
         raise HTTPException(status_code=503, detail="Redis not connected")
+
+    # round-3 review M10：重置会清写 world 时间键，与 Leader 的 Tick 并发执行时互相覆盖，
+    # 与 force_world_tick 同样先做 Redis fencing 校验（引擎缺失则无从校验，直接拒绝）
+    world_engine = get_world_engine()
+    if world_engine is None:
+        raise HTTPException(status_code=503, detail="World engine not initialized")
+    if not await world_engine._is_still_leader():
+        raise HTTPException(status_code=409, detail="leader 已易主")
 
     # 读取旧时间用于日志
     old_state = await redis.hgetall("world:state:time")

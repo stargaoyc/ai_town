@@ -163,6 +163,10 @@ class CharacterImporter:
             state.money = card.initial_state.money
             state.phone_battery = card.initial_state.phone_battery
             state.social_energy = card.initial_state.social_energy
+            # round-3 review M11：直改 ORM 属性不触发版本自增，而 reconcile 的
+            # pg_advanced 仲裁依赖版本单调前进判定状态新旧；导入更新必须显式 +1，
+            # 否则本次重置会被后续对账当作陈旧值回滚
+            state.version = (state.version or 1) + 1
             self.session.add(state)
             await self.session.flush()
         else:

@@ -132,7 +132,16 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 pg_advanced = int(pg_state.version) > rec_ver
 
             if pg_advanced:
-                # 以 PG 为准修正 Redis（方向翻转）
+                # 以 PG 为准修正 Redis（方向翻转）。
+                # round-3 review M9：循环开头的快照可能在 diff 期间被 Tick 推进，
+                # 直接 HSET 会把陈旧镜像盖到刚写入的新状态上——写前重读版本复核新鲜度，
+                # 过期则本轮跳过（下轮以新快照重新仲裁），且不更新基线
+                fresh_version = await session.scalar(
+                    select(CharacterState.version).where(CharacterState.character_id == character.id)
+                )
+                if fresh_version is None or int(fresh_version) != int(pg_state.version):
+                    logger.debug("reconcile_skip_stale_snapshot", character_id=str(character.id))
+                    continue
                 from src.core.state_codec import encode_state_mapping
 
                 await redis.hset(
@@ -141,20 +150,30 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 )
                 direction = "pg_to_redis"
                 RECONCILE_REPAIR_TOTAL.labels(direction="pg_to_redis").inc()
+                baseline_version = int(fresh_version)
             else:
-                # 以 Redis 为准修正 PG
+                # 以 Redis 为准修正 PG。
+                # round-3 review M9：修复必须经 update_state 走版本自增路径，
+                # 裸 UPDATE 不递增 version，会让 pg_advanced 仲裁的
+                # 「版本单调前进」假设失效，后续轮次无法判定新旧
+                from src.db.repositories import CharacterRepository
+
                 update_values: dict[str, Any] = {}
                 for field in drift:
                     raw = raw_hash.get(field)
                     update_values[field] = _decode(field, raw) if raw is not None else None
-                from sqlalchemy import update
-
-                stmt = update(CharacterState).where(CharacterState.character_id == character.id).values(**update_values)
-                await session.execute(stmt)
+                await CharacterRepository(session).update_state(character.id, **update_values)
                 direction = "redis_to_pg"
                 RECONCILE_REPAIR_TOTAL.labels(direction="redis_to_pg").inc()
+                repaired_version = await session.scalar(
+                    select(CharacterState.version).where(CharacterState.character_id == character.id)
+                )
+                assert repaired_version is not None  # 刚完成条件更新，行必存在
+                baseline_version = int(repaired_version)
 
-            await redis.set(ver_key, pg_state.version)
+            # 基线取修复后的版本：redis_to_pg 方向的 +1 是对账自己制造的，
+            # 若仍记旧值，下轮会把这次前进误判为 Tick 写入而翻转修复方向（M9）
+            await redis.set(ver_key, baseline_version)
             stats["value_drift"] += 1
             stats["repairs"] += 1
             RECONCILE_DRIFT_TOTAL.labels(kind="value_drift").inc()

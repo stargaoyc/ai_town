@@ -4,13 +4,15 @@
 - release_lock 仅持有者可释放：token 不匹配时锁保留、返回 False
 - renew_lock 仅持有者可续租：防止锁易主后续租他人的锁
 - acquire_resource_locks 成功路径释放全部锁；部分失败路径不误删他人锁
+- watch_locks 续租失败置位 lock_lost、续租成功保持未置位（round-3 review H10）
 """
 
+import asyncio
 from typing import Any, cast
 
 from redis.asyncio import Redis
 
-from src.core.locks import acquire_resource_locks, release_lock, renew_lock
+from src.core.locks import acquire_resource_locks, release_lock, renew_lock, watch_locks
 
 
 class FakeLockRedis:
@@ -96,6 +98,40 @@ async def test_acquire_resource_locks_partial_failure_keeps_others_lock() -> Non
     # 第一把锁已释放；他人持有的锁不受影响
     assert "char:resource:lock:11111111" not in redis.store
     assert redis.store["char:resource:lock:22222222"] == "other-holder"
+
+
+async def test_watch_locks_sets_lock_lost_on_failed_renewal() -> None:
+    redis = FakeLockRedis()
+    await redis.set("lock:a", "token-old", ex=1, nx=True)
+    # 锁过期后被他人获取
+    redis.store["lock:a"] = "token-new"
+
+    stop = asyncio.Event()
+    lock_lost = asyncio.Event()
+    watchdog = asyncio.create_task(watch_locks(cast_redis(redis), stop, {"lock:a": "token-old"}, 1, lock_lost))
+
+    deadline = asyncio.get_running_loop().time() + 5
+    while not lock_lost.is_set() and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.02)
+    stop.set()
+    await watchdog
+
+    assert lock_lost.is_set()
+
+
+async def test_watch_locks_keeps_lock_lost_clear_while_owner_renews() -> None:
+    redis = FakeLockRedis()
+    await redis.set("lock:a", "token-owner", ex=1, nx=True)
+
+    stop = asyncio.Event()
+    lock_lost = asyncio.Event()
+    watchdog = asyncio.create_task(watch_locks(cast_redis(redis), stop, {"lock:a": "token-owner"}, 1, lock_lost))
+    await asyncio.sleep(0.5)  # 至少经历一轮成功续租（间隔 ttl/3）
+    stop.set()
+    await watchdog
+
+    assert not lock_lost.is_set()
+    assert redis.store["lock:a"] == "token-owner"
 
 
 def cast_redis(fake: FakeLockRedis) -> Redis:
