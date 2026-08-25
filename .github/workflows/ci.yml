@@ -69,6 +69,12 @@ jobs:
           IT_PG_USER: aitown
           IT_PG_PASSWORD: aitown_dev
           IT_REDIS_URL: redis://localhost:6379/15
+      - name: OpenAPI contract regeneration guard
+        # R5-L18：路由漂移必须在后端侧拦截——前端已有 gen:api 守卫，
+        # 但若 openapi.json 本身未随路由变更重新导出，前端守卫永远比对不出差异
+        run: |
+          uv run python scripts/export_openapi.py
+          git diff --exit-code -- openapi.json || (echo "openapi.json 与路由定义不同步：请运行 uv run python scripts/export_openapi.py 并提交" && exit 1)
 
   frontend:
     name: Frontend Lint & Build
@@ -113,28 +119,33 @@ jobs:
       POSTGRES_PASSWORD: smoke-test-password
       REDIS_PASSWORD: smoke-test-password
       ENVIRONMENT: development
+      # compose 对所有服务（含未激活 profile 的 observability 层）做插值，
+      # grafana 的 ${GRAFANA_ADMIN_PASSWORD:?} 缺失会让 config 阶段直接失败
+      GRAFANA_ADMIN_PASSWORD: ci-smoke-grafana
     steps:
       - uses: actions/checkout@v5
       - name: Validate compose config
-        run: docker compose config -q
+        # R5-H1：叠加 CI 覆盖层注入 Settings 必填字段（OPENAI_API_KEY/JWT_SECRET 等），
+        # 否则 backend 容器导入期即崩溃，health wait 必然超时
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml config -q
       - name: Build images
-        run: docker compose build backend frontend
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build backend frontend
       - name: Boot core stack
-        run: docker compose up -d postgres redis backend frontend
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres redis backend frontend
       - name: Wait for backend health (direct)
         run: |
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:8001/health > /dev/null; then echo "backend healthy"; exit 0; fi
             sleep 2
           done
-          echo "backend failed to become healthy" && docker compose logs backend --tail 100 && exit 1
+          echo "backend failed to become healthy" && docker compose -f docker-compose.yml -f docker-compose.ci.yml logs backend --tail 100 && exit 1
       - name: Wait for frontend health (through nginx proxy)
         run: |
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:80/health > /dev/null; then echo "frontend proxy healthy"; exit 0; fi
             sleep 2
           done
-          echo "nginx proxy failed" && docker compose logs frontend --tail 100 && exit 1
+          echo "nginx proxy failed" && docker compose -f docker-compose.yml -f docker-compose.ci.yml logs frontend --tail 100 && exit 1
       - name: Tear down
         if: always()
-        run: docker compose down -v -t 30
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v -t 30

@@ -64,8 +64,19 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - ./data/redis:/data
-    # requirepass 强制密码访问（:? 缺失即启动失败）；同时开启 AOF 持久化
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD_required}"]
+    # requirepass 强制密码访问（:? 缺失即启动失败）；同时开启 AOF 持久化。
+    # maxmemory 显式对齐 mem_limit 512m；noeviction：Redis 是实时状态真相源，
+    # 内存写满必须显性报错而非静默淘汰 key（淘汰=状态丢失，比 OOM 更难排查）
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD_required}
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
     healthcheck:
       # requirepass 后 ping 必须带认证，否则 NOAUTH 会让 healthcheck 误报 unhealthy
       test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $$REDIS_PASSWORD ping | grep -q PONG"]

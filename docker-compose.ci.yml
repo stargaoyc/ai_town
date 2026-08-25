@@ -1,0 +1,20 @@
+# docker-compose.ci.yml - CI deploy-smoke 专用覆盖层
+#
+# 背景（Round-5 H1）：deploy-smoke 在干净 checkout 上必挂——backend 容器的
+# environment 只含 DATABASE_URL/REDIS_URL/OTEL_ENDPOINT/TZ，而 Settings 的
+# openai_api_key/jwt_secret 是 pydantic 必填字段，缺失时进程在导入期即崩溃，
+# health wait 必然超时。本文件以 compose 覆盖层注入 CI 级占位凭据，
+# 不触碰生产真相源（docker-compose.yml 与 .env）。
+#
+# 用法：docker compose -f docker-compose.yml -f docker-compose.ci.yml <cmd>
+#
+# 所有值均为明显非生产的占位符；ENVIRONMENT=development 由 ci.yml 注入，
+# startup_checks 的弱口令 fail-fast 仅在 production 生效（开发模式只告警）。
+
+services:
+  backend:
+    environment:
+      OPENAI_API_KEY: sk-ci-dummy-not-a-real-key
+      JWT_SECRET: ci-smoke-secret-not-production
+      ADMIN_USERNAME: ci-admin
+      ADMIN_PASSWORD: ci-smoke-password

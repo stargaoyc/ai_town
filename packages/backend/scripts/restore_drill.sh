@@ -47,6 +47,11 @@ if [ -n "$DUMP_FILE" ] && [ -f "$DUMP_FILE" ]; then
     for t in characters memory_episodes messages; do
         cnt=$(docker exec drill-pg-"$$" psql -U ai_town -d ai_town -tAc "SELECT count(*) FROM $t")
         echo "[drill] table $t rows=$cnt"
+        # pg_restore 退出码 0 只证明结构恢复成功；空表意味着备出的是空库/半库，
+        # 必须在此拦截，否则「备份可用」的结论是假的
+        if [ -z "$cnt" ] || [ "$cnt" = "0" ]; then
+            fail "table $t has 0 rows after restore — backup content is empty or corrupt"
+        fi
     done
     echo "[drill] PASS: postgres dump restores cleanly"
 else
