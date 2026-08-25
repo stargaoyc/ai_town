@@ -19,6 +19,11 @@
 - **容器日志轮转**：compose 全部服务统一 `json-file` 驱动 + 单文件 10MB×3 份上限（YAML 锚点一处定义），防止日志无限增长吃满磁盘。
 - **移动端导航与操作反馈**：md 断点以下汉堡抽屉导航（此前七个板块不可达）；全局 toast 提示与共享确认对话框（清除全部通知 / 配置重置接入）。
 - **QQ 发送链路可观测**：识别 OneBot action 响应帧并按成败计数（`ai_town_onebot_action_response_total`）；媒体生成调用量计数（`ai_town_media_generation_total`）。
+- **agent-agent 多轮对话**：chat_with 从单次生成 4 句升级为有界多轮——每轮双方各生成一句、各自看到完整对话记录（逐轮小 LLM 调用），轮数 `CHAT_WITH_MAX_ROUNDS` 可配（硬上限 3）。
+- **关系质量化**：对话结束后由 LLM 评估关系增量（-10..10 钳制）替代固定 +5/+2，`CHAT_QUALITY_ENABLED` 可关闭回退。
+- **反思语义检索**：reflections 补回 embedding 列（迁移 0015 + HNSW），反思保存即时向量化；决策注入升级为「按当前情境语义召回相关反思，不足时以最近反思补齐」。
+- **跨角色全局向量检索**：admin 向量检索端点支持 character_id 缺省=全局模式（探测全部分区、结果附带归属角色）；前端向量检索页新增「全部角色」选项。
+- **chat 认知注入（可选）**：`CHAT_INJECT_COGNITION` 开启后用户对话 system prompt 注入 top-3 反思与最新日报（默认关闭）。
 
 - **反思跨期主题归纳**：批次反思改为编号记忆主题归纳（每主题一条 Reflection、来源精确挂链）；新增 tier=2 跨期元反思——累计反思足够多且冷却期满时，对既有反思再归纳「长期倾向」，决策注入时元反思优先。
 - **记忆压缩归档**：retention 循环改两阶段——到期低价值记忆先按角色×月份 LLM 压缩成 `[归档]` 摘要行（豁免后续删除），压缩失败整组跳过绝不未压缩先删除；低于最小批的小组保持直删。配置 `MEMORY_COMPRESSION_ENABLED` / `MEMORY_COMPRESSION_MIN_BATCH`。

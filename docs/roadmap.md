@@ -546,7 +546,15 @@ Phase 5: 前端 Dashboard        ✅ 已完成
 ~~**Docker 日志轮转**：json-file + max-size 防磁盘撑爆~~ ✅ 已完成（compose x-default-logging 锚点，20260824）
 8. **数据库备份自动化**：pg_cron + WAL 归档 → 部分完成：db-backup 定时 pg_dump 服务已上线，WAL 归档待做
 9. **world_events 按月分区**：待数据量达标后实施
-10. **跨角色全局向量检索**：维护全局非分区向量索引（未来需求）
+10. ~~**跨角色全局向量检索**：维护全局非分区向量索引~~ ✅ 已完成（20260825：无需独立全局索引——HASH 分区父表 HNSW 经 MergeAppend 天然支持跨分区有序扫描，admin 端点 character_id 缺省即全局模式）
+
+### 附：2026-08-25 完成纪要（三轮审查后功能批）
+
+- ✅ agent-agent 多轮对话：chat_with 逐轮生成（每轮双方各一句、共享对话记录），`CHAT_WITH_MAX_ROUNDS` 可配
+- ✅ 关系质量化：LLM 评估对话关系增量（-10..10）替代固定数值，`CHAT_QUALITY_ENABLED` 可回退
+- ✅ 反思语义检索：reflections.embedding 补回（迁移 0015），决策注入按情境语义召回 + 最近补齐
+- ✅ 跨角色全局向量检索：admin 端点全局模式 + 前端「全部角色」选项
+- ✅ chat 认知注入（可选）：`CHAT_INJECT_COGNITION` 注入反思/日记到用户对话
 
 ---
 
