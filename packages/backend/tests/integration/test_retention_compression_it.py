@@ -239,7 +239,8 @@ class TestRetentionCompression:
 
         assert deleted["plans"] == 3
         remaining = list((await it_session.execute(select(Plan.title))).scalars())
-        assert sorted(remaining) == ["旧活跃", "新完成"]
+        # sorted 按 Unicode 码点：「新」U+65B0 < 「旧」U+65E7
+        assert sorted(remaining) == ["新完成", "旧活跃"]
 
     async def test_plans_pruning_disabled_when_retention_zero(
         self, it_session: AsyncSession, archive_character: Character, monkeypatch: Any
@@ -250,6 +251,12 @@ class TestRetentionCompression:
         from src.scheduler.loops import run_cognition_retention_cycle
 
         monkeypatch.setattr(_settings, "plans_retention_days", 0)
+        # retention 周期内部会 commit，击穿 it_session 的回滚隔离——
+        # 上一用例的角色 ID 不同，按角色清理无效，须全表清空 Plan 残留
+        from sqlalchemy import delete
+
+        await it_session.execute(delete(Plan))
+        await it_session.flush()
         it_session.add(
             Plan(
                 character_id=archive_character.id,

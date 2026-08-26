@@ -42,11 +42,14 @@ async def _ctx(session: AsyncSession) -> AsyncIterator[AsyncSession]:
     yield session
 
 
-def _engine(session: AsyncSession) -> CharacterTickEngine:
-    """以最小依赖构造引擎实例：gossip/群活动路径仅用 llm/prompts 两个属性"""
+def _engine(session: AsyncSession, redis: Any | None = None) -> CharacterTickEngine:
+    """以最小依赖构造引擎实例：gossip 路径仅用 llm/prompts；
+    群活动路径经 RelationGraph 触达 redis，需由调用方注入 it_redis"""
     engine = CharacterTickEngine.__new__(CharacterTickEngine)
     engine.llm = cast(LLMClient, StubLLM())
     engine.prompts = cast(PromptTemplates, StubPrompts())
+    if redis is not None:
+        engine.redis = redis
     return engine
 
 
@@ -96,14 +99,14 @@ class TestPropagateGossipDispatch:
 
 
 class TestGroupActivityDispatch:
-    async def test_handler_writes_memories_for_all_participants(self, it_session: AsyncSession) -> None:
+    async def test_handler_writes_memories_for_all_participants(self, it_session: AsyncSession, it_redis: Any) -> None:
         initiator = Character(id=uuid7(), name="小艾", is_active=True)
         b = Character(id=uuid7(), name="小博", is_active=True)
         c = Character(id=uuid7(), name="小陈", is_active=True)
         it_session.add_all([initiator, b, c])
         await it_session.flush()
 
-        engine = _engine(it_session)
+        engine = _engine(it_session, redis=it_redis)
         nearby = [
             {"id": str(b.id), "name": b.name},
             {"id": str(c.id), "name": c.name},
