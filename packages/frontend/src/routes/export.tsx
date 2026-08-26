@@ -13,7 +13,7 @@ import {
   AnimeButton,
   StatusBadge,
 } from "@/components/ui";
-import { useCharacters } from "@/lib/queries";
+import { useCharacters, queryKeys } from "@/lib/queries";
 import { api } from "@/lib/api";
 import type { Message } from "@/lib/api";
 
@@ -79,7 +79,7 @@ function ExportPage() {
 
   // 获取聊天记录（最多 500 条）
   const { data, isLoading, error } = useQuery({
-    queryKey: ["exportHistory", characterId],
+    queryKey: queryKeys.exportHistory(characterId),
     queryFn: () => api.getHistory(characterId, 500),
     enabled: !!characterId,
   });

@@ -24,6 +24,7 @@ export const queryKeys = {
   character: (id: string) => ["character", id] as const,
   memories: (id: string) => ["memories", id] as const,
   messages: (characterId: string) => ["messages", characterId] as const,
+  exportHistory: (characterId: string) => ["exportHistory", characterId] as const,
   actions: ["actions"] as const,
   characterActions: (characterId: string, limit: number) =>
     ["characterActions", characterId, limit] as const,
@@ -121,7 +122,8 @@ export function useAdminStatus() {
   return useQuery({
     queryKey: queryKeys.adminStatus,
     queryFn: api.getAdminStatus,
-    refetchInterval: 10000,
+    // 运维状态页非关键路径，30s 新鲜度可接受；无 WS 推送覆盖此域
+    refetchInterval: 30000,
   });
 }
 
@@ -194,7 +196,8 @@ export function useNearbyCharacters(characterId: string) {
     queryKey: queryKeys.nearbyCharacters(characterId),
     queryFn: () => api.getNearbyCharacters(characterId),
     enabled: !!characterId,
-    refetchInterval: 10000, // 10 秒刷新一次，实时感知场景变化
+    // 场景位置变化由 Tick 驱动（秒级周期），30s 轮询足够感知；10s 过于激进
+    refetchInterval: 30000,
   });
 }
 
@@ -222,7 +225,8 @@ export function useOnebotMessages(limit = 50) {
   return useQuery({
     queryKey: queryKeys.onebotMessages(limit),
     queryFn: () => api.getOnebotMessages(limit),
-    refetchInterval: 10000,
+    // 监控页消息流非即时操作路径，30s 新鲜度可接受；qq-monitor 文案同步此节奏
+    refetchInterval: 30000,
   });
 }
 
@@ -350,18 +354,20 @@ export function useVectorSearch() {
   });
 }
 
-export function useLogs(lines = 100, level?: string, refetchInterval = 5000) {
+export function useLogs(lines = 100, level?: string, refetchInterval = 15000) {
   return useQuery({
     queryKey: queryKeys.logs(lines, level),
     queryFn: () => api.getLogs(lines, level),
+    // 日志页承担 live-tail 观感，保持比其他 ops 页更紧的节奏，但不再 5s 打后端
     refetchInterval,
   });
 }
 
-export function useDetailedMetrics(refetchInterval = 5000) {
+export function useDetailedMetrics(refetchInterval = 15000) {
   return useQuery({
     queryKey: queryKeys.detailedMetrics,
     queryFn: () => api.getDetailedMetrics(),
+    // 指标曲线粒度 15s 足够；Prometheus 抓取周期本身为秒级聚合
     refetchInterval,
   });
 }
@@ -395,11 +401,12 @@ export function useResetConfig() {
 
 // ===== 通知中心 =====
 
-export function useNotifications(limit = 50, refetchInterval = 10000) {
+export function useNotifications(limit = 50) {
   return useQuery({
     queryKey: queryKeys.notifications(limit),
     queryFn: () => api.getNotifications(limit),
-    refetchInterval,
+    // 不设 refetchInterval：未读数变化由 /ws/dashboard 推送触发
+    // useDashboardSocket invalidate（见 hooks/useDashboardSocket.ts），轮询纯冗余
   });
 }
 

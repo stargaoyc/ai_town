@@ -57,7 +57,7 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 function QqMonitorPage() {
-  // 获取最近 100 条 QQ 消息，hook 内部已设置 10 秒自动刷新
+  // 获取最近 100 条 QQ 消息，hook 内部已设置 30 秒自动刷新
   const { data, isLoading, error } = useOnebotMessages(100);
 
   const messages = data?.data ?? [];
@@ -69,7 +69,7 @@ function QqMonitorPage() {
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="QQ 消息监控"
-        subtitle="实时查看 OneBot 通道消息流（每 10 秒自动刷新）"
+        subtitle="实时查看 OneBot 通道消息流（每 30 秒自动刷新）"
         icon="💬"
         backTo="/admin"
         backLabel="返回管理"

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { ArrowLeft, Send, RotateCw, MessageCircle, Brain, Users } from "lucide-react";
 import {
@@ -18,6 +19,7 @@ import {
   useMessages,
   useSendMessage,
   useNearbyCharacters,
+  queryKeys,
 } from "@/lib/queries";
 import type { Message } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -51,9 +53,16 @@ function CharacterDetailPage() {
   const currentUserId = useAuthStore((s) => s.userId);
   const { data: character, isLoading, error } = useCharacter(characterId);
   const { data: memoriesData } = useMemories(characterId);
-  const { data: messagesData } = useMessages(characterId);
+  // 消息窗口大小本地递增实现「加载更多」；key 契约不含 limit（禁止增删元素），
+  // 扩窗后靠 invalidate 同 key 重取更大窗口
+  const [messageLimit, setMessageLimit] = useState(20);
+  const { data: messagesData, isFetching: messagesFetching } = useMessages(
+    characterId,
+    messageLimit,
+  );
   const { data: nearbyData } = useNearbyCharacters(characterId);
   const sendMessage = useSendMessage();
+  const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -63,9 +72,22 @@ function CharacterDetailPage() {
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   );
 
+  // 依赖最后一条消息 id 而非长度：加载更多会改变长度但不应把视口拽到底部
+  const lastMessageId = allMessages[allMessages.length - 1]?.id;
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [allMessages.length]);
+  }, [lastMessageId]);
+
+  useEffect(() => {
+    if (messageLimit > 20) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages(characterId) });
+    }
+  }, [messageLimit, characterId, queryClient]);
+
+  const hasMoreMessages = (messagesData?.data.length ?? 0) >= messageLimit;
+  const loadMoreMessages = () => {
+    setMessageLimit((n) => n + 20);
+  };
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -266,7 +288,19 @@ function CharacterDetailPage() {
           <h3 className="font-semibold text-sakura-600 mb-4 flex items-center gap-2 text-lg">
             <MessageCircle className="w-5 h-5" /> 对话
           </h3>
-          <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-2">
+          {hasMoreMessages && (
+            <div className="flex justify-center mb-3">
+              <AnimeButton
+                variant="secondary"
+                disabled={messagesFetching}
+                onClick={loadMoreMessages}
+                className="text-sm px-4 py-1.5"
+              >
+                {messagesFetching ? "加载中..." : "加载更多"}
+              </AnimeButton>
+            </div>
+          )}
+          <div className="space-y-2 mb-4 max-h-96 overflow-y-auto pr-2">
             {allMessages.length === 0 && (
               <EmptyState icon="💌" title="暂无消息" subtitle="发送第一条消息开始对话吧" />
             )}

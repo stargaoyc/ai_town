@@ -18,6 +18,7 @@ describe("queryKeys", () => {
     ]);
     expect(queryKeys.characters()).toEqual(["characters", undefined]);
     expect(queryKeys.messages("c1")).toEqual(["messages", "c1"]);
+    expect(queryKeys.exportHistory("c1")).toEqual(["exportHistory", "c1"]);
   });
 
   it("角色域扩展 key 与迁移前字面量一致", () => {

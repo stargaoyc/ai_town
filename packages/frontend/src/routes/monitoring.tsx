@@ -93,12 +93,8 @@ function MonitoringPage() {
     data: metricsData,
     isLoading: metricsLoading,
     error: metricsError,
-  } = useDetailedMetrics(5000);
-  const {
-    data: logsData,
-    isLoading: logsLoading,
-    error: logsError,
-  } = useLogs(logLines, logLevel, 5000);
+  } = useDetailedMetrics();
+  const { data: logsData, isLoading: logsLoading, error: logsError } = useLogs(logLines, logLevel);
 
   const metrics = metricsData?.data;
   const logs = logsData?.data ?? [];

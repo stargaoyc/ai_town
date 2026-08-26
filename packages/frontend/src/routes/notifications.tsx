@@ -113,7 +113,7 @@ const item = {
 };
 
 function NotificationsPage() {
-  const { data, isLoading, error, refetch, isFetching } = useNotifications(100, 30000); // WS 推送失效缓存，30s 仅兜底
+  const { data, isLoading, error, refetch, isFetching } = useNotifications(100); // 无轮询：WS 推送失效缓存，此处可手动刷新
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
   const deleteNotif = useDeleteNotification();
