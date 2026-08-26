@@ -37,7 +37,7 @@
 | 包管理     | uv                                                                   |
 | 异步驱动   | asyncpg + SQLAlchemy 2.0                           |
 | ORM 迁移   | alembic                                                              |
-| 前端       | React 19.2 + TypeScript 7.0 + Vite (Rolldown) 8.1 + React Compiler   |
+| 前端       | React 19.2 + TypeScript 7.0 + Vite 8.1  |
 | 前端状态   | TanStack Router 1.170 + TanStack Query 5.101 + Zustand 5.0 |
 | 前端 Lint  | oxlint + oxfmt                                                       |
 | 前端组件   | 自建 Glassmorphism 组件库 + Tailwind CSS v4 + Framer Motion          |
@@ -118,7 +118,7 @@ docker compose up -d              # 启动 PG / Redis / 后端（含本地工具
 
 ## QQ 机器人接入
 
-AI Town 通过 OneBot v11/v12 协议接入 QQ，让二次元角色真正"住进"你的 QQ。以下能力开箱即用：
+AI Town 通过 OneBot v11/v12 协议接入 QQ，让角色真正"住进"你的 QQ。以下能力开箱即用：
 
 - **OneBot 反向 WebSocket 接入**：后端在 `/ws/onebot/v12` 暴露 WebSocket 服务端，由 OneBot 实现（NapCat / Lagrange 等）作为客户端主动反连，无需后端暴露公网入口。
 - **群聊智能回复**：默认 `ONEBOT_GROUP_AT_ONLY=false`，角色会读取所有群消息，按"角色名命中 → 疑问/情绪启发式 → 轻量 LLM 判断"三层策略决策是否回复；被 @ 时则始终回复。
