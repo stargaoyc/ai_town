@@ -126,7 +126,11 @@ class GossipService:
         无法按记忆 ID 精确计数；退而以「同作者 + 同重要性 + 窗口内」的
         gossip 行数近似同一事件的扩散规模。
         """
-        source = await self.session.get(MemoryEpisode, source_memory_id)
+        # memory_episodes 为复合主键 (id, character_id)，session.get 需完整
+        # 标识；此处仅按 id 定位，必须走 select
+        source = (
+            await self.session.execute(select(MemoryEpisode).where(MemoryEpisode.id == source_memory_id))
+        ).scalar_one_or_none()
         if source is None:
             return False
         stmt = (
