@@ -34,11 +34,11 @@
       "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "Disconnected"}, "1": {"text": "Connected"}}, "type": "value"}], "unit": "none"}, "overrides": []}
     },
     {
-      "title": "LLM 总费用 (USD)",
+      "title": "LLM 累计成本（所选区间）",
       "type": "stat",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
-      "targets": [{"expr": "ai_town_llm_cost_total_usd", "refId": "A"}],
+      "targets": [{"expr": "sum(increase(ai_town_llm_cost_total_usd[$__range]))", "refId": "A"}],
       "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []}
     },
     {
@@ -116,6 +116,16 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 20},
       "targets": [{"expr": "sum(rate(ai_town_message_processed_total[1m])) * 60", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    },
+    {
+      "title": "告警接收 (按告警名, 5 分钟增量)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 12, "x": 12, "y": 20},
+      "targets": [
+        {"expr": "sum(increase(ai_town_alerts_received_total[5m])) by (alertname)", "legendFormat": "{{alertname}}", "refId": "A"}
+      ],
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
     },
     {

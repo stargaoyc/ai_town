@@ -67,14 +67,25 @@ groups:
   - name: llm-cost
     rules:
       - alert: LLMDailyBudgetNearExhausted
+        # 阈值随配置缩放：ai_town_llm_daily_budget_usd 是后端启动时按
+        # settings.llm_daily_budget_usd 暴露的 Gauge，调整 LLM_DAILY_BUDGET_USD
+        # 后重启即自动生效，告警不再硬编码金额。
+        #
+        # 口径近似说明（为什么用 increase([24h])）：ai_town_llm_cost_total_usd
+        # 是进程启动以来的累计 Counter，不会按日清零；而预算台账（Redis 按 UTC
+        # 日期分 key）每日归零。用滚动 24h 增量近似「当日花费」有两个已知偏差：
+        #   1. UTC 午夜刚过时窗口仍含昨日晚间花费 → 偏早报（保守方向，可接受）；
+        #   2. 进程重启会丢失重启前的历史增量 → 偏漏报，由后端 BudgetManager
+        #      的硬熔断与 CircuitBreakerStuckSuspect 兜底。
         expr: |
-          increase(ai_town_llm_cost_total_usd[24h]) > 8
+          increase(ai_town_llm_cost_total_usd[24h])
+            > 0.8 * ai_town_llm_daily_budget_usd
         for: 0m
         labels:
           severity: warning
         annotations:
-          summary: "24 小时 LLM 花费超过 $8（默认日预算 $10）"
-          description: "当前滚动 24h 花费 ${{ $value | humanize }}；预算管理器即将触发熔断，Tick 会开始跳过。"
+          summary: "滚动 24 小时 LLM 花费超过当前日预算的 80%"
+          description: "当前滚动 24h 花费 ${{ $value | humanize }}，阈值随 LLM_DAILY_BUDGET_USD 配置缩放；预算管理器即将触发熔断，Tick 会开始跳过。"
 
       - alert: LLMCallFailureRateHigh
         expr: |
@@ -146,3 +157,27 @@ groups:
         annotations:
           summary: "后端 /metrics 抓取失败超过 2 分钟"
           description: "后端进程可能已退出或端口不通。"
+
+  # ============================================================
+  # 告警链路自监控（Alertmanager → 后端 webhook 回流）
+  # ============================================================
+  - name: alerting-pipeline
+    rules:
+      # 为什么监控投递失败计数：告警经 webhook 回流后端（ai_town_alerts_received_total）
+      # 是唯一落地通道，token 配错（403）、网络不通、webhook 报错时投递会静默失败——
+      # 若不监控 alertmanager 自身的失败指标，「告警发不出去」这件事将永远无人知晓。
+      - alert: AlertmanagerDeliveryFailing
+        expr: increase(alertmanager_notifications_failed_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager 告警投递失败"
+          description: "过去 15 分钟 {{ $value | humanize }} 次投递失败，后端 webhook 可能收不到任何告警。优先检查 ALERT_WEBHOOK_TOKEN 与后端配置是否一致（403）及 backend 容器网络连通性。"
+
+      # 金丝雀规则（R5-L15b 备选：AlertsWebhookSilent，1h 零接收 + 有 firing 告警）的取舍：
+      # 该方案依赖 ai_town_alerts_received_total 已存在，但后端收到第一条告警前此序列不存在，
+      # PromQL 对缺失序列聚合返回空向量，== 0 判定为假——恰好漏掉最需要它的冷启动场景；
+      # 且现实故障模式（403/断网/接口报错）都会让上面的 AlertmanagerDeliveryFailing 先行触发，
+      # 金丝雀没有独立覆盖面，故不实现。Alertmanager 进程整体宕机时其指标全部消失，
+      # 可通过 Prometheus Targets 页面的 up{job="alertmanager"} 观察。

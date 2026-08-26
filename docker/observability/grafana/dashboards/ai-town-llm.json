@@ -16,12 +16,12 @@
       "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
     },
     {
-      "title": "LLM 成本累计 (by model)",
+      "title": "LLM 累计成本（所选时间区间）",
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "targets": [
-        {"expr": "ai_town_llm_cost_total_usd", "legendFormat": "Total USD", "refId": "A"}
+        {"expr": "sum(increase(ai_town_llm_cost_total_usd[$__range]))", "legendFormat": "累计成本（区间）", "refId": "A"}
       ],
       "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []}
     },

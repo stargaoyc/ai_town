@@ -53,3 +53,11 @@ scrape_configs:
       - targets: ["alloy:12345"]
         labels:
           service: "alloy"
+
+  # Alertmanager 自身指标（告警链路自监控：投递失败 alertmanager_notifications_failed_total
+  # 是 alerts.yml 中 AlertmanagerDeliveryFailing 规则的数据来源）
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          service: "alertmanager"
