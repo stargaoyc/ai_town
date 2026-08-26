@@ -1087,6 +1087,21 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                     plan_repo = PlanRepository(session)
                     await self._apply_plan_changes(plan_repo, character_id, decision.plan_changes)
 
+                # P1-13：计划-行动对账——LLM 未显式汇报进度时，按标题与本次
+                # 行为的字符重叠启发式推进，抑制「计划进度与实际行为无限漂移」。
+                # wait 不是有效行动证据；推进为尽力而为，失败仅告警不回滚主事务
+                # （与 _apply_plan_changes 的容错哲学一致）
+                if settings.plan_auto_progress_enabled and decision.action != "wait":
+                    try:
+                        plan_repo = PlanRepository(session)
+                        await self._auto_progress_plans(plan_repo, character_id, decision)
+                    except Exception as e:
+                        logger.warning(
+                            "plan_auto_progress_failed",
+                            character_id=str(character_id),
+                            error=str(e),
+                        )
+
                 # 应用 LLM 新建计划（层级体系 B3：character_id 服务端绑定，天然防越权）
                 if decision.create_plan_changes:
                     plan_repo = PlanRepository(session)
@@ -1103,11 +1118,9 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                 logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
                 return
 
-            # 更新 Redis 实时状态
-            await self.redis.hset(
-                f"char:{character_id}:state",
-                mapping=encode_state_mapping(new_state),  # type: ignore[arg-type]
-            )
+            # 更新 Redis 实时状态（P1-2：失败立即重试一次并进优先对账队列，
+            # 不再被动等待最长一个全量对账周期）
+            await self._write_redis_state_with_repair(self.redis, character_id, new_state)
 
             # 位置变化时经 SceneLoader 单一入口记账（成员名单 + 在场计数缓存）
             old_location = context["state"].get("location")
@@ -1167,6 +1180,20 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             progress = change.get("progress")
             if isinstance(progress, int) and not isinstance(progress, bool):
                 updates["progress"] = max(0, min(100, progress))
+            # P1-13：放开 title/priority/deadline 修改——此前计划一经创建
+            # 只能动 status/progress，目标漂移后只能废弃重建
+            new_title = change.get("title")
+            if isinstance(new_title, str) and new_title.strip():
+                updates["title"] = new_title.strip()[:200]
+            new_priority = change.get("priority")
+            if isinstance(new_priority, int) and not isinstance(new_priority, bool):
+                updates["priority"] = max(1, min(5, new_priority))
+            raw_deadline = change.get("deadline")
+            if isinstance(raw_deadline, str) and raw_deadline.strip():
+                try:
+                    updates["deadline"] = datetime.fromisoformat(raw_deadline.strip())
+                except ValueError:
+                    logger.warning("plan_change_invalid_deadline", deadline=raw_deadline)
             if not updates:
                 continue
 
@@ -1220,6 +1247,54 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         return normalized[: CharacterTickEngine._PLAN_CREATE_MAX_PER_DECISION]
 
     @staticmethod
+    def _char_bigram_overlap(a: str, b: str) -> float:
+        """字符二元组 Jaccard 重叠（0-1）：中文无空格分词的轻量相似度"""
+        bigrams_a = {a[i : i + 2] for i in range(len(a) - 1)} if len(a) > 1 else {a}
+        bigrams_b = {b[i : i + 2] for i in range(len(b) - 1)} if len(b) > 1 else {b}
+        union = bigrams_a | bigrams_b
+        if not union:
+            return 0.0
+        return len(bigrams_a & bigrams_b) / len(union)
+
+    @staticmethod
+    async def _auto_progress_plans(
+        plan_repo: PlanRepository,
+        character_id: UUID,
+        decision: DecisionResult,
+    ) -> int:
+        """启发式计划-行动对账（P1-13）
+
+        对每个 active 计划计算标题与「决策理由+动作名」的二元组重叠，
+        达到阈值即推进 delta 百分比。仅当 LLM 本轮未显式汇报该计划的
+        进度时生效；推进上限 99——完成语义必须由 LLM 显式 complete 宣告。
+        """
+        from src.config import settings as _settings
+
+        evidence = f"{decision.reason or ''}{decision.action}"
+        if not evidence.strip():
+            return 0
+        explicitly_touched = {
+            str(change.get("planId"))
+            for change in decision.plan_changes
+            if isinstance(change, dict) and change.get("progress") is not None
+        }
+        advanced = 0
+        for plan in await plan_repo.get_active_plans(character_id):
+            if str(plan.id) in explicitly_touched:
+                continue
+            overlap = CharacterTickEngine._char_bigram_overlap(plan.title, evidence)
+            if overlap < _settings.plan_auto_progress_overlap:
+                continue
+            new_progress = min(99, plan.progress + _settings.plan_auto_progress_delta)
+            if new_progress <= plan.progress:
+                continue
+            await plan_repo.update_plan_scoped(plan.id, character_id, progress=new_progress)
+            advanced += 1
+        if advanced:
+            logger.info("plans_auto_progressed", character_id=str(character_id), count=advanced)
+        return advanced
+
+    @staticmethod
     async def _create_plans(
         plan_repo: PlanRepository,
         character_id: UUID,
@@ -1238,6 +1313,65 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             logger.info("plans_created_from_decision", character_id=str(character_id), count=created)
         return created
 
+    @staticmethod
+    async def _write_redis_state_with_repair(redis: Any, character_id: UUID, new_state: dict[str, Any]) -> None:
+        """写 Redis 镜像；失败重试一次后把角色送入优先对账队列（P1-2）"""
+        from src.core.reconcile import request_character_repair
+
+        mapping = encode_state_mapping(new_state)
+        try:
+            await redis.hset(f"char:{character_id}:state", mapping=mapping)
+            return
+        except Exception as first_error:
+            logger.warning(
+                "redis_state_write_failed_retrying",
+                character_id=str(character_id),
+                error=str(first_error),
+            )
+        await asyncio.sleep(1.0)
+        try:
+            await redis.hset(f"char:{character_id}:state", mapping=mapping)
+            logger.info("redis_state_write_recovered", character_id=str(character_id))
+        except Exception as second_error:
+            logger.error(
+                "redis_state_write_failed_enqueued_repair",
+                character_id=str(character_id),
+                error=str(second_error),
+                exc_info=True,
+            )
+            await request_character_repair(redis, character_id)
+
+    @staticmethod
+    def _build_memory_content(character_name: str, state: dict[str, Any], decision: DecisionResult) -> str:
+        """生成叙事化记忆正文（P1-5）
+
+        此前固定句式「{name}在{location}执行了{action}。理由：{reason}」
+        让所有记忆向量语义雷同、检索区分度低。按动作类别套用差异化
+        叙事骨架，理由自然融入句中而非标签式拼接。
+        """
+        location = state.get("location") or "路上"
+        action = decision.action
+        reason = (decision.reason or "").strip().rstrip("。.")
+
+        _NARRATIVE_SKELETONS = {
+            "move": "{name}动身前往{location}。{reason}",
+            "chat": "{name}在{location}和人聊了会儿天。{reason}",
+            "social": "{name}在{location}参与了一次社交互动。{reason}",
+            "eat": "{name}在{location}吃了点东西。{reason}",
+            "sleep": "{name}回到{location}休息了。{reason}",
+            "rest": "{name}在{location}放松了一会儿。{reason}",
+            "work": "{name}在{location}忙工作。{reason}",
+            "study": "{name}在{location}认真学习。{reason}",
+            "shop": "{name}在{location}逛了逛，买了些东西。{reason}",
+            "play": "{name}在{location}玩得很开心。{reason}",
+        }
+        skeleton = _NARRATIVE_SKELETONS.get(action)
+        if skeleton:
+            return skeleton.format(name=character_name, location=location, reason=reason)
+        if reason:
+            return f"{character_name}在{location}{action}。起因是：{reason}"
+        return f"{character_name}在{location}{action}。"
+
     @trace_span("memory.write")
     async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """记忆沉淀
@@ -1255,8 +1389,7 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         character = context["character"]
         state = context["state"]
 
-        # 生成记忆内容
-        memory_content = f"{character.name}在{state.get('location')}执行了{decision.action}。理由：{decision.reason}"
+        memory_content = self._build_memory_content(character.name, state, decision)
 
         # 写入记忆（需要 db session）
         async with db.session() as session:
@@ -1267,8 +1400,9 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
             reflection_service = ReflectionService(self.llm, mem_repo, ref_repo, prompts=self.prompts)
 
-            # 写入记忆片段
-            # 根据动作类型动态计算重要性（1-10）
+            # P1-7：社交类基础分从 7 降到 5——此前撞上「importance>=7 永久保留」
+            # 策略导致全部社交记忆不可清理；强情绪仍可经下方关键词修正回升，
+            # LLM 评分开启时由其给出更精准的分值
             _ACTION_IMPORTANCE = {
                 "wait": 2,
                 "rest": 3,
@@ -1280,8 +1414,8 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                 "work": 6,
                 "study": 6,
                 "practice": 6,
-                "social": 7,
-                "chat": 7,
+                "social": 5,
+                "chat": 5,
                 "play": 6,
                 "shop": 5,
                 "buy": 5,
