@@ -183,7 +183,7 @@ async def force_world_tick(user: AdminOrOperator) -> dict[str, Any]:
         }
     except Exception as e:
         logger.error("force_world_tick_failed", error=str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=f"World tick failed: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/world/reset-time", response_model=FlexibleOut)
@@ -687,7 +687,9 @@ async def vector_search(
         # 结构化错误（向量化限流/预算提示）已带可读 detail，直接透传
         raise
     except Exception as e:
-        raise HTTPException(500, f"Vector search failed: {e}") from e
+        # 500 不暴露内部异常详情（与 exceptions.py 策略一致），完整堆栈入日志
+        logger.error("vector_search_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, "Internal server error") from e
 
 
 @router.get("/world/snapshots", response_model=SnapshotsListOut)
@@ -779,7 +781,8 @@ async def get_recent_logs(
             "source": str(log_file),
         }
     except Exception as e:
-        raise HTTPException(500, f"Failed to read logs: {e}") from e
+        logger.error("recent_logs_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, "Internal server error") from e
 
 
 @router.get("/metrics-prometheus", response_class=PlainTextResponse)
@@ -933,7 +936,8 @@ async def get_detailed_metrics(user: Admin) -> dict[str, Any]:
 
         return {"data": result}
     except Exception as e:
-        raise HTTPException(500, f"Failed to parse metrics: {e}") from e
+        logger.error("detailed_metrics_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, "Internal server error") from e
 
 
 # === 运行时配置管理 ===

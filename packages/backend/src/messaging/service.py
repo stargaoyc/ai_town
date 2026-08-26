@@ -64,6 +64,11 @@ _COGNITION_EMPTY_TEXT = "暂无"
 # 默认错误回复（LLM 失败时返回，避免用户会话阻塞）
 DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后再试）"
 
+# LLM 输出无法解析出 response 字段时的兜底回复（R6-L12b）：
+# 直接把 raw JSON/blob 原文透传给用户会暴露工程噪音，改用固定歉意文案；
+# 原始输出记 warning 日志供排查
+REPLY_EXTRACTION_FALLBACK = "（未能完全理解，换个说法试试）"
+
 # 群聊智能回复各分支的回复概率（互斥分支非叠加，最终回复率为各触发路径的组合上界）
 GROUP_REPLY_PROBABILITY_CAP = 0.7  # 疑问句启发式回复概率
 GROUP_REPLY_EMOTION_PROBABILITY = 0.5  # 情绪句启发式回复概率
@@ -445,9 +450,13 @@ class MessageService:
             clear_chat_context()
 
         # 6. 写入角色回复
+        # 生成失败（error 非 None）时 reply_text 为兜底文案，不能以「character」
+        # 身份落库：否则会作为角色自己的话混入后续 prompt 的 history，污染人设。
+        # history 组装只保留 user/character 两种 sender，system 消息天然被排除
+        sender = "system" if error else "character"
         reply_msg = await self.message_repo.add(
             conversation_id=conversation.id,
-            sender="character",
+            sender=sender,
             content=reply_text,
             tokens=tokens,
             cost=cost,
@@ -794,8 +803,14 @@ class MessageService:
             if value.strip():
                 return value.strip()
 
-        # 策略3：返回原文（去掉了 code fence）
-        return text
+        # 策略3：未解析出 response 字段，说明输出不符合 chat.yaml 的 JSON 契约。
+        # 不再透传 raw 原文（可能是 JSON 垃圾），改为固定歉意文案；原文入日志排查
+        logger.warning(
+            "chat_reply_extraction_failed",
+            raw_length=len(text),
+            raw_preview=text[:300],
+        )
+        return REPLY_EXTRACTION_FALLBACK
 
     async def _maybe_compress_context(
         self,

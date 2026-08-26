@@ -106,9 +106,11 @@ async def send_message(
                 error=str(e),
                 exc_info=True,
             )
+            # 500 响应不暴露内部异常详情（与 exceptions.py 策略一致），
+            # 完整堆栈已在上方日志带 exc_info 记录
             raise HTTPException(
                 status_code=500,
-                detail=f"Message handling failed: {str(e)}",
+                detail="Internal server error",
             ) from e
 
     return {

@@ -33,17 +33,23 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         )
 
     if isinstance(exc, (ValueError, TypeError)):
-        logger.warning(
+        # ValueError/TypeError 可能是客户端入参问题，也可能是服务端 bug
+        # （业务代码传错类型等）。响应统一泛化为 400、不暴露 str(exc)，
+        # 但必须带 exc_info 记 full traceback，否则服务端 bug 会被当作
+        # 客户端错误静默吞掉，无法定位
+        logger.error(
             "client_error",
             trace_id=trace_id,
             path=request.url.path,
             method=request.method,
             error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
         )
         return JSONResponse(
             status_code=400,
             content={
-                "detail": str(exc),
+                "detail": "Bad request",
                 "trace_id": trace_id,
                 "error_code": "bad_request",
             },
