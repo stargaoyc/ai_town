@@ -111,7 +111,7 @@
 │  ┌───────────────────┐  ┌─────────────┐  ┌──────────────┐ │
 │  │  PostgreSQL 18    │  │  Redis 8.0  │  │  LLM 网关    │ │
 │  │  + pgvector       │  │  缓存/锁/   │  │  OpenAI 兼容 │ │
-│  │  + pg_uuidv7      │  │  实时状态    │  │  chat/image/ │ │
+│  │  + UUID v7        │  │  实时状态    │  │  chat/image/ │ │
 │  │  + JSONB          │  │  Leader 选举│  │  video/embed │ │
 │  │  + 分区表          │  │             │  │              │ │
 │  └───────────────────┘  └─────────────┘  └──────────────┘ │
@@ -1155,7 +1155,7 @@ if breaker:
 
 | 原则                 | 实现                                                                                          | 收益                                                      |
 | -------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| UUID v7 主键         | `pg_uuidv7` 扩展，`id UUID DEFAULT uuidv7()`                                                  | 时间有序，B-tree 顺序追加，页分裂少；防枚举；分布式友好   |
+| UUID v7 主键         | PG 18 内建 `uuidv7()`，`id UUID DEFAULT uuidv7()`                                       | 时间有序，B-tree 顺序追加，页分裂少；防枚举；分布式友好   |
 | TIMESTAMPTZ 时间字段 | 所有 `created_at` / `updated_at` / `timestamp` / `due_at` 统一 `TIMESTAMP(timezone=True)`     | 时区一致，可直接用 PG 时间函数（`date_trunc`、`extract`） |
 | pgvector halfvec     | `HALFVEC(settings.embedding_dim)` + HNSW 索引                                                 | 比 `vector` 节省 50% 存储，召回率损失可忽略（< 1%）       |
 | HNSW 索引            | `m=16, ef_construction=64, ef_search=40`                                                      | 检索 p95 < 30ms，支持 10M 级向量                          |
@@ -1546,7 +1546,7 @@ flush_langfuse()  # 确保追踪数据已发送
 | 分布式友好 | 是       | 是           | 否（需中心化）  |
 | 体积       | 16 字节  | 16 字节      | 8 字节          |
 
-**实现**：PG 17 使用 `pg_uuidv7` 扩展，应用层用 `uuid6` 库兜底。
+**实现**：PG 18 内建 `uuidv7()` 函数直接生成，应用层用 `uuid6` 库兜底。
 
 ### 9.2 为什么用 pgvector halfvec 而不是 vector
 
@@ -1808,7 +1808,7 @@ FOREIGN KEY (memory_id, memory_character_id)
 | 服务         | 镜像                               | 端口  | 说明                       |
 | ------------ | ---------------------------------- | ----- | -------------------------- |
 | `backend`    | 自构建                             | 8000  | AI Town Backend（FastAPI） |
-| `postgres`   | postgres:17 + pgvector + pg_uuidv7 | 5432  | 主数据库                   |
+| `postgres`   | pgvector/pgvector:pg18（PG 18 内建 uuidv7()） | 5432  | 主数据库                   |
 | `redis`      | redis:8.0-alpine                   | 6379  | 缓存/锁/实时状态           |
 | `prometheus` | prom/prometheus                    | 9090  | 指标采集                   |
 | `grafana`    | grafana/grafana                    | 3000  | 可视化面板                 |

@@ -12,7 +12,7 @@
 | uv         | 最新  | Python 包管理                 |
 | Node.js    | 22+   | 前端                                         |
 | pnpm       | 11+   | 前端包管理                                   |
-| PostgreSQL | 17+   | 需启用 `pg_uuidv7`、`vector`、`pg_trgm` 扩展 |
+| PostgreSQL | 18+   | 需启用 `vector` 扩展（PG 18 内建 `uuidv7()`，无需第三方扩展） |
 | Redis      | 8.0+  | —                                            |
 | Docker     | 24+   | 容器化部署                                   |
 
@@ -227,15 +227,13 @@ alembic revision --autogenerate -m "add memory_episodes table"
 
 ### 5.2 扩展与 HNSW 索引需手写原生 SQL
 
-`pg_uuidv7` 扩展与 HNSW 索引不能通过 ORM 自动生成，需在迁移脚本中用 `op.execute()`：
+HNSW 索引不能通过 ORM 自动生成，需在迁移脚本中用 `op.execute()`（PG 18 内建 `uuidv7()`，无需创建扩展）：
 
 ```python
 # migrations/versions/xxxx_init.py
 def upgrade():
     # 1. 扩展
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_uuidv7;")
     op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
     # 2. 建表 (主键用 uuidv7() 默认值)
     op.create_table(

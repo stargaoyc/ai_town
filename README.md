@@ -41,7 +41,7 @@
 | 前端状态   | TanStack Router 1.170 + TanStack Query 5.101 + Zustand 5.0 |
 | 前端 Lint  | oxlint + oxfmt                                                       |
 | 前端组件   | 自建 Glassmorphism 组件库 + Tailwind CSS v4 + Framer Motion          |
-| 主数据库   | PostgreSQL 18 + pgvector + pg_uuidv7 + JSONB + 分区表                |
+| 主数据库   | PostgreSQL 18 + pgvector + JSONB + 分区表                |
 | 缓存/实时  | Redis 8.0                                                            |
 | 消息队列   | Redis Streams                                                        |
 | 工具调用   | 本地工具注册表（ToolRegistry，进程内 async 函数，ReAct 循环）        |
@@ -57,10 +57,7 @@
 
 - **Python 3.13+** / [uv](https://docs.astral.sh/uv/) 包管理器
 - **Node.js 22+** / [pnpm](https://pnpm.io/) 11+
-- **PostgreSQL 18+**，需启用以下扩展：
-  - `pg_uuidv7`（时间有序 UUID 主键）
-  - `vector`（pgvector 向量检索）
-  - `pg_trgm`（模糊匹配）
+- **PostgreSQL 18+**（PG 18 内建 `uuidv7()`，无需第三方 `pg_uuidv7` 扩展），需启用 `vector`（pgvector 向量检索）
 - **Redis 8.0+**（缓存、分布式锁、消息队列、实时状态）
 - （可选）一个 OneBot v11/v12 实现，如 [NapCat](https://github.com/NapNeko/NapCatQQ) 或 [Lagrange](https://github.com/LagrangeDev/Lagrange.Core)，用于接入 QQ
 

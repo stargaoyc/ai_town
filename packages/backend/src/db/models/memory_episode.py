@@ -102,9 +102,17 @@ class MemoryEpisode(Base):
         ),
         # 部分索引：未向量化的记忆，供 embedding worker 批量拉取
         # v4: 排除熔断记忆 + 按 next_retry_at 排序（指数退避）
+        # round-6: 对齐 0002 DDL 以 timestamp 建列（fetch_unmaterialized 实际 ORDER BY timestamp）
         Index(
             "idx_mem_unmaterialized",
-            "next_retry_at",
+            "timestamp",
             postgresql_where="materialized = FALSE AND fail_count < 5",
+        ),
+        # 部分索引：保留周期查询（fetch_retention_candidates 跨角色过滤 importance<=6 的记忆）
+        Index(
+            "idx_mem_retention",
+            "importance",
+            "timestamp",
+            postgresql_where="importance <= 6",
         ),
     )

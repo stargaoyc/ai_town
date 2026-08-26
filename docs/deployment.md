@@ -230,9 +230,8 @@ CHARACTER_MAX_CONCURRENT=10
 ### 4.1 启用扩展
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pg_uuidv7;   -- 时间有序 UUID v7 (主键)
 CREATE EXTENSION IF NOT EXISTS "vector";    -- pgvector 向量检索
-CREATE EXTENSION IF NOT EXISTS pg_trgm;     -- 文本模糊检索
+-- 注意: PG 18 内建 uuidv7() 生成时间有序 UUID v7，无需第三方扩展
 ```
 
 > 不再使用 `uuid-ossp`（UUID v4 随机性导致 B-tree 索引碎片化）。详见 [架构设计 - 主键选型](architecture.md#51-主键选型uuid-v7时间有序-uuid)。

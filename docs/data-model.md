@@ -9,10 +9,8 @@
 ### 1.1 启用扩展
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pg_uuidv7;   -- 时间有序 UUID v7 生成
 CREATE EXTENSION IF NOT EXISTS "vector";     -- pgvector 向量检索
-CREATE EXTENSION IF NOT EXISTS pg_trgm;      -- 文本模糊检索
--- 注意: 不再使用 uuid-ossp, 改用 pg_uuidv7 提供 uuidv7()
+-- 注意: PG 18 内建 uuidv7() 生成时间有序 UUID v7，不再使用 uuid-ossp / pg_uuidv7 扩展
 ```
 
 ### 1.2 命名约定
@@ -96,7 +94,6 @@ CREATE TABLE characters (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()        -- 0002_optimize 新增，触发器自动维护
 );
 
-CREATE INDEX idx_characters_name_trgm ON characters USING gin (name gin_trgm_ops);
 CREATE INDEX idx_characters_traits    ON characters USING gin (traits jsonb_path_ops);
 CREATE INDEX idx_characters_active    ON characters (is_active) WHERE is_active = TRUE;
 ```
@@ -222,9 +219,12 @@ CREATE INDEX idx_mem_char_imp  ON memory_episodes (character_id, importance DESC
 CREATE INDEX idx_mem_related   ON memory_episodes USING gin (related_characters);
 CREATE INDEX idx_mem_unreflected ON memory_episodes (character_id) WHERE is_reflected = FALSE;
 -- v3: 排除 fail_count >= 5 的熔断记忆，避免 worker 反复拉取
--- v4: 排序键改为 next_retry_at NULLS FIRST，worker 直接拉取到期的待重试记忆
-CREATE INDEX idx_mem_unmaterialized ON memory_episodes (next_retry_at NULLS FIRST)
+-- round-6 (0020): 排序键为 timestamp（fetch_unmaterialized 实际 ORDER BY timestamp，修复 ORM/DDL 漂移）
+CREATE INDEX idx_mem_unmaterialized ON memory_episodes (timestamp)
     WHERE materialized = FALSE AND fail_count < 5;
+-- round-6 (0020): 保留周期查询索引（fetch_retention_candidates 跨角色 importance<=6 的记忆）
+CREATE INDEX idx_mem_retention ON memory_episodes (importance, timestamp)
+    WHERE importance <= 6;
 
 -- 查询时调优（分区后可适当提高，单分区数据量小）
 -- SET hnsw.ef_search = 100;
@@ -483,7 +483,6 @@ CREATE INDEX idx_person_mem_character_heat ON person_memories (character_id, hea
 
 | 检索场景 | 索引 | 说明 |
 |----------|------|------|
-| 角色名模糊搜索 | `gin (name gin_trgm_ops)` | pg_trgm 支持相似度 |
 | 角色按 traits 筛选 | `gin (traits jsonb_path_ops)` | JSONB 路径查询 |
 | 角色记忆向量召回 | `hnsw (embedding vector_cosine_ops)` | HNSW，生产首选 |
 | 角色内记忆按时间 | `(character_id, timestamp DESC)` | 范围扫描 |
@@ -669,15 +668,13 @@ class MemoryEpisode(Base):
 
 ### 8.2 alembic 创建 HNSW 索引与扩展
 
-HNSW 索引与 pg_uuidv7 扩展不能通过 ORM `Index` 自动生成，需在 alembic 升级脚本中用 `op.execute()` 写原生 SQL：
+HNSW 索引不能通过 ORM `Index` 自动生成，需在 alembic 升级脚本中用 `op.execute()` 写原生 SQL（PG 18 内建 `uuidv7()`，无需创建扩展）：
 
 ```python
 # migrations/versions/xxxx_init.py
 def upgrade():
     # 1. 扩展
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_uuidv7;")
     op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
     # 2. 建表 (使用 uuidv7() 默认值)
     op.create_table(

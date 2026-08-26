@@ -108,10 +108,8 @@ AI Town 由三个相互独立但协同的循环驱动：
 | Web 框架 | FastAPI | 最新 | 异步 REST + WebSocket |
 | ORM | SQLAlchemy | 2.0 | 模型/迁移/简单 CRUD |
 | 迁移 | Alembic | 最新 | Schema 版本化（upgrade-only） |
-| 数据库 | PostgreSQL | 18 | 主存储（分区 + pgvector + pg_uuidv7） |
+| 数据库 | PostgreSQL | 18 | 主存储（分区 + pgvector，PG18 内建 `uuidv7()`） |
 | 向量扩展 | pgvector | 最新 | HNSW + HALFVEC（halfvec 支持最多 4000 维） |
-| UUID 扩展 | pg_uuidv7 | 最新 | 时间有序 UUID（避免 B-tree 页分裂） |
-| 文本扩展 | pg_trgm | 最新 | 模糊检索（ similarity 函数） |
 | 缓存/锁 | Redis | 8.0-alpine | 实时状态 + 分布式锁 + 预算统计 |
 | LLM 编排 | LangChain | 最新 | OpenAI 兼容 API 调用（作为传递依赖） |
 | 配置 | pydantic-settings | 最新 | `.env` + 类型安全 + 运行时覆盖 |
@@ -182,7 +180,7 @@ aitown/
 │   ├── world-map.yaml    # 世界地图（场景连通矩阵）
 │   └── events.yaml       # 事件配置
 ├── docker/
-│   ├── postgres/Dockerfile # PG 18 + pgvector + pg_uuidv7 + pg_trgm
+│   ├── postgres/Dockerfile # PG 18 + pgvector
 │   └── observability/    # Prometheus / Loki / Jaeger / Alloy / Grafana 配置
 ├── docs/                 # 文档
 ├── data/logs/            # 运行时日志
@@ -207,13 +205,9 @@ aitown/
 
 ```sql
 -- 必须的扩展（在 0001_init.py 中创建）
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS vector;       -- pgvector
-CREATE EXTENSION IF NOT EXISTS pg_trgm;     -- 模糊检索
 
--- pg_uuidv7 扩展（Docker 镜像预装，提供 uuidv7() 函数）
--- 时间有序 UUID，避免 B-tree 索引页分裂
-CREATE EXTENSION IF NOT EXISTS pg_uuidv7;
+-- UUID v7 由 PG 18 内建 uuidv7() 函数生成，无需第三方扩展
 ```
 
 **UUID v7 选型理由**：
@@ -421,9 +415,6 @@ CREATE INDEX idx_mem_embedding_hnsw
 -- 时间线索引（在每个分区上创建）
 CREATE INDEX idx_mem_char_time ON memory_episodes (character_id, timestamp DESC);
 CREATE INDEX idx_mem_importance ON memory_episodes (character_id, importance DESC);
-
--- 模糊检索索引
-CREATE INDEX idx_mem_content_trgm ON memory_episodes USING gin (content gin_trgm_ops);
 ```
 
 **关键设计**：
@@ -2715,7 +2706,7 @@ async def get_metrics_detail():
 
 | 服务 | 镜像 | 端口 | Profile | 说明 |
 |------|------|------|---------|------|
-| postgres | 自建（PG 18 + pgvector + pg_uuidv7） | 5432 | default | 主存储 |
+| postgres | pgvector/pgvector:pg18（PG 18 内建 `uuidv7()`） | 5432 | default | 主存储 |
 | redis | redis:8.0-alpine | 6379 | default | 缓存/锁 |
 | backend | 自建 | 8000 | default | 后端 API |
 | frontend | 自建（Nginx） | 80 | default | 前端 |
@@ -2760,8 +2751,6 @@ FROM postgres:18
 # 安装扩展
 RUN apt-get update && apt-get install -y \
     postgresql-18-pgvector \
-    postgresql-18-pg-uuidv7 \
-    postgresql-18-pg-trgm \
     && rm -rf /var/lib/apt/lists/*
 ```
 
@@ -3252,8 +3241,6 @@ async def load_runtime_config(redis: Redis) -> RuntimeConfig:
 | **OpenTelemetry** | 分布式追踪标准 |
 | **partition pruning** | 分区裁剪（查询时自动过滤无关分区） |
 | **pgvector** | PostgreSQL 向量扩展 |
-| **pg_uuidv7** | PostgreSQL UUID v7 扩展 |
-| **pg_trgm** | PostgreSQL 模糊检索扩展 |
 | **precondition** | Action 前置条件（代码过滤，LLM 不能绕过） |
 | **PromptGuard** | Prompt 注入防护 |
 | **proactive_share_intent** | 主动分享意图（boolean） |

@@ -427,7 +427,7 @@ pnpm --version
 
 #### 3.1.5 PostgreSQL 18 安装
 
-> **重要**：PostgreSQL 必须是 18 或更高版本，且必须安装 `pgvector`、`pg_trgm` 三个扩展。
+> **重要**：PostgreSQL 必须是 18 或更高版本，且必须安装 `pgvector` 扩展（PG 18 内建 `uuidv7()`，无需第三方扩展）。
 
 **推荐方式：使用项目内置的 Docker 镜像（最省事）**
 
@@ -438,7 +438,7 @@ pnpm --version
 docker compose up -d postgres
 ```
 
-这会启动一个 PostgreSQL 18 容器，已安装 pgvector + pg_trgm，端口 5432，用户名 `ai_town`，密码 `password`，数据库名 `ai_town`。
+这会启动一个 PostgreSQL 18 容器，已安装 pgvector，端口 5432，用户名 `ai_town`，密码 `password`，数据库名 `ai_town`。
 
 **Windows 手动安装（不推荐，扩展编译麻烦）**：
 
@@ -551,30 +551,16 @@ GRANT ALL PRIVILEGES ON DATABASE ai_town TO ai_town;
 #### 3.2.3 安装扩展
 
 ```sql
--- pg_uuidv7：时间有序 UUID（主键生成）
-CREATE EXTENSION IF NOT EXISTS pg_uuidv7;
-
 -- pgvector：向量检索（记忆系统依赖）
 CREATE EXTENSION IF NOT EXISTS vector;
-
--- pg_trgm：模糊匹配（搜索功能依赖）
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ```
 
 #### 3.2.4 验证扩展安装
 
 ```sql
--- 验证 pg_uuidv7
-SELECT uuidv7();
--- 应输出一个 UUID，如：0190a3b8-7e1f-7xxx-xxxx-xxxxxxxxxxxx
-
 -- 验证 pgvector
 SELECT '[1,2,3]'::vector;
 -- 应输出：[1,2,3]
-
--- 验证 pg_trgm
-SELECT show_trgm('hello');
--- 应输出一个 trigram 数组
 
 -- 查看已安装的扩展
 \dx
@@ -701,7 +687,7 @@ aitown/
 │   ├── world-map.yaml           # 小镇地图（场景连接关系）
 │   └── events.yaml              # 事件配置
 ├── docker/                      # Docker 相关
-│   ├── postgres/Dockerfile      # PG 17 + pg_uuidv7 + pgvector
+│   ├── postgres/Dockerfile      # PG 18 + pgvector
 │   └── observability/           # Prometheus / Loki / Grafana 配置
 ├── docs/                        # 所有设计文档
 ├── .env.example                 # 环境变量模板
@@ -898,12 +884,13 @@ alembic upgrade head
 
 | 版本                      | 内容                                                                                                                                                                    |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0001_init`               | 创建扩展（vector/pg_trgm）+ 核心表（characters/character_states/action_records 分区表/memory_episodes 含向量/HNSW 索引/plans/reflections/world_events/world_snapshots） |
+| `0001_init`               | 创建扩展（vector）+ 核心表（characters/character_states/action_records 分区表/memory_episodes 含向量/HNSW 索引/plans/reflections/world_events/world_snapshots） |
 | `0002_optimize`           | 性能优化索引                                                                                                                                                            |
 | `0003_messages`           | 消息表（conversations/messages）                                                                                                                                        |
 | `0004_phase3_refinements` | Phase 3 字段调整                                                                                                                                                        |
 | `0005_embedding_dim_2048` | 调整 embedding 维度                                                                                                                                                     |
 | `0006_world_event_key`    | world_events 主键调整                                                                                                                                                   |
+| `0020_memory_index_governance` | R6 索引治理 + 移除 pg_trgm（死扩展，全库零使用） + 新增 idx_mem_retention（保留周期索引） + 重建 idx_mem_unmaterialized（对齐实际查询列） |
 
 **核心表说明**：
 
@@ -936,13 +923,13 @@ alembic downgrade base
 
 #### 4.3.4 常见迁移错误处理
 
-**错误 1：扩展不存在**
+**错误 1：PG 版本过低导致 uuidv7() 不存在**
 
 ```
 sqlalchemy.exc.ProgrammingError: function uuidv7() does not exist
 ```
 
-解决：按 3.2 节安装 pg_uuidv7 扩展。
+解决：PostgreSQL 需为 18+（PG 18 内建 `uuidv7()` 函数，无需第三方扩展）。
 
 **错误 2：连接失败**
 

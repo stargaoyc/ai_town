@@ -26,9 +26,9 @@
                     ┌──────────────────────────┐
                     │                          │
            ┌────────▼────────┐      ┌──────────▼─────────┐
-           │   PostgreSQL    │      │     Redis          │
-           │  +pgvector      │      │  缓存/队列/锁      │
-           │  +pg_uuidv7     │      │  tools:enabled     │
+│   PostgreSQL    │      │     Redis          │
+            │  +pgvector      │      │  缓存/队列/锁      │
+            │  +UUID v7       │      │  tools:enabled     │
            └─────────────────┘      └────────────────────┘
 ```
 
@@ -265,7 +265,7 @@ docker compose exec backend alembic upgrade head
 # 验证扩展是否启用
 docker compose exec postgres psql -U ai_town -d ai_town -c \
   "SELECT extname FROM pg_extension;"
-# 应看到: vector, pg_uuidv7, pg_trgm
+# 应看到: vector
 ```
 
 ### 4.5 导入初始角色
