@@ -39,7 +39,7 @@ class _StubLLM:
     def __init__(self, fail_embed: bool = False) -> None:
         self.fail_embed = fail_embed
 
-    async def structured_output(self, prompt: str, schema: dict[str, Any], model: str) -> dict[str, Any]:
+    async def structured_output(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         if "reflection_meta" in prompt:
             return {"metas": [{"meta_summary": "长期偏好咖啡店社交", "meta_detail": "持续光顾咖啡店与人交谈"}]}
         return {
