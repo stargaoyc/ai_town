@@ -413,6 +413,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/alerts/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Alerts
+         * @description 接收 Alertmanager webhook 告警（R4-M2：告警不再只进 UI）
+         *
+         *     鉴权独立于 JWT 中间件（AuthMiddleware 已豁免该精确路径）：
+         *     Authorization: Bearer <alert_webhook_token>，未配置 token 时一律 403。
+         *     每条告警记结构化 warning 并累加 ai_town_alerts_received_total 计数器，
+         *     使告警在日志与指标两个通道可见。
+         */
+        post: operations["receive_alerts_api_v1_system_alerts_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules": {
         parameters: {
             query?: never;
@@ -964,7 +989,11 @@ export interface paths {
          * Send Message
          * @description 发送消息给角色并获取回复
          *
+         *     身份绑定（R4-H3）：JWT 用户只能以本人身份发言（user_id 必须等于 token sub）；
+         *     API Key 属机器对机器桥接（如 OneBot REST 调用方），允许代发任意 user_id。
+         *
          *     Args:
+         *         principal: 鉴权主体（{"user_id", "auth_method"}）
          *         character_id: 角色 UUID
          *         user_id: 用户标识
          *         platform: 来源平台（web/qq/lark/internal）
@@ -972,6 +1001,9 @@ export interface paths {
          *
          *     Returns:
          *         角色回复内容与元数据（token/cost/conversation_id）
+         *
+         *     Raises:
+         *         HTTPException: 403 当 JWT 用户的 user_id 与 token sub 不一致
          */
         post: operations["send_message_api_v1_messages_send_post"];
         delete?: never;
@@ -1386,6 +1418,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/metrics-prometheus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metrics Prometheus
+         * @description Prometheus 文本格式指标（管理端专用）
+         *
+         *     公网 /metrics 已被 nginx 刻意 404（防止指标泄露，见部署加固 M11）；
+         *     前端监控面板经此 RBAC 保护端点获取同一份数据。
+         */
+        get: operations["metrics_prometheus_api_v1_admin_metrics_prometheus_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/metrics-detail": {
         parameters: {
             query?: never;
@@ -1743,6 +1798,11 @@ export interface components {
             current_world_time?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Degraded Reasons
+             * @default []
+             */
+            degraded_reasons: string[];
         };
         /**
          * LogEntryOut
@@ -2931,6 +2991,24 @@ export interface operations {
             };
         };
     };
+    receive_alerts_api_v1_system_alerts_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_modules_api_v1_modules_get: {
         parameters: {
             query?: never;
@@ -4064,6 +4142,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    metrics_prometheus_api_v1_admin_metrics_prometheus_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
                 };
             };
         };
