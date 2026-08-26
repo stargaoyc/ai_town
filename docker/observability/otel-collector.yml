@@ -1,0 +1,42 @@
+# OTel Collector 配置（P1-21/P2-17）：tail-based sampling
+# 策略：错误链路必采、耗时 >2s 必采、其余基线采样 20%；
+# 决策等待 5s 聚合整条 trace 后统一判定，避免半截 trace 误判。
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: slow-traces
+        type: latency
+        latency:
+          threshold_ms: 2000
+      - name: baseline
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 20
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling]
+      exporters: [otlp/jaeger]

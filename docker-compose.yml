@@ -108,8 +108,11 @@ services:
       # 与 postgres 服务共用 POSTGRES_PASSWORD 变量；密码缺失时 compose fail-fast（:? 插值校验）
       DATABASE_URL: postgresql+asyncpg://ai_town:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_required}@postgres:5432/ai_town
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD_required}@redis:6379/0
-      # 容器内 localhost 指自身：OTel 上报必须走服务名（.env 的 localhost 值仅适用裸机开发）
-      OTEL_ENDPOINT: http://jaeger:4318
+      # P1-21/P2-17：Trace 经 OTel Collector（tail_sampling：错误/慢链路必采）
+      # 再入 Jaeger；本地裸机直连可改回 http://jaeger:4318
+      OTEL_ENDPOINT: http://otel-collector:4318
+      # P1-20：多副本部署时附加实例设 RUN_MIGRATIONS=0（迁移由首副本/Init Job 承担）
+      RUN_MIGRATIONS: "1"
       TZ: Asia/Shanghai
     depends_on:
       postgres:
@@ -273,8 +276,28 @@ services:
       - ./data/jaeger:/badger
     ports:
       - "127.0.0.1:16686:16686" # Jaeger UI
-      - "127.0.0.1:14318:4318" # OTLP HTTP
+      - "127.0.0.1:14318:4318" # OTLP HTTP（本地裸机直连调试用；容器内走 collector）
     mem_limit: 1g
+    logging: *default-logging
+    networks:
+      - aitown-net
+    profiles: [observability]
+
+  # P1-21/P2-17：OTel Collector + tail sampling——头采样下错误链路可能被丢弃，
+  # Collector 按「错误必采 / >2s 必采 / 其余 20%」策略收敛后再入 Jaeger
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    container_name: aitown-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./docker/observability/otel-collector.yml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
+    mem_limit: 512m
+    depends_on:
+      - jaeger
     logging: *default-logging
     networks:
       - aitown-net

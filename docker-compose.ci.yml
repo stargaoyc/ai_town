@@ -18,3 +18,6 @@ services:
       JWT_SECRET: ci-smoke-secret-not-production
       ADMIN_USERNAME: ci-admin
       ADMIN_PASSWORD: ci-smoke-password
+      # P3-2：显式关闭 tracing——冒烟栈不含 jaeger/collector，
+      # 空值经 config 归一化为 None，走「tracing disabled」路径而非导出报错
+      OTEL_ENDPOINT: ""

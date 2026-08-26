@@ -1,23 +1,32 @@
 # packages/backend/Dockerfile
 # AI Town 后端镜像 - Python 3.13 + uv
 # 多阶段构建：builder 阶段安装依赖，运行阶段仅复制 .venv 和源码
+#
+# 中国网络加速改为可选构建参数（P1-19）：
+#   docker build --build-arg USE_CN_MIRROR=true .
+# 默认走官方源，保证非中国大陆环境的开箱可构建性
 
 # ===== Builder 阶段 =====
 FROM python:3.13-slim AS builder
 
-# 中国网络加速：apt 换清华源（trixie 源清单在 sources.list.d/debian.sources，
-# deb.debian.org 域名同时覆盖 main 与 debian-security，整域替换即可）
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+ARG USE_CN_MIRROR=false
+
+# trixie 源清单在 sources.list.d/debian.sources，
+# deb.debian.org 域名同时覆盖 main 与 debian-security，整域替换即可
+RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
+        sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources; \
+    fi \
     && apt-get update && apt-get install -y --no-install-recommends \
         build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv 包管理器（pip 走清华 PyPI 镜像）
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple uv
+# pip / uv 共用同一索引变量；镜像加速时由 USE_CN_MIRROR 推导
+ARG PYPI_INDEX=https://pypi.org/simple
+RUN if [ "$USE_CN_MIRROR" = "true" ]; then export PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple; fi \
+    && pip install --no-cache-dir -i "$PYPI_INDEX" uv
 
-# uv 依赖下载走清华 PyPI 镜像（两个变量兼容不同 uv 版本）
-ENV UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
-    UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV UV_DEFAULT_INDEX=$PYPI_INDEX \
+    UV_INDEX_URL=$PYPI_INDEX
 
 WORKDIR /app
 
@@ -30,8 +39,10 @@ RUN uv sync --frozen --no-dev
 # ===== 运行阶段 =====
 FROM python:3.13-slim
 
-# 中国网络加速：运行阶段 apt 同样换清华源
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+ARG USE_CN_MIRROR=false
+RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
+        sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources; \
+    fi \
     && apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
     && rm -rf /var/lib/apt/lists/* \
@@ -59,6 +70,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health', timeout=3)" || exit 1
 
-# 启动前执行数据库迁移（alembic upgrade head），保证容器一键启动即可用；
-# 多副本部署时迁移需改为独立 Job/Init 容器，避免并发 upgrade
-CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1"]
+# P1-20：迁移从 CMD 移入 entrypoint 并以 RUN_MIGRATIONS 门控——
+# 单副本默认执行；多副本部署时附加副本设 RUN_MIGRATIONS=0，
+# 或彻底改为独立 Init Job，避免并发 alembic upgrade
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
