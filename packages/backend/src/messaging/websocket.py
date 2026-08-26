@@ -61,18 +61,23 @@ class WebSocketManager:
         websocket: WebSocket,
         user_id: str,
         character_id: str,
+        *,
+        subprotocol: str | None = None,
     ) -> None:
         """注册一条 WebSocket 连接
 
         - 先 accept，再写入连接表
         - 若同 (user_id, character_id) 已存在旧连接，尝试关闭旧连接（避免资源泄漏）
+        - 客户端经 Sec-WebSocket-Protocol 携带 token 时，握手需回选子协议（RFC 6455），
+          否则浏览器端构造器直接握手失败
 
         Args:
             websocket: FastAPI WebSocket 对象
             user_id: 用户标识
             character_id: 角色 ID（字符串形式 UUID）
+            subprotocol: 握手需回选的子协议；None 表示不回选
         """
-        await websocket.accept()
+        await websocket.accept(subprotocol=subprotocol)
 
         old_ws: WebSocket | None = None
         async with self._lock:
@@ -114,6 +119,23 @@ class WebSocketManager:
                 total_connections=len(self._connections),
             )
 
+    async def _evict_if_current(self, user_id: str, character_id: str, ws: WebSocket) -> bool:
+        """仅当 key 对应的连接仍是失败时的那条 ws 才移除（R5-M4）
+
+        发送失败/超时往往耗时较长，期间用户可能已重连并占据同一 key：
+        按 key 盲删会把新建立的活连接一并踢掉。同一性比较保证只清理
+        真正断开的那条连接。
+
+        Returns:
+            True 表示发生了移除，False 表示 key 已被其他连接占用（跳过）
+        """
+        async with self._lock:
+            key = (user_id, character_id)
+            if self._connections.get(key) is ws:
+                del self._connections[key]
+                return True
+        return False
+
     async def send_to_user(
         self,
         user_id: str,
@@ -149,8 +171,9 @@ class WebSocketManager:
                 character_id=character_id,
                 error=str(e),
             )
-            # 发送失败/超时通常意味着连接已断开，主动清理
-            await self.disconnect(user_id, character_id)
+            # 发送失败/超时通常意味着连接已断开，需主动清理；但只清理失败时
+            # 那条连接——挂起期间重连的新连接不能被误删（R5-M4）
+            await self._evict_if_current(user_id, character_id, ws)
             return False
 
     async def broadcast(self, character_id: str, message: dict[str, Any]) -> int:
@@ -171,7 +194,9 @@ class WebSocketManager:
             return 0
 
         success = 0
-        failed_keys: list[tuple[str, str]] = []
+        # 记录失败连接的引用而非仅 key：清理时做同一性比较（R5-M4），
+        # 广播期间重连的新连接会占住同一 key，不能被误删
+        failed_targets: list[tuple[str, str, WebSocket]] = []
         for uid, cid, ws in targets:
             try:
                 await asyncio.wait_for(ws.send_json(message), timeout=_WS_SEND_TIMEOUT_SECONDS)
@@ -183,22 +208,22 @@ class WebSocketManager:
                     character_id=cid,
                     error=str(e),
                 )
-                failed_keys.append((uid, cid))
+                failed_targets.append((uid, cid, ws))
 
-        # 清理失败连接
-        if failed_keys:
+        # 清理失败连接（批量在锁内完成，避免逐条加锁）
+        if failed_targets:
             async with self._lock:
-                for key in failed_keys:
+                for uid, cid, ws in failed_targets:
                     # 仅当仍是失败时的同一连接才移除（避免误删新连接）
-                    if self._connections.get(key) is not None:
-                        self._connections.pop(key, None)
+                    if self._connections.get((uid, cid)) is ws:
+                        del self._connections[(uid, cid)]
 
         logger.info(
             "ws_broadcast_done",
             character_id=character_id,
             total=len(targets),
             success=success,
-            failed=len(failed_keys),
+            failed=len(failed_targets),
         )
         return success
 
@@ -294,7 +319,13 @@ async def ws_chat_endpoint(
     查询参数：
     - user_id: 必填，用户标识
     - platform: 默认 "web"
-    - token: JWT（也可通过 Authorization: Bearer 头传递）
+    - token: JWT（兼容旧客户端的遗留方式；token 会进访问日志/中间代理日志，
+      新客户端应改用 subprotocol，见 _extract_bearer_subprotocol）
+
+    JWT 传递优先级与 /ws/dashboard 端点一致（R5-M12）：
+    1. Sec-WebSocket-Protocol: bearer, <token>（首选：token 不进 URL）
+    2. Authorization: Bearer 头
+    3. 查询参数 token（遗留兼容）
 
     协议：
     - 入站：纯文本 或 {"type":"message","content":"..."}
@@ -313,7 +344,12 @@ async def ws_chat_endpoint(
     user_id = user_id.strip()
 
     # === 鉴权（P0-8）：握手阶段校验 JWT，sub 必须与 user_id 一致 ===
-    # 防止任何人用任意 user_id 冒充用户连接并读取其对话历史
+    # 防止任何人用任意 user_id 冒充用户连接并读取其对话历史。
+    # JWT 优先级与 dashboard 端点一致（R5-M12）；查询参数仅为旧客户端
+    # 兼容保留——token 会进访问日志，新客户端必须走 subprotocol 或头
+    subprotocol_token = _extract_bearer_subprotocol(websocket)
+    if not token and subprotocol_token:
+        token = subprotocol_token
     if not token:
         auth_header = websocket.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
@@ -353,7 +389,9 @@ async def ws_chat_endpoint(
     manager = WebSocketManager()
 
     # === 注册连接 ===
-    await manager.connect(websocket, user_id, character_id)
+    # 客户端经 subprotocol 传 token 时 accept 必须回选该子协议（RFC 6455），
+    # 否则浏览器端握手直接失败
+    await manager.connect(websocket, user_id, character_id, subprotocol="bearer" if subprotocol_token else None)
 
     # 发送连接建立确认
     try:
@@ -459,8 +497,10 @@ async def ws_chat_endpoint(
         except Exception:
             pass
     finally:
-        # 确保从管理器中移除连接
-        await manager.disconnect(user_id, character_id)
+        # 确保从管理器中移除连接；同 key 可能已被重连的新连接占用
+        # （connect 会关闭本会话这条旧 socket 触发本 finally），
+        # 仅移除仍是本会话的连接（R5-M4 同源缺陷）
+        await manager._evict_if_current(user_id, character_id, websocket)
         # 尽力关闭 socket
         try:
             if websocket.client_state == WebSocketState.CONNECTED:

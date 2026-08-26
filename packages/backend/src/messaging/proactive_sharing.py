@@ -487,6 +487,11 @@ class ProactiveSharingService:
                 )
                 seen_users.add(conv.user_id)
             except Exception as e:
+                # add() 内部已 flush，单条约束失败会把 session 打入 pending-rollback 态：
+                # 不回滚则后续所有会话的写入都会抛 PendingRollbackError 被吞掉，
+                # 最终 commit 整批丢失（R5-M5）。回滚的代价是本事务内更早的成功
+                # 写入一并放弃——换取后续投递存活，好过全军覆没
+                await self.session.rollback()
                 logger.error(
                     "share_delivery_failed",
                     conversation_id=str(conv.id),
