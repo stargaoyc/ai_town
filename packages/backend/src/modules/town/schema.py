@@ -34,6 +34,9 @@ class Scene(BaseModel):
     activities: list[str] = Field(default_factory=list, description="支持的活动")
     weather_affected: bool = Field(default=True, description="是否受天气影响")
     workday_only: bool = Field(default=False, description="是否仅工作日开放")
+    # 语义标签：Action 通过 scene_tags 按标签绑定场景，替代在代码里硬编码场景 ID。
+    # 单一真相源：新增/删除场景只需改 scenes.yaml，标签未命中任何场景时注册期 fail-fast。
+    tags: list[str] = Field(default_factory=list, description="场景标签（Action scene_tags 按此绑定）")
 
     @field_validator("open_hours")
     @classmethod

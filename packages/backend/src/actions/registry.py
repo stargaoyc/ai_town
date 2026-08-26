@@ -4,8 +4,12 @@
 
 候选过滤逻辑（get_candidates）：
 1. precondition 返回 True（代码级前置条件）
-2. 场景匹配：若 Action 指定了 scene，必须等于角色当前 location（或传入的 scene）
+2. 场景匹配：若 Action 指定了 scene 或 scene_tags，必须等于角色当前 location
 3. 资源检查：当前状态足以承担 Action 的消耗（体力/饱腹度/社交能量/手机电量/金钱）
+
+scene_tags 解析：
+- 注册时由 SceneLoader.get_scene_ids_by_tag 将标签转为具体场景 ID 集。
+- 标签未命中任何场景时注册失败（fail-fast），避免 scenes.yaml 增删场景静默破坏 Action。
 """
 
 from typing import Any
@@ -13,6 +17,7 @@ from typing import Any
 from structlog import get_logger
 
 from src.actions.base import Action
+from src.modules.town.loader import SceneLoader
 
 logger = get_logger()
 
@@ -20,20 +25,55 @@ logger = get_logger()
 class ActionRegistry:
     """Action 注册表"""
 
-    def __init__(self) -> None:
+    def __init__(self, scene_loader: SceneLoader | None = None) -> None:
         self._actions: dict[str, Action] = {}
+        self._scene_loader = scene_loader
+        # action_id → 该 Action 的 scene_tags 解析后的具体场景 ID 集合
+        self._resolved_scene_ids: dict[str, frozenset[str]] = {}
+
+    def set_scene_loader(self, scene_loader: SceneLoader) -> None:
+        """在注册后注入 SceneLoader（用于场景标签解析）"""
+        self._scene_loader = scene_loader
 
     def register(self, action: Action) -> None:
-        """注册一个 Action；重复 ID 将覆盖并记录警告"""
+        """注册一个 Action；重复 ID 将覆盖并记录警告
+
+        若 Action 声明了 scene_tags，在注册时解析为具体场景 ID 集。
+        标签未命中任何场景或未注入 SceneLoader 时抛出 ValueError（fail-fast）。
+        """
         if action.id in self._actions:
             logger.warning("action_overridden", action_id=action.id)
+        if action.scene_tags:
+            resolved = self._resolve_scene_tags(action)
+            self._resolved_scene_ids[action.id] = resolved
+        else:
+            self._resolved_scene_ids.pop(action.id, None)
         self._actions[action.id] = action
         logger.info("action_registered", action_id=action.id, category=action.category.value)
+
+    def _resolve_scene_tags(self, action: Action) -> frozenset[str]:
+        """将 Action 的 scene_tags 解析为具体场景 ID 集合"""
+        if self._scene_loader is None:
+            raise ValueError(
+                f"Action '{action.id}' 声明了 scene_tags={action.scene_tags}，"
+                "但 ActionRegistry 未注入 SceneLoader（无法解析标签）"
+            )
+        resolved: set[str] = set()
+        for tag in action.scene_tags:
+            ids = self._scene_loader.get_scene_ids_by_tag(tag)
+            if not ids:
+                raise ValueError(
+                    f"Action '{action.id}' 的 scene_tags 包含标签 '{tag}'，"
+                    "该标签在 configs/scenes.yaml 中未匹配任何场景"
+                )
+            resolved.update(ids)
+        return frozenset(resolved)
 
     def unregister(self, action_id: str) -> None:
         """注销一个 Action"""
         if action_id in self._actions:
             del self._actions[action_id]
+            self._resolved_scene_ids.pop(action_id, None)
             logger.info("action_unregistered", action_id=action_id)
 
     def get(self, action_id: str) -> Action | None:
@@ -74,8 +114,11 @@ class ActionRegistry:
             # 1. 前置条件
             if action.precondition is not None and not action.precondition(state):
                 continue
-            # 2. 场景匹配
+            # 2. 场景匹配：scene 字段（单场景）或 scene_tags 解析出的场景集合
             if action.scene is not None and action.scene != current_scene:
+                continue
+            resolved = self._resolved_scene_ids.get(action.id)
+            if resolved is not None and current_scene not in resolved:
                 continue
             # 3. 资源检查
             if not self._has_enough_resources(action, state):

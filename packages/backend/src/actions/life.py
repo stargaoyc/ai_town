@@ -16,7 +16,7 @@ def build_life_actions() -> list[Action]:
             id="sleep",
             name="睡觉",
             category=ActionCategory.LIFE,
-            scene="home",
+            scene_tags=["residential"],
             duration_minutes=480,
             energy_cost=40,  # 恢复 40 体力
             satiety_cost=-10,  # 消耗 10 饱腹度
@@ -35,7 +35,7 @@ def build_life_actions() -> list[Action]:
             id="eat_at_home",
             name="在家吃饭",
             category=ActionCategory.LIFE,
-            scene="home",
+            scene_tags=["residential"],
             duration_minutes=30,
             satiety_cost=25,  # 恢复 25 饱腹度
             money_cost=20,  # 花费 20
@@ -53,10 +53,11 @@ def build_life_actions() -> list[Action]:
             id="read_book",
             name="读书",
             category=ActionCategory.LIFE,
-            scene=None,  # 多场景限制通过 precondition 实现
+            # 场景限制由 scene_tags 解析（residential ∪ reading ∪ bookstore = {home, library, bookstore}），
+            # 替代原 precondition 中对 location 的硬编码场景集判断
+            scene_tags=["residential", "reading", "bookstore"],
             duration_minutes=60,
             energy_cost=-5,  # 消耗 5 体力
-            precondition=lambda s: s.get("location") in {"home", "library", "bookstore"},
             social_cost=10,  # 独处恢复社交能量
         ),
         Action(
@@ -72,7 +73,7 @@ def build_life_actions() -> list[Action]:
             id="charge_phone",
             name="给手机充电",
             category=ActionCategory.LIFE,
-            scene="home",
+            scene_tags=["residential"],
             duration_minutes=30,
             phone_battery_cost=50,  # 恢复 50 手机电量
         ),

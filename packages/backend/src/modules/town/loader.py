@@ -43,14 +43,12 @@ class SceneLoader:
         self._scenes: dict[str, Scene] = {}
         self._world_map: WorldMap = WorldMap()
 
-    async def load_from_files(self, scenes_path: str | Path, map_path: str | Path) -> None:
-        """从 YAML 文件加载场景和地图
+    def load_configs_sync(self, scenes_path: str | Path, map_path: str | Path) -> None:
+        """同步加载场景与地图配置（不初始化 Redis）
 
-        Args:
-            scenes_path: scenes.yaml 路径
-            map_path: world-map.yaml 路径
+        供 Action 注册期解析 scene_tags 及测试使用：解析与校验都是同步逻辑，
+        Redis 状态初始化由 load_from_files 单独完成。
         """
-        # 加载场景
         scenes_raw = yaml.safe_load(Path(scenes_path).read_text(encoding="utf-8"))
         scenes_list = scenes_raw.get("scenes", [])
         self._scenes = {}
@@ -59,7 +57,6 @@ class SceneLoader:
             self._scenes[scene.id] = scene
         logger.info("加载 %d 个场景", len(self._scenes))
 
-        # 加载世界地图
         map_raw = yaml.safe_load(Path(map_path).read_text(encoding="utf-8"))
         self._world_map = WorldMap(adjacency=map_raw.get("adjacency", {}))
         logger.info("加载世界地图: %d 个节点", len(self._world_map.adjacency))
@@ -67,7 +64,9 @@ class SceneLoader:
         # 校验连通矩阵（P0-9）：所有场景互相可达 + 对称性，不满足则启动报错
         self._validate_world_map()
 
-        # 初始化 Redis 状态
+    async def load_from_files(self, scenes_path: str | Path, map_path: str | Path) -> None:
+        """从 YAML 文件加载场景、地图并初始化 Redis 状态"""
+        self.load_configs_sync(scenes_path, map_path)
         await self._init_redis_state()
 
     def _validate_world_map(self) -> None:
@@ -135,6 +134,13 @@ class SceneLoader:
     def get_all_scenes(self) -> dict[str, Scene]:
         """获取所有场景"""
         return self._scenes
+
+    def get_scene_ids_by_tag(self, tag: str) -> frozenset[str]:
+        """返回带有指定标签的场景 ID 集合（Action scene_tags 解析入口）
+
+        标签未命中任何场景时返回空集合，由注册层负责 fail-fast。
+        """
+        return frozenset(scene.id for scene in self._scenes.values() if tag in scene.tags)
 
     def get_travel_time(self, from_scene: str, to_scene: str) -> int | None:
         """获取移动耗时"""

@@ -51,6 +51,9 @@ class Action(BaseModel):
     description: str | None = None  # 行为描述（可选）
     category: ActionCategory
     scene: str | None = None  # 所需场景（None 表示任意场景）
+    # 所需场景标签：注册期经 SceneLoader 解析为具体场景集，替代硬编码场景 ID。
+    # 标签未命中任何场景时注册失败（fail-fast），避免 scenes.yaml 增删场景静默破坏 Action。
+    scene_tags: list[str] = Field(default_factory=list, description="所需场景标签（按 scenes.yaml 的 tags 解析）")
     activity: str | None = None  # 场景活动类型
     duration_minutes: int = 10  # 基础耗时（虚拟分钟）
     allow_dynamic_duration: bool = False  # 允许 LLM 动态调整耗时

@@ -16,7 +16,7 @@ def build_work_actions() -> list[Action]:
             id="work_parttime_cafe",
             name="咖啡店打工",
             category=ActionCategory.WORK,
-            scene="cafe",
+            scene_tags=["dining"],
             duration_minutes=120,
             money_gain=300,  # 获得 300 金钱
             energy_cost=-20,  # 消耗 20 体力
@@ -26,7 +26,7 @@ def build_work_actions() -> list[Action]:
             id="work_parttime_store",
             name="便利店打工",
             category=ActionCategory.WORK,
-            scene="convenience_store",
+            scene_tags=["retail"],
             duration_minutes=120,
             money_gain=250,  # 获得 250 金钱
             energy_cost=-15,  # 消耗 15 体力
@@ -35,9 +35,10 @@ def build_work_actions() -> list[Action]:
             id="study",
             name="学习",
             category=ActionCategory.WORK,
-            scene=None,  # 多场景限制通过 precondition 实现
+            # 场景限制由 scene_tags 解析（education ∪ reading ∪ residential = {school, library, home}，
+            # 不含 bookstore），替代原 precondition 中对 location 的硬编码场景集判断
+            scene_tags=["education", "reading", "residential"],
             duration_minutes=90,
             energy_cost=-15,  # 消耗 15 体力
-            precondition=lambda s: s.get("location") in {"school", "library", "home"},
         ),
     ]

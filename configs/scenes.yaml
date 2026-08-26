@@ -6,6 +6,7 @@ scenes:
     capacity: 5
     activities: [sleep, eat, relax, study]
     weather_affected: false
+    tags: [residential, indoor]
 
   - id: school
     name: 学校
@@ -14,6 +15,7 @@ scenes:
     capacity: 50
     activities: [study, chat, exercise]
     workday_only: true
+    tags: [education, indoor]
 
   - id: cafe
     name: 咖啡店
@@ -21,6 +23,7 @@ scenes:
     open_hours: [7, 22]
     capacity: 20
     activities: [eat, drink, work_parttime, chat, relax]
+    tags: [dining, indoor]
 
   - id: bookstore
     name: 书店
@@ -28,6 +31,7 @@ scenes:
     open_hours: [9, 21]
     capacity: 15
     activities: [read, buy, work_parttime]
+    tags: [bookstore, indoor]
 
   - id: library
     name: 图书馆
@@ -35,6 +39,7 @@ scenes:
     open_hours: [9, 20]
     capacity: 30
     activities: [study, read, borrow]
+    tags: [reading, indoor]
 
   - id: park
     name: 公园
@@ -42,6 +47,7 @@ scenes:
     open_hours: [0, 24]
     capacity: 100
     activities: [relax, chat, exercise]
+    tags: [outdoor, leisure]
 
   - id: shrine
     name: 神社
@@ -49,6 +55,7 @@ scenes:
     open_hours: [0, 24]
     capacity: 40
     activities: [pray, relax, festival]
+    tags: [outdoor, leisure]
 
   - id: coast
     name: 海岸
@@ -56,6 +63,7 @@ scenes:
     open_hours: [0, 24]
     capacity: 80
     activities: [relax, walk, look_at_sea]
+    tags: [outdoor, leisure]
 
   - id: forest
     name: 森林
@@ -63,6 +71,7 @@ scenes:
     open_hours: [0, 24]
     capacity: 30
     activities: [explore, relax, forage]
+    tags: [outdoor, leisure]
 
   - id: plaza
     name: 中央广场
@@ -70,6 +79,7 @@ scenes:
     open_hours: [0, 24]
     capacity: 60
     activities: [chat, relax, event]
+    tags: [outdoor, leisure]
 
   - id: shopping_street
     name: 商业街
@@ -77,6 +87,7 @@ scenes:
     open_hours: [10, 22]
     capacity: 80
     activities: [shop, eat, chat]
+    tags: [shopping, outdoor]
 
   - id: convenience_store
     name: 便利店
@@ -84,3 +95,4 @@ scenes:
     open_hours: [0, 24]
     capacity: 10
     activities: [buy, eat]
+    tags: [retail, indoor]

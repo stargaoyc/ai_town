@@ -1,7 +1,7 @@
 """测试通用 fixtures"""
 
 import os
-from typing import Any
+from typing import Any, cast
 
 # Settings() 在 src/config.py 导入时即实例化，需要这些环境变量；
 # 测试不会真正连接数据库/Redis，此处仅提供占位值避免导入失败。
@@ -12,9 +12,14 @@ os.environ.setdefault("JWT_SECRET", "test-secret-0123456789abcdef-0123456789abcd
 
 
 import pytest
+from redis.asyncio import Redis
 
 from src.actions import ActionRegistry
 from src.modules.duration.calculator import DurationCalculator
+
+
+class FakeRedis:
+    """SceneLoader 构造用替身：load_configs_sync 不触碰 Redis，仅满足类型"""
 
 
 @pytest.fixture
@@ -40,10 +45,18 @@ def registry() -> ActionRegistry:
 
 @pytest.fixture
 def populated_registry() -> ActionRegistry:
-    """包含预置 Action 的注册表"""
-    reg = ActionRegistry()
+    """包含预置 Action 的注册表（注入真实场景配置以解析 scene_tags）"""
     from src.actions import register_all
+    from src.modules.town.loader import SceneLoader
+    from src.paths import find_project_root
 
+    loader = SceneLoader(cast(Redis, FakeRedis()))
+    project_root = find_project_root()
+    loader.load_configs_sync(
+        project_root / "configs" / "scenes.yaml",
+        project_root / "configs" / "world-map.yaml",
+    )
+    reg = ActionRegistry(scene_loader=loader)
     register_all(reg)
     return reg
 

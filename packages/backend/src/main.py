@@ -107,6 +107,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     初始化顺序：
     1. Redis 连接
     2. LLM 客户端
+    2.5 场景加载器（Phase 2 模块，供 Action scene_tags 注册期解析）
     3. Action Registry
     4. World Engine
     5. Character Tick Engine（如果可用）
@@ -115,13 +116,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 必须模块（失败则中断启动）:
     #   - Redis（状态真相源）
     #   - LLM 客户端（核心能力）
+    #   - 场景加载器（场景清单是 Action scene_tags 的真相源）
     #   - Action Registry（行为系统）
     #   - World Engine（世界推进）
     # 可选模块（失败则降级，继续启动）:
     #   - Embedding Worker（异步向量化，降级后记忆不生成向量）
     #   - Partition Scheduler（分区预创建，降级后需手动创建）
     #   - Character Tick Engine（角色推进，降级后世界仍运行）
-    #   - Phase 2 模块（场景/作息/移动，降级后角色行为受限）
+    #   - Phase 2 模块（作息/移动/耗时计算，降级后角色行为受限）
     #   - OneBot 适配器（QQ 接入，降级后仅 Web 可用）
 
     logger.info("ai_town_backend_starting")
@@ -236,9 +238,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error("llm_initialization_failed", error=str(e), exc_info=True)
         raise
 
+    # 2.1 Embedding 实时维度探针（R6-L4）：MODEL_EMBEDDING 输出维度与 EMBEDDING_DIM
+    # 一致性校验——静态 DDL 校验（check_embedding_dim）管不到「换模型输出维度漂移」，
+    # 错配会在向量写入时逐行失败并熔断；开关见 EMBEDDING_PROBE_ENABLED
+    from src.security.startup_checks import probe_embedding_dimension
+
+    await probe_embedding_dimension(llm)
+
+    # 2.5 初始化场景加载器（解析 configs/scenes.yaml）
+    # 场景清单是 Action scene_tags 的真相源，须先于 Registry 加载：
+    # 注册期把标签解析为具体场景集，标签未命中任何场景时 fail-fast
+    scene_loader: SceneLoader | None = None
+    try:
+        scene_loader = SceneLoader(redis)
+        # 经 find_project_root 兼容仓库/容器两种布局
+        project_root = find_project_root()
+        scenes_path = project_root / "configs" / "scenes.yaml"
+        map_path = project_root / "configs" / "world-map.yaml"
+        if scenes_path.exists() and map_path.exists():
+            await scene_loader.load_from_files(scenes_path, map_path)
+            logger.info("scene_loader_initialized", scenes=len(scene_loader.get_all_scenes()))
+        else:
+            logger.warning("scene_config_not_found", path=str(scenes_path))
+
+        schedule_system = ScheduleSystem()
+        duration_calculator = DurationCalculator()
+        movement_system = MovementSystem(scene_loader)
+        runtime.set_scene_loader(scene_loader)
+        runtime.set_schedule_system(schedule_system)
+        runtime.set_duration_calculator(duration_calculator)
+        runtime.set_movement_system(movement_system)
+        logger.info("phase2_modules_initialized")
+    except Exception as e:
+        logger.error("scene_loader_init_failed", error=str(e), exc_info=True)
+
     # 3. 初始化 Action Registry
     try:
-        registry = ActionRegistry()
+        registry = ActionRegistry(scene_loader=scene_loader)
         register_all(registry)
         runtime.set_registry(registry)
         logger.info("action_registry_initialized", count=len(registry.list_all()))
@@ -385,31 +421,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("active_characters_metric_set", count=len(active_chars))
     except Exception as e:
         logger.warning("active_characters_metric_set_failed", error=str(e))
-
-    # 6. 初始化 Phase 2 模块
-    try:
-        scene_loader = SceneLoader(redis)
-        # 尝试加载场景配置（文件可能不存在）
-        # 经 find_project_root 兼容仓库/容器两种布局
-        project_root = find_project_root()
-        scenes_path = project_root / "configs" / "scenes.yaml"
-        map_path = project_root / "configs" / "world-map.yaml"
-        if scenes_path.exists() and map_path.exists():
-            await scene_loader.load_from_files(scenes_path, map_path)
-            logger.info("scene_loader_initialized", scenes=len(scene_loader.get_all_scenes()))
-        else:
-            logger.warning("scene_config_not_found", path=str(scenes_path))
-
-        schedule_system = ScheduleSystem()
-        duration_calculator = DurationCalculator()
-        movement_system = MovementSystem(scene_loader)
-        runtime.set_scene_loader(scene_loader)
-        runtime.set_schedule_system(schedule_system)
-        runtime.set_duration_calculator(duration_calculator)
-        runtime.set_movement_system(movement_system)
-        logger.info("phase2_modules_initialized")
-    except Exception as e:
-        logger.error("phase2_init_failed", error=str(e), exc_info=True)
 
     # 7. WebSocket 管理器就绪（单例已实例化，记录日志）
     logger.info(
