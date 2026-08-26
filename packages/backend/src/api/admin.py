@@ -645,7 +645,11 @@ async def vector_search(
         async with db.session() as session:
             repo = MemoryRepository(session)
             if character_id is None:
-                results = await repo.search_hybrid_global(query_vec=query_embedding, top_k=top_k)
+                # allow_cross_character=True：本端点由 Admin RBAC 依赖（user: Admin）守护，
+                # 跨角色范围扩张在此显式声明（round-5 review L8）
+                results = await repo.search_hybrid_global(
+                    query_vec=query_embedding, top_k=top_k, allow_cross_character=True
+                )
                 scope_cid: str | None = None
             else:
                 results = await repo.search_hybrid(character_id=character_id, query_vec=query_embedding, top_k=top_k)

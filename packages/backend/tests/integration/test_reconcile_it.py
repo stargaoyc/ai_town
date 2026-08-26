@@ -159,3 +159,49 @@ class TestVersionAwareArbitration:
 
         await it_session.refresh(state)
         assert state.stamina == 80  # 被 Redis 权威值修复
+
+
+class TestPgToRedisRepairTickLock:
+    """round-5 review L7：pg_to_redis 修复写 Redis 前必须持有角色 Tick 锁"""
+
+    async def _setup_pg_advanced_drift(self, it_session: AsyncSession, it_redis: Redis) -> CharacterState:
+        """建立「Tick 刚写完 PG（version 前进）但 Redis 未跟上」的对账场景并落基线"""
+        state = await _make_character(it_session, location="cafe", stamina=80)
+        key = f"char:{state.character_id}:state"
+        await it_redis.hset(key, mapping=encode_state_mapping({"location": "cafe", "stamina": 80}))  # type: ignore[arg-type]
+        await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        state.location = "park"
+        state.version += 1
+        await it_session.flush()
+        return state
+
+    async def test_pg_to_redis_repair_skipped_when_tick_lock_busy(
+        self, it_session: AsyncSession, it_redis: Redis
+    ) -> None:
+        state = await self._setup_pg_advanced_drift(it_session, it_redis)
+        key = f"char:{state.character_id}:state"
+        # Tick 正在运行：占用角色互斥锁
+        await it_redis.set(f"char:tick:lock:{state.character_id}", "tick-owner", ex=30)
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["value_drift"] == 0
+        redis_now = await it_redis.hgetall(key)
+        assert redis_now["location"] == "cafe", "Tick 持锁期间修复不得写入 Redis"
+        # 基线未动，下轮 Tick 结束后以新快照重新仲裁
+        assert await it_redis.get(f"char:{state.character_id}:rec_ver") is not None
+
+    async def test_pg_to_redis_repair_proceeds_and_releases_lock_when_free(
+        self, it_session: AsyncSession, it_redis: Redis
+    ) -> None:
+        state = await self._setup_pg_advanced_drift(it_session, it_redis)
+        key = f"char:{state.character_id}:state"
+
+        stats = await run_reconciliation(it_redis, lambda: _session_ctx(it_session))
+
+        assert stats["value_drift"] == 1
+        redis_now = await it_redis.hgetall(key)
+        assert redis_now["location"] == "park"
+        # 修复完成后锁必须释放，不能阻塞下一轮 Tick 启动
+        assert not await it_redis.exists(f"char:tick:lock:{state.character_id}")

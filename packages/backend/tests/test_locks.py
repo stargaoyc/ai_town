@@ -12,7 +12,15 @@ from typing import Any, cast
 
 from redis.asyncio import Redis
 
-from src.core.locks import acquire_resource_locks, release_lock, renew_lock, watch_locks
+from src.core.character.tick import CharacterTickEngine
+from src.core.locks import (
+    TICK_LOCK_PREFIX,
+    acquire_resource_locks,
+    release_lock,
+    renew_lock,
+    try_acquire_lock,
+    watch_locks,
+)
 
 
 class FakeLockRedis:
@@ -132,6 +140,30 @@ async def test_watch_locks_keeps_lock_lost_clear_while_owner_renews() -> None:
 
     assert not lock_lost.is_set()
     assert redis.store["lock:a"] == "token-owner"
+
+
+async def test_try_acquire_lock_returns_token_when_free() -> None:
+    redis = FakeLockRedis()
+
+    token = await try_acquire_lock(cast_redis(redis), f"{TICK_LOCK_PREFIX}abc", ttl=5)
+
+    assert token is not None
+    assert redis.store[f"{TICK_LOCK_PREFIX}abc"] == token
+
+
+async def test_try_acquire_lock_returns_none_when_held() -> None:
+    redis = FakeLockRedis()
+    redis.store[f"{TICK_LOCK_PREFIX}abc"] = "tick-owner"
+
+    token = await try_acquire_lock(cast_redis(redis), f"{TICK_LOCK_PREFIX}abc", ttl=5)
+
+    assert token is None
+    assert redis.store[f"{TICK_LOCK_PREFIX}abc"] == "tick-owner"
+
+
+def test_tick_lock_prefix_matches_tick_engine() -> None:
+    """对账与 Tick 必须抢同一把锁才互斥；两处字面量靠本测试钉死防漂移"""
+    assert TICK_LOCK_PREFIX == CharacterTickEngine.LOCK_PREFIX
 
 
 def cast_redis(fake: FakeLockRedis) -> Redis:

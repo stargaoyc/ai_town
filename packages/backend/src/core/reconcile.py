@@ -20,6 +20,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from structlog import get_logger
 
+from src.core.locks import TICK_LOCK_PREFIX, release_lock, try_acquire_lock
 from src.core.rehydration import restore_character_to_redis
 from src.core.state_codec import decode_state_value
 from src.db.models import Character, CharacterState
@@ -40,6 +41,10 @@ _RECONCILE_FIELDS = (
 
 # 数值字段集合（PG int 列；Redis 侧经 decode_state_value 已还原为 int）
 _INT_FIELDS = frozenset({"stamina", "satiety", "money", "phone_battery", "social_energy"})
+
+# 修复临界区（复核+HSET）远短于 Tick 的 30s 锁 TTL，短 TTL 即可：
+# 持有者崩溃时最多阻塞下一轮 Tick 5 秒
+_REPAIR_LOCK_TTL = 5
 
 
 def fields_differ(field: str, redis_value: Any, pg_value: Any) -> bool:
@@ -136,26 +141,49 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 # round-3 review M9：循环开头的快照可能在 diff 期间被 Tick 推进，
                 # 直接 HSET 会把陈旧镜像盖到刚写入的新状态上——写前重读版本复核新鲜度，
                 # 过期则本轮跳过（下轮以新快照重新仲裁），且不更新基线
-                fresh_version = await session.scalar(
-                    select(CharacterState.version).where(CharacterState.character_id == character.id)
-                )
-                if fresh_version is None or int(fresh_version) != int(pg_state.version):
-                    logger.debug("reconcile_skip_stale_snapshot", character_id=str(character.id))
+                #
+                # round-5 review L7：新鲜度复核只封住「Tick 已写 PG」的窗口；
+                # Tick 在复核之后、HSET 之前完成双写仍会交错（PG 提交后才写 Redis）。
+                # 故写前持有该角色的 Tick 互斥锁（与 tick_character 同一把
+                # char:tick:lock:{id}），把「复核+写入」整体关进临界区；
+                # 拿不到锁 = Tick 正在运行，跳过本角色即可——对账周期性执行，
+                # 下轮以新快照自愈。
+                tick_lock_key = f"{TICK_LOCK_PREFIX}{character.id}"
+                repair_token = await try_acquire_lock(redis, tick_lock_key, _REPAIR_LOCK_TTL)
+                if repair_token is None:
+                    logger.info("reconcile_repair_skipped_tick_active", character_id=str(character.id))
                     continue
-                from src.core.state_codec import encode_state_mapping
+                try:
+                    fresh_version = await session.scalar(
+                        select(CharacterState.version).where(CharacterState.character_id == character.id)
+                    )
+                    if fresh_version is None or int(fresh_version) != int(pg_state.version):
+                        logger.debug("reconcile_skip_stale_snapshot", character_id=str(character.id))
+                        continue
+                    from src.core.state_codec import encode_state_mapping
 
-                await redis.hset(
-                    key,
-                    mapping=encode_state_mapping({f: getattr(pg_state, f) for f in drift}),  # type: ignore[arg-type]
-                )
-                direction = "pg_to_redis"
-                RECONCILE_REPAIR_TOTAL.labels(direction="pg_to_redis").inc()
-                baseline_version = int(fresh_version)
+                    await redis.hset(
+                        key,
+                        mapping=encode_state_mapping({f: getattr(pg_state, f) for f in drift}),  # type: ignore[arg-type]
+                    )
+                    direction = "pg_to_redis"
+                    RECONCILE_REPAIR_TOTAL.labels(direction="pg_to_redis").inc()
+                    baseline_version = int(fresh_version)
+                finally:
+                    # 释放失败仅告警不中断整轮：TTL 到期自动解锁，
+                    # 最坏代价是下一轮 Tick 晚启动几秒
+                    try:
+                        await release_lock(redis, tick_lock_key, repair_token)
+                    except Exception:
+                        logger.warning("reconcile_repair_lock_release_failed", character_id=str(character.id))
             else:
                 # 以 Redis 为准修正 PG。
                 # round-3 review M9：修复必须经 update_state 走版本自增路径，
                 # 裸 UPDATE 不递增 version，会让 pg_advanced 仲裁的
-                # 「版本单调前进」假设失效，后续轮次无法判定新旧
+                # 「版本单调前进」假设失效，后续轮次无法判定新旧。
+                # 此方向无需 Tick 锁（round-5 review L7 不对称性）：
+                # update_state 版本自增本身参与 pg_advanced 仲裁，与并发 Tick
+                # 的 PG 写入天然串行安全，且本方向不写 Redis
                 from src.db.repositories import CharacterRepository
 
                 update_values: dict[str, Any] = {}

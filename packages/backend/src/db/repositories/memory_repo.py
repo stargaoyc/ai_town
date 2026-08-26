@@ -489,15 +489,25 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         )
         return rows
 
-    async def search_hybrid_global(self, query_vec: list[float], top_k: int = 10) -> list[dict[str, Any]]:
+    async def search_hybrid_global(
+        self,
+        query_vec: list[float],
+        top_k: int = 10,
+        *,
+        allow_cross_character: bool,
+    ) -> list[dict[str, Any]]:
         """跨角色全局混合检索（无 character_id 谓词，探测全部 HASH 分区）
 
         与 search_hybrid 完全同一评分公式（含 GREATEST(0, ·) 时钟回拨钳制）；
         无分区键谓词时 planner 对每个分区的 HNSW 做有序扫描再 MergeAppend。
         JOIN characters 带出角色名，供管理端调试展示归属。
 
-        ⚠️ 仅限管理端调试使用——Tick 主流程必须走带角色过滤的
-        search_hybrid，避免跨角色记忆串扰污染决策上下文。
+        ⚠️ 跨角色检索仅限管理面：调用方必须显式传 allow_cross_character=True
+        声明范围扩张，并自行确保上游有 admin 鉴权（当前唯一调用方
+        admin.vector_search 由 Admin RBAC 依赖守护）；缺省不传即 TypeError，
+        防止未来非管理调用方无意识越过角色边界（round-5 review L8）。
+        Tick 主流程必须走带角色过滤的 search_hybrid，
+        避免跨角色记忆串扰污染决策上下文。
         """
         # 1. 获取底层 asyncpg 连接
         connection = await self.session.connection()

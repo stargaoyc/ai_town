@@ -27,6 +27,12 @@ logger = get_logger(__name__)
 _RESOURCE_LOCK_PREFIX = "char:resource:lock:"
 _DEFAULT_TTL = 30  # 秒
 
+# 角色 Tick 互斥锁前缀（与 CharacterTickEngine.LOCK_PREFIX 同一键族）。
+# 对账等旁路写入要与「正在写状态的 Tick」互斥，必须抢同一把锁；
+# 不直接 import tick 模块取常量：其携带 LLM/Prompt 重依赖，
+# locks 应保持零业务依赖可独立单测（一致性由 tests/test_locks.py 钉死）。
+TICK_LOCK_PREFIX = "char:tick:lock:"
+
 # compare-and-delete：仅当 value 与持有者 token 一致时才删除，
 # 防止锁过期被他人获取后误删他人的锁
 _RELEASE_LOCK_LUA = """
@@ -70,6 +76,18 @@ async def renew_lock(redis: Redis, key: str, token: str, ttl: int) -> bool:
     """
     result = await redis.eval(_RENEW_LOCK_LUA, 1, key, token, ttl)
     return int(result) == 1
+
+
+async def try_acquire_lock(redis: Redis, key: str, ttl: int) -> str | None:
+    """无等待尝试获取单把锁（SET NX EX），成功返回持有者 token，失败立即返回 None
+
+    acquire_resource_locks 面向跨角色多锁场景；周期性后台任务（如对账修复）
+    只需与单个角色的 Tick 互斥，且抢不到时应跳过本轮而非阻塞——
+    单键 fail-fast 语义独立成原语，避免为单键场景套用多锁协议。
+    """
+    token = uuid4().hex
+    acquired = await redis.set(key, token, ex=ttl, nx=True)
+    return token if acquired else None
 
 
 @asynccontextmanager

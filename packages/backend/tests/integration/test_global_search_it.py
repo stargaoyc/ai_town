@@ -69,7 +69,7 @@ class TestSearchHybridGlobal:
         it_session.add_all([mem_alice, mem_bob, mem_orth])
         await it_session.flush()
 
-        rows = await repo.search_hybrid_global(_unit_vec(index=7), top_k=10)
+        rows = await repo.search_hybrid_global(_unit_vec(index=7), top_k=10, allow_cross_character=True)
 
         assert {r["character_id"] for r in rows} == {alice.id, bob.id}, "必须跨角色命中两个分区"
         names = {r["character_name"] for r in rows}
