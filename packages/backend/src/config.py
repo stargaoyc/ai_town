@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # 与迁移 0005 的物理列 halfvec(2048) 对齐；改此值必须同步新迁移重建列与 HNSW 索引
     embedding_dim: int = 2048
 
+    # Embedding 实时维度探针（R6-L4）：启动时对 MODEL_EMBEDDING 做一次真实调用，
+    # 校验其输出维度与 EMBEDDING_DIM 一致——静态 DDL 校验管不到「换模型后输出维度漂移」，
+    # 而错配会在向量写入时逐行失败并 5 次熔断、静默不可恢复。
+    # 语义：探针成功但维度错配 → fail-fast；探针调用失败（网络/上游不可达）→ 告警放行
+    # （boot 不硬依赖实时 API）。离线开发或本地无 embedding 服务时置 False 跳过
+    embedding_probe_enabled: bool = True
+
     # 世界历史保留（审查 §11.2：world_events/world_snapshots 此前无清理策略，长期运行持续增长）
     world_events_retention_days: int = 90
     world_snapshots_keep_latest: int = 3
@@ -171,6 +178,11 @@ class Settings(BaseSettings):
 
     # HNSW 检索参数（SET LOCAL 事务内生效；调大提升召回率、增加延迟）
     hnsw_ef_search: int = 100
+
+    # 混合检索候选池放大倍数（R6-L2）：候选 LIMIT = top_k × 该值。混合公式只能
+    # 重排 HNSW 召回的候选——池越小召回上界越低、多样性越差（原 2× 仅 20 条候选）；
+    # 默认 4 在召回广度与检索延迟间取平衡
+    retrieval_candidate_multiplier: int = 4
 
     # Person Memory 两层结构：未压缩事实条目达到阈值后合并进主档
     person_memory_compact_threshold: int = 20

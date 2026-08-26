@@ -29,13 +29,16 @@ def _unit_vec(dim: int = 2048, index: int = 0) -> list[float]:
 
 
 class StubLLM:
-    """embed 恒返回固定向量，用于控制比对结果"""
+    """embed/embed_batch 恒返回固定向量，用于控制比对结果"""
 
     def __init__(self, vec: list[float]) -> None:
         self._vec = vec
 
     async def embed(self, content: str) -> list[float]:
         return self._vec
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self._vec for _ in texts]
 
 
 @asynccontextmanager

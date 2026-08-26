@@ -163,6 +163,13 @@ EMBEDDING_BATCH_DURATION = Histogram(
     "Embedding 批处理耗时",
 )
 
+# === Embedding 实时维度探针（R6-L4）===
+EMBEDDING_PROBE_TOTAL = Counter(
+    "ai_town_embedding_probe_total",
+    "Embedding 实时维度探针结果",
+    ["status"],  # status: ok / dimension_mismatch / unavailable
+)
+
 # === Redis Streams 队列深度（积压与死信可观测）===
 REDIS_STREAM_MESSAGES = Gauge(
     "ai_town_redis_stream_messages",

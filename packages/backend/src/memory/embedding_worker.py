@@ -35,7 +35,7 @@ class EmbeddingWorker:
 
     职责：
     1. 定期拉取 materialized=false 的记忆（FOR UPDATE SKIP LOCKED）
-    2. 批量调用 LLM embedding API
+    2. 批量调用 LLM embedding API（数组输入，单次往返产出整批向量）
     3. 更新记忆的 embedding 字段并标记 materialized=true
 
     并发安全：
@@ -91,6 +91,9 @@ class EmbeddingWorker:
     async def _process_batch(self) -> int:
         """处理一批未向量化的记忆
 
+        R6-L1：本批全部文本一次性走数组输入 API（llm_client.embed_batch），
+        单次往返产出全部向量；逐行去重/落库/失败 3 环路语义保持与旧逐条版本一致。
+
         Returns:
             本批处理的记忆数量
         """
@@ -109,14 +112,25 @@ class EmbeddingWorker:
                 count=len(episodes),
             )
 
-            # 批量生成 embedding
+            # R6-L1：数组输入单次 API 调用，替代逐条 embed 的 N×RTT 模式
+            texts = [episode.content for episode in episodes]
+            batch_embeddings: list[list[float]] | None
+            batch_error: str | None = None
+            try:
+                batch_embeddings = await self.llm_client.embed_batch(texts)
+            except Exception as e:
+                batch_embeddings = None
+                batch_error = str(e)
+
             success_count = 0
             failed_count = 0
             circuit_break_count = 0
             dedup_count = 0
-            for episode in episodes:
+            for i, episode in enumerate(episodes):
                 try:
-                    embedding = await self.llm_client.embed(episode.content)
+                    if batch_embeddings is None:
+                        raise RuntimeError(f"embedding_batch_failed: {batch_error}")
+                    embedding = batch_embeddings[i]
                     # 改写式去重：与同角色近窗口记忆余弦比对（复审 N7 正确路径）
                     if settings.memory_dedup_enabled:
                         is_dup = await repo.find_paraphrase_duplicate(

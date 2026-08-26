@@ -433,7 +433,8 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
 
         执行流程：
         1. SET LOCAL hnsw.ef_search = 100 —— 提升 HNSW 召回质量
-        2. CTE candidates：先按向量距离召回 Top-K*2 候选，限定角色范围
+        2. CTE candidates：先按向量距离召回 Top-K*multiplier 候选（R6-L2：候选池
+           放大倍数可配 RETRIEVAL_CANDIDATE_MULTIPLIER，默认 4），限定角色范围
         3. 计算 final_score：
            recency = exp(-距今天数/30)（指数衰减）
            final_score = (sim_score*0.6 + importance*0.05) * (0.25 + 0.75*recency)
@@ -479,7 +480,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
             query_sql,
             character_id,
             vec_str,
-            top_k * 2,
+            top_k * settings.retrieval_candidate_multiplier,
             top_k,
         )
         rows = [dict(row) for row in result]
@@ -544,7 +545,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         result = await dbapi_conn.fetch(
             query_sql,
             vec_str,
-            top_k * 2,
+            top_k * settings.retrieval_candidate_multiplier,
             top_k,
         )
         rows = [dict(row) for row in result]

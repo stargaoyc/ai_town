@@ -136,3 +136,57 @@ async def check_embedding_dim(session_factory: Callable[[], AbstractAsyncContext
             "请将 .env 的 EMBEDDING_DIM 改回 2048 或执行配套迁移，二者必须一致"
         )
     logger.info("embedding_dim_check_passed", dim=settings.embedding_dim, columns=len(_VECTOR_COLUMNS))
+
+
+_PROBE_TEXT = "embedding dimension probe"
+
+
+async def probe_embedding_dimension(llm_client: Any) -> None:
+    """启动时对 MODEL_EMBEDDING 做一次真实探针调用，校验输出维度与 EMBEDDING_DIM 一致（R6-L4）
+
+    check_embedding_dim 只能证明「配置声明」与「物理列」一致，管不到「换模型后输出
+    维度漂移」——后者会在向量写入时逐行失败并 5 次熔断、静默不可恢复。
+
+    语义：
+    - 探针调用成功但维度 != EMBEDDING_DIM → fail-fast（RuntimeError，中文信息点名模型与维度）
+    - 探针调用失败（网络/上游不可达/预算熔断）→ warning + 指标后放行启动：
+      boot 不得硬依赖实时 API（本地离线开发也能起），错配成本由后续写入暴露；
+      该权衡的代价在告警文案中点明
+    - EMBEDDING_PROBE_ENABLED=false → 直接跳过（离线开发开关）
+    """
+    from src.observability.metrics import EMBEDDING_PROBE_TOTAL
+
+    if not settings.embedding_probe_enabled:
+        logger.info("embedding_probe_disabled", model=settings.model_embedding)
+        return
+
+    try:
+        probe_vec = await llm_client.embed(_PROBE_TEXT)
+    except Exception as e:
+        EMBEDDING_PROBE_TOTAL.labels(status="unavailable").inc()
+        logger.warning(
+            "embedding_probe_unavailable",
+            model=settings.model_embedding,
+            error=str(e),
+            message=(
+                "Embedding 探针调用失败（网络或上游不可达），跳过实时维度校验继续启动——"
+                "若模型输出维度与 EMBEDDING_DIM 不一致，将在此后的向量写入/检索以运行时报错暴露"
+            ),
+        )
+        return
+
+    if len(probe_vec) != settings.embedding_dim:
+        EMBEDDING_PROBE_TOTAL.labels(status="dimension_mismatch").inc()
+        raise RuntimeError(
+            f"MODEL_EMBEDDING={settings.model_embedding} 实时输出维度 {len(probe_vec)} "
+            f"与 EMBEDDING_DIM={settings.embedding_dim} 不一致——向量写入将批量失败后逐行熔断、"
+            "静默不可恢复；请修正 .env 的 MODEL_EMBEDDING 或 EMBEDDING_DIM（二者必须一致，"
+            "且与 pgvector 物理列维度对齐）"
+        )
+
+    EMBEDDING_PROBE_TOTAL.labels(status="ok").inc()
+    logger.info(
+        "embedding_probe_passed",
+        model=settings.model_embedding,
+        dim=settings.embedding_dim,
+    )

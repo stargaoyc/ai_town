@@ -199,6 +199,61 @@ class LLMClient:
             LLM_CALL_TOTAL.labels(model=settings.model_embedding, status="failed").inc()
             raise
 
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """批量生成文本嵌入向量（数组输入，单次 API 往返）
+
+        R6-L1：embedding worker 此前逐条 embed（N×RTT，吞吐上限 ~20×RTT/5s 周期），
+        改用 OpenAI 兼容 embedding API 的数组输入一次产出 N 个向量。
+        返回顺序与输入顺序一一对应（数组接口的文档化契约）；返回条数不符即显式
+        报错——错位会把向量贴到错误的记忆上，静默错配比失败更危险。
+
+        用量记账口径同 embed()（R4-M5）：token 按字符数//2 逐条估算后求和，
+        单次调用计一笔成本。
+        """
+        await self._check_cost_control()
+        start_perf = time.perf_counter()
+        try:
+            # OpenRouter 需要 extra_headers + 多模态 content 格式（与 embed() 同路径）
+            is_openrouter = "openrouter.ai" in (settings.embedding_model_url or "")
+
+            if is_openrouter:
+                response = await self._embedding_client.embeddings.create(
+                    model=settings.model_embedding,
+                    input=[
+                        {"content": [{"type": "text", "text": text}]}
+                        for text in texts  # type: ignore[arg-type]
+                    ],
+                    encoding_format="float",
+                    extra_headers={
+                        "HTTP-Referer": "https://github.com/ai-town",
+                        "X-OpenRouter-Title": "AI Town",
+                    },
+                )
+            else:
+                response = await self._embedding_client.embeddings.create(
+                    model=settings.model_embedding,
+                    input=texts,
+                )
+
+            if len(response.data) != len(texts):
+                raise RuntimeError(
+                    f"embedding_batch_result_count_mismatch: expected {len(texts)}, got {len(response.data)}"
+                )
+            embeddings = [item.embedding for item in response.data]
+            elapsed = time.perf_counter() - start_perf
+            est_tokens = sum(max(1, len(text) // 2) for text in texts)
+            est_cost = estimate_cost(est_tokens, 0, model=settings.model_embedding)
+            self._record_embedding_metrics(elapsed, est_tokens, est_cost)
+            await self._record_cost_control_success(est_tokens, est_cost)
+            logger.debug("embedding_batch_created", count=len(texts), dim=len(embeddings[0]))
+            return embeddings
+        except Exception:
+            await self._record_cost_control_failure()
+            from src.observability.metrics import LLM_CALL_TOTAL
+
+            LLM_CALL_TOTAL.labels(model=settings.model_embedding, status="failed").inc()
+            raise
+
     def _record_embedding_metrics(self, elapsed: float, tokens: int, cost: float) -> None:
         """记录 embedding 调用的指标与成本（R4-M5 前该路径完全不可观测）"""
         from src.observability.metrics import (
