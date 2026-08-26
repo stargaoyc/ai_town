@@ -11,7 +11,7 @@
       "noUnusedVariables": "error"
     },
     "react": {
-      "exhaustiveDeps": "off"
+      "exhaustiveDeps": "warn"
     },
     "reactHooks": {
       "rulesOfHooks": "error"

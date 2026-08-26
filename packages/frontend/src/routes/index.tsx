@@ -51,6 +51,13 @@ function HomePage() {
             label={health.data?.status === "ok" ? "🟢 运行中" : "🔴 异常"}
           />
         </div>
+        {/* P0-6：降级原因可见化——角色 Tick 缺员时世界仍在推进（小镇假活） */}
+        {(health.data?.degraded_reasons?.length ?? 0) > 0 && (
+          <div className="mt-4 rounded-xl bg-amber-50/80 border border-amber-200/60 px-4 py-2.5 text-sm text-amber-700">
+            ⚠️ 系统降级运行：{health.data?.degraded_reasons?.join("、")} 模块未就绪，
+            世界时钟可能仍在推进但角色行为已停滞。
+          </div>
+        )}
       </GlassCard>
 
       {health.isLoading && <SkeletonList count={1} />}

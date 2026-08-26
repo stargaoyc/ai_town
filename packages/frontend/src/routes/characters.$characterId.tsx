@@ -21,6 +21,7 @@ import {
   useNearbyCharacters,
   queryKeys,
 } from "@/lib/queries";
+import { useChatSocket } from "@/hooks/useChatSocket";
 import type { Message } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/toast";
@@ -62,6 +63,8 @@ function CharacterDetailPage() {
   );
   const { data: nearbyData } = useNearbyCharacters(characterId);
   const sendMessage = useSendMessage();
+  // P0-3：WS 实时通道优先，REST 仅作断连兜底
+  const chat = useChatSocket(characterId);
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
@@ -103,21 +106,25 @@ function CharacterDetailPage() {
     };
     setOptimisticMessages((prev) => [...prev, optimisticMsg]);
 
-    sendMessage.mutate(
-      { characterId, userId: currentUserId ?? "web_user", content },
-      {
-        onSuccess: () => {
-          // 移除乐观消息，服务端会通过 query invalidation 返回完整列表（含角色回复）
-          // 不再乐观添加回复，避免与 query 刷新后的数据重复
-          setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+    if (chat.status === "open" && chat.send(content)) {
+      // WS 通道：回复帧到达后 invalidate 会带回双方消息
+      window.setTimeout(() => {
+        setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+      }, 500);
+    } else {
+      sendMessage.mutate(
+        { characterId, userId: currentUserId ?? "web_user", content },
+        {
+          onSuccess: () => {
+            setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+          },
+          onError: () => {
+            setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+            toast.error("消息发送失败，请重试");
+          },
         },
-        onError: () => {
-          // 发送失败也移除乐观消息
-          setOptimisticMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
-          toast.error("消息发送失败，请重试");
-        },
-      },
-    );
+      );
+    }
     setInput("");
   };
 
@@ -287,6 +294,16 @@ function CharacterDetailPage() {
         <GlassCard>
           <h3 className="font-semibold text-sakura-600 mb-4 flex items-center gap-2 text-lg">
             <MessageCircle className="w-5 h-5" /> 对话
+            {/* P0-3/P1-18：连接状态可见化——open=WS 实时，其余为 REST 兜底 */}
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full ml-auto ${
+                chat.status === "open"
+                  ? "bg-emerald-100/70 text-emerald-600"
+                  : "bg-amber-100/70 text-amber-600"
+              }`}
+            >
+              {chat.status === "open" ? "实时连接" : "轮询模式"}
+            </span>
           </h3>
           {hasMoreMessages && (
             <div className="flex justify-center mb-3">

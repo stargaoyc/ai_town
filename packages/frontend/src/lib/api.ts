@@ -1,10 +1,36 @@
-import type { components, paths } from "@/types/api-generated";
+import type {
+  Action,
+  ActionEntry,
+  AdminStatus,
+  AppNotification,
+  Character,
+  CharacterState,
+  Conversation,
+  DetailedMetrics,
+  DiaryEntry,
+  LogEntry,
+  McpServerEntry,
+  McpToolEntry,
+  Memory,
+  Message,
+  MessageStats,
+  ModuleEntry,
+  NearbyCharacterEntry,
+  OnebotMessageEntry,
+  PersonMemoryEntry,
+  PlanEntry,
+  ReflectionEntry,
+  RelationEntry,
+  Scene,
+  ShareEntry,
+  SnapshotEntry,
+  StateHistoryEntry,
+  VectorSearchResult,
+  WorldEventEntry,
+  WorldState,
+} from "./api-types";
 
 const BASE_URL = "/api/v1";
-
-// 后端 OpenAPI 契约类型（pnpm gen:api 生成）。新端点落地后运行
-// `pnpm gen:api` 刷新，逐步用 SchemaPath 替换手写 interface。
-export type SchemaPath<P extends keyof paths> = paths[P];
 
 function getToken(): string | null {
   return localStorage.getItem("token");
@@ -43,64 +69,13 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
   return res.json();
 }
 
-// 类型边界（审查 §十-P2）：以下手写 interface 为临时契约——后端 OpenAPI 尚未输出
-// 命名 components.schemas，gen:api 产物仅含 paths。后端补齐响应模型后应将本节
-// interface 全部替换为 components 引用并删除。
-export interface Character {
-  id: string;
-  name: string;
-  age?: number;
-  occupation?: string;
-  is_active: boolean;
-  traits?: Record<string, unknown>;
-  backstory?: string;
-  avatar_url?: string;
-  state?: Partial<CharacterState>;
-}
-
-export type CharacterState = components["schemas"]["CharacterStateOut"];
-
-// 类型收敛（复审 #19）：WorldState 已由 OpenAPI 命名模型生成，
-// 后端 GET /world 挂载 response_model=WorldStateOut，pnpm gen:api 自动同步
-export type WorldState = components["schemas"]["WorldStateOut"];
-
-export interface Action {
-  id: string;
-  name: string;
-  description?: string;
-  category: string;
-}
-
-export interface Memory {
-  id: string;
-  character_id: string;
-  content: string;
-  importance: number;
-  timestamp: string;
-  is_reflected: boolean;
-  source_type: string;
-}
-
-export type Message = components["schemas"]["MessageOut"];
-
-export type Conversation = components["schemas"]["ConversationOut"];
-
-export interface AdminStatus {
-  redis: string;
-  world_engine: { running: boolean; tick_id: number; is_leader: boolean };
-  character_engine: { available: boolean; tick_interval: number };
-  action_registry: { initialized: boolean; action_count: number };
-  llm: { initialized: boolean; model: string };
-}
-
-export type Scene = components["schemas"]["SceneOut"];
-
 export const api = {
   getHealth: () =>
     fetch("/health").then((r) => r.json()) as Promise<{
       status: string;
       world_tick: number;
       redis: string;
+      degraded_reasons?: string[];
     }>,
 
   getCharacters: (params?: { limit?: number; active_only?: boolean }) => {
@@ -383,96 +358,36 @@ export const api = {
     ),
 };
 
-// ===== 扩展类型定义 =====
-
-export type StateHistoryEntry = components["schemas"]["StateHistoryPointOut"];
-
-export type WorldEventEntry = components["schemas"]["WorldEventEntryOut"];
-
-export type ReflectionEntry = components["schemas"]["ReflectionOut"];
-
-export type PlanEntry = components["schemas"]["PlanOut"];
-
-export type ActionEntry = components["schemas"]["ActionRecordOut"];
-
-export type RelationEntry = components["schemas"]["RelationOut"];
-
-export type NearbyCharacterEntry = components["schemas"]["NearbyCharacterOut"];
-
-export type OnebotMessageEntry = components["schemas"]["OnebotMessageEntryOut"];
-
-export type ShareEntry = components["schemas"]["ShareEntryOut"];
-
-export type VectorSearchResult = components["schemas"]["_VectorSearchItemOut"];
-
-export type SnapshotEntry = components["schemas"]["SnapshotEntryOut"];
-
-export type MessageStats = components["schemas"]["MessageStatsOut"];
-
-export type ModuleEntry = components["schemas"]["ModuleEntryOut"];
-
-export interface McpServerEntry {
-  name: string;
-  type: string;
-  description?: string;
-  status?: string;
-  enabled?: boolean;
-}
-
-export interface McpToolEntry {
-  name: string;
-  server: string;
-  server_type: string;
-}
-
-// ===== 监控指标 & 日志类型 =====
-
-export interface LogEntry {
-  timestamp?: string;
-  level?: string;
-  event?: string;
-  [key: string]: unknown;
-}
-
-export type AppNotification = components["schemas"]["AppNotificationOut"];
-
-export interface DetailedMetrics {
-  world: {
-    tick_total?: number;
-    errors_total?: number;
-    current_tick_id?: number;
-    duration_sum?: number;
-    duration_count?: number;
-  };
-  characters: {
-    tick_total?: number;
-    by_character?: Record<string, number>;
-    errors_by_character?: Record<string, number>;
-  };
-  actions: {
-    by_action?: Record<string, { success: number; failed: number }>;
-  };
-  llm: {
-    cost_total_usd?: number;
-    tokens_total?: number;
-    calls_total?: number;
-    calls?: Record<string, { success: number; failed: number }>;
-    tokens?: Record<string, { prompt: number; completion: number }>;
-  };
-  messages: {
-    by_platform?: Record<string, { success: number; failed: number }>;
-  };
-  system: {
-    active_characters?: number;
-    redis_connected?: number;
-  };
-  http: {
-    requests?: Record<string, { total: number; by_status: Record<string, number> }>;
-  };
-}
-
-// ===== 日记 & 角色对用户的记忆 =====
-
-export type DiaryEntry = components["schemas"]["DiaryOut"];
-
-export type PersonMemoryEntry = components["schemas"]["PersonMemoryRecordOut"];
+// P1-16：契约类型拆分至 api-types.ts，统一 re-export 保持 `from "@/lib/api"` 兼容
+export type {
+  SchemaPath,
+  Character,
+  CharacterState,
+  WorldState,
+  Action,
+  Memory,
+  Message,
+  Conversation,
+  AdminStatus,
+  Scene,
+  StateHistoryEntry,
+  WorldEventEntry,
+  ReflectionEntry,
+  PlanEntry,
+  ActionEntry,
+  RelationEntry,
+  NearbyCharacterEntry,
+  OnebotMessageEntry,
+  ShareEntry,
+  VectorSearchResult,
+  SnapshotEntry,
+  MessageStats,
+  ModuleEntry,
+  McpServerEntry,
+  McpToolEntry,
+  LogEntry,
+  AppNotification,
+  DetailedMetrics,
+  DiaryEntry,
+  PersonMemoryEntry,
+} from "./api-types";

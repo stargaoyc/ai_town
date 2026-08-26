@@ -97,6 +97,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint with oxlint
         run: pnpm run lint
+      - name: Line limit guard (P3-5)
+        run: node scripts/check-loc.mjs
       - name: Type check
         run: pnpm run typecheck
       - name: API type contract guard
