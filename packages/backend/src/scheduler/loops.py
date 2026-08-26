@@ -36,7 +36,11 @@ from src.db.models import (
 )
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
-from src.memory.diary_service import DiaryService, _diary_trigger_periods, _world_real_window_seconds
+from src.memory.diary_service import (
+    DiaryService,
+    diary_trigger_periods,
+    world_real_window_seconds,
+)
 
 logger = get_logger(__name__)
 
@@ -207,10 +211,20 @@ async def diary_scheduler_loop() -> None:
             except Exception as e:
                 logger.warning("daily_plan_expire_failed", error=str(e))
 
-            periods_to_generate = _diary_trigger_periods(world_now)
+            periods_to_generate = diary_trigger_periods(world_now)
 
             if not periods_to_generate:
                 continue
+
+            # P2-8：倍率取自时间演化器落盘的快照，与幂等键同一口径
+            time_hash = await redis.hgetall("world:state:time")
+            multiplier: float | None = None
+            multiplier_raw = time_hash.get("clock_multiplier") if time_hash else None
+            if multiplier_raw:
+                try:
+                    multiplier = float(multiplier_raw)
+                except (TypeError, ValueError):
+                    multiplier = None
 
             logger.info(
                 "diary_scheduler_trigger",
@@ -224,7 +238,9 @@ async def diary_scheduler_loop() -> None:
             for period in periods_to_generate:
                 try:
                     # 记忆按真实时间戳存储：世界天数经时钟倍率换算为真实窗口再查询
-                    window_start = real_now - timedelta(seconds=_world_real_window_seconds(period))
+                    window_start = real_now - timedelta(
+                        seconds=world_real_window_seconds(period, clock_multiplier=multiplier)
+                    )
                     summary = await service.generate_diaries_for_all_characters(
                         period,
                         world_now=world_now,
@@ -276,6 +292,36 @@ async def reconciliation_loop() -> None:
         except Exception as e:
             logger.error("reconciliation_loop_error", error=str(e), exc_info=True)
             # 继续循环，不中断
+
+
+async def hnsw_reindex_loop() -> None:
+    """HNSW 索引周期性在线重建（P1-1）
+
+    保留周期大量 DELETE 后 pgvector HNSW 的索引项不被 VACUUM 回收，
+    长期运行索引膨胀、召回衰减；REINDEX CONCURRENTLY 不阻塞读写。
+    必须在 AUTOCOMMIT 连接上执行（CONCURRENTLY 不能运行在事务块内）。
+    """
+    from sqlalchemy import text
+
+    interval_days = settings.hnsw_reindex_interval_days
+    if not settings.hnsw_reindex_enabled or interval_days <= 0:
+        logger.info("hnsw_reindex_loop_disabled")
+        return
+    interval = interval_days * 86400
+    logger.info("hnsw_reindex_loop_started", interval_days=interval_days)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            async with db.engine.connect() as conn:
+                await conn.execution_options(isolation_level="AUTOCOMMIT")
+                await conn.execute(text("REINDEX INDEX CONCURRENTLY idx_mem_embedding_hnsw;"))
+            logger.info("hnsw_reindex_completed")
+        except asyncio.CancelledError:
+            logger.info("hnsw_reindex_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("hnsw_reindex_failed", error=str(e), exc_info=True)
 
 
 async def redis_health_loop() -> None:

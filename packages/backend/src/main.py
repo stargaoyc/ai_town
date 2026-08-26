@@ -72,6 +72,7 @@ from src.scheduler import PartitionScheduler
 from src.scheduler.loops import (
     character_tick_loop,
     diary_scheduler_loop,
+    hnsw_reindex_loop,
     memory_retention_loop,
     person_memory_compaction_loop,
     person_memory_heat_decay_loop,
@@ -79,7 +80,7 @@ from src.scheduler.loops import (
     redis_health_loop,
 )
 from src.security.rate_limiter import RateLimiter
-from src.security.startup_checks import check_default_secrets
+from src.security.startup_checks import check_cors_origins, check_default_secrets
 
 # 尝试导入 CharacterTickEngine（可能尚未创建）
 try:
@@ -126,8 +127,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("ai_town_backend_starting")
 
     # 安全检查（S-3）：默认弱凭据在生产模式（ENVIRONMENT=production）下 fail-fast，
-    # 开发模式仅告警
+    # 开发模式仅告警；CORS_ORIGINS 生产必填（P0-7）
     check_default_secrets()
+    check_cors_origins()
 
     # 同步全局实例到 runtime 容器
     runtime.set_ws_manager(ws_manager)
@@ -362,6 +364,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("redis_health_loop_start_failed", error=str(e), exc_info=True)
 
+    # 5.66 启动 HNSW 索引周期重建（P1-1：DELETE 后索引项不被 VACUUM 回收）
+    hnsw_reindex_task: asyncio.Task[None] | None = None
+    try:
+        hnsw_reindex_task = asyncio.create_task(hnsw_reindex_loop())
+        logger.info("hnsw_reindex_loop_started")
+    except Exception as e:
+        logger.error("hnsw_reindex_loop_start_failed", error=str(e), exc_info=True)
+
     # 5.6 启动时同步活跃角色数指标（避免重启后指标面板显示 0）
     try:
         from src.db.session import db as _db
@@ -499,6 +509,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis_health_task.cancel()
         try:
             await redis_health_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消 HNSW 重建循环
+    if hnsw_reindex_task:
+        hnsw_reindex_task.cancel()
+        try:
+            await hnsw_reindex_task
         except asyncio.CancelledError:
             pass
 

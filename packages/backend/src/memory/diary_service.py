@@ -45,6 +45,19 @@ def _world_real_window_seconds(period: str) -> float:
     return world_days * 1440 * settings.world_tick_seconds / settings.world_tick_minutes
 
 
+def world_real_window_seconds(period: str, clock_multiplier: float | None = None) -> float:
+    """公有入口（P2-4）：支持传入 Redis 快照的时钟倍率
+
+    P2-8：倍率必须来自与幂等键同一时间点的快照——配置热改后按旧倍率
+    计算的窗口与新倍率的幂等键混用会重复或漏生成日记。
+    multiplier 语义 = 虚拟分钟/真实秒；缺省回落到当前配置计算。
+    """
+    if clock_multiplier is None or clock_multiplier <= 0:
+        return _world_real_window_seconds(period)
+    world_days = DiaryService.PERIOD_DAYS[period]
+    return world_days * 1440 / clock_multiplier
+
+
 def _diary_trigger_periods(world_now: datetime) -> list[str]:
     """日记触发矩阵（纯函数）：按世界时间判断本轮需生成的日记种类
 
@@ -62,6 +75,10 @@ def _diary_trigger_periods(world_now: datetime) -> list[str]:
     if day_of_year % 365 == 0:
         periods.append("year")
     return periods
+
+
+# P2-4：调度器等跨模块消费方统一使用公有名，不再触碰下划线私有符号
+diary_trigger_periods = _diary_trigger_periods
 
 
 def _derive_diary_dates(period: str, world_now: datetime) -> tuple[datetime, datetime | None]:
