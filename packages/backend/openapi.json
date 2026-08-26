@@ -845,6 +845,21 @@
         }
       }
     },
+    "/api/v1/system/alerts/webhook": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Receive Alerts",
+        "description": "接收 Alertmanager webhook 告警（R4-M2：告警不再只进 UI）\n\n鉴权独立于 JWT 中间件（AuthMiddleware 已豁免该精确路径）：\nAuthorization: Bearer <alert_webhook_token>，未配置 token 时一律 403。\n每条告警记结构化 warning 并累加 ai_town_alerts_received_total 计数器，\n使告警在日志与指标两个通道可见。",
+        "operationId": "receive_alerts_api_v1_system_alerts_webhook_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/api/v1/modules": {
       "get": {
         "tags": [
@@ -1892,7 +1907,7 @@
           "messages"
         ],
         "summary": "Send Message",
-        "description": "发送消息给角色并获取回复\n\nArgs:\n    character_id: 角色 UUID\n    user_id: 用户标识\n    platform: 来源平台（web/qq/lark/internal）\n    content: 用户消息内容\n\nReturns:\n    角色回复内容与元数据（token/cost/conversation_id）",
+        "description": "发送消息给角色并获取回复\n\n身份绑定（R4-H3）：JWT 用户只能以本人身份发言（user_id 必须等于 token sub）；\nAPI Key 属机器对机器桥接（如 OneBot REST 调用方），允许代发任意 user_id。\n\nArgs:\n    principal: 鉴权主体（{\"user_id\", \"auth_method\"}）\n    character_id: 角色 UUID\n    user_id: 用户标识\n    platform: 来源平台（web/qq/lark/internal）\n    content: 用户消息内容\n\nReturns:\n    角色回复内容与元数据（token/cost/conversation_id）\n\nRaises:\n    HTTPException: 403 当 JWT 用户的 user_id 与 token sub 不一致",
         "operationId": "send_message_api_v1_messages_send_post",
         "parameters": [
           {
@@ -2716,6 +2731,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/metrics-prometheus": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Metrics Prometheus",
+        "description": "Prometheus 文本格式指标（管理端专用）\n\n公网 /metrics 已被 nginx 刻意 404（防止指标泄露，见部署加固 M11）；\n前端监控面板经此 RBAC 保护端点获取同一份数据。",
+        "operationId": "metrics_prometheus_api_v1_admin_metrics_prometheus_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -3638,6 +3675,14 @@
               }
             ],
             "title": "Current World Time"
+          },
+          "degraded_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Degraded Reasons",
+            "default": []
           }
         },
         "type": "object",
