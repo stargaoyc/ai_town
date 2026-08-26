@@ -38,7 +38,7 @@
 | 异步驱动   | asyncpg + SQLAlchemy 2.0                           |
 | ORM 迁移   | alembic                                                              |
 | 前端       | React 19.2 + TypeScript 7.0 + Vite (Rolldown) 8.1 + React Compiler   |
-| 前端状态   | TanStack Router 1.170 + TanStack Query 5.101 + Zustand 5.0 + Zod 4.4 |
+| 前端状态   | TanStack Router 1.170 + TanStack Query 5.101 + Zustand 5.0 |
 | 前端 Lint  | oxlint + oxfmt                                                       |
 | 前端组件   | 自建 Glassmorphism 组件库 + Tailwind CSS v4 + Framer Motion          |
 | 主数据库   | PostgreSQL 18 + pgvector + pg_uuidv7 + JSONB + 分区表                |

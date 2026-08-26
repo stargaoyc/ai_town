@@ -201,6 +201,8 @@ CREATE TABLE memory_episodes (
                        CHECK (source_type IN ('action','conversation','reflection','event')),
     PRIMARY KEY (id, character_id)                          -- 分区表主键必须含分区键
 ) PARTITION BY HASH (character_id);
+-- P2-16：内容全文检索表达式索引（0019 迁移），关键词查询不再完全依赖向量
+CREATE INDEX idx_mem_content_fts ON memory_episodes USING gin (to_tsvector('simple', content));
 
 -- 16 个 HASH 分区（MODULUS 16，HASH 分区数固定，扩容到 32 需全表重分布）
 CREATE TABLE memory_episodes_p00 PARTITION OF memory_episodes FOR VALUES WITH (MODULUS 16, REMAINDER 0);
@@ -647,7 +649,7 @@ class MemoryEpisode(Base):
         ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
     )
     content: Mapped[str] = mapped_column(String)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    embedding: Mapped[list[float] | None] = mapped_column(HALFVEC(2048))  # P3-3：与 0005 迁移对齐
     importance: Mapped[int] = mapped_column(Integer, default=5)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     action_id: Mapped[str | None]
