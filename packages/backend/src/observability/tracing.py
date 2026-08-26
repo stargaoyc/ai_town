@@ -40,7 +40,7 @@ try:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, ParentBased
 
     _OTEL_SDK_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -50,7 +50,8 @@ except ImportError:  # pragma: no cover
     TracerProvider = None  # type: ignore[assignment, misc]
     BatchSpanProcessor = None  # type: ignore[assignment, misc]
     ConsoleSpanExporter = None  # type: ignore[assignment, misc]
-    TraceIdRatioBased = None  # type: ignore[assignment, misc]
+    ParentBased = None  # type: ignore[assignment, misc]
+    ALWAYS_ON = None  # type: ignore[assignment]
 
 # 自动 instrument：FastAPI
 try:
@@ -85,10 +86,11 @@ _initialized = False
 def setup_tracing(app: FastAPI) -> None:
     """初始化 OpenTelemetry SDK。
 
-    - 从 settings 读取 otel_endpoint / otel_service_name / otel_traces_sampler_rate
-    - otel_endpoint 为 None 时使用 ConsoleSpanExporter（开发环境）
+    - 从 settings 读取 otel_endpoint / otel_service_name
+    - otel_endpoint 为 None 时禁用 tracing（不导出）
     - 否则使用 OTLPSpanExporter（HTTP 协议，发送到 otel_endpoint）
-    - 使用 BatchSpanProcessor + TraceIdRatioBased 采样
+    - 头采样固定 ParentBased(ALWAYS_ON)，保留与否由 OTel Collector
+      尾采样统一决定（错误必采 / >2s 必采 / 20% 基线）
     - 注册 FastAPIInstrumentor / AsyncpgInstrumentor 自动 instrument
 
     Args:
@@ -110,8 +112,10 @@ def setup_tracing(app: FastAPI) -> None:
     # 资源：标识服务
     resource = Resource.create({"service.name": settings.otel_service_name})
 
-    # 采样器
-    sampler = TraceIdRatioBased(rate=settings.otel_traces_sampler_rate)
+    # 采样器：头部全采（R6-H4），错误链路不再可能被头部采样提前丢弃；
+    # 保留决策完全移交 Collector 尾采样。ParentBased 尊重跨服务传播的
+    # 上游采样决定，避免同一链路各段判定不一致
+    sampler = ParentBased(root=ALWAYS_ON)
 
     # TracerProvider
     tracer_provider = TracerProvider(resource=resource, sampler=sampler)
@@ -136,7 +140,6 @@ def setup_tracing(app: FastAPI) -> None:
             "otel_tracing_otlp_exporter",
             endpoint=settings.otel_endpoint,
             service_name=settings.otel_service_name,
-            sampler_rate=settings.otel_traces_sampler_rate,
         )
 
     tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -234,8 +237,8 @@ def trace_span(name: str) -> Callable[[F], F]:
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as span:
-                    # 头采样丢弃 / NoOp tracer 下 span 不记录：签名绑定与 repr 截断
-                    # 纯属浪费，全部属性操作以 is_recording() 为门控保持近零开销
+                    # NoOp tracer / 远端父链未采样时 span 不记录：签名绑定与 repr
+                    # 截断纯属浪费，全部属性操作以 is_recording() 为门控保持近零开销
                     recording = span is not None and span.is_recording()
                     if recording:
                         span.set_attribute("code.function", func.__name__)

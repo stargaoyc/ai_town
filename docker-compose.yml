@@ -7,7 +7,7 @@
 # 使用方法：
 #   1. 复制 .env.example 为 .env 并填写配置。POSTGRES_PASSWORD / REDIS_PASSWORD 为必填项
 #      （${VAR:?} 插值校验，缺失时 compose 直接报错拒绝启动）；启用 observability profile
-#      还需 GRAFANA_ADMIN_PASSWORD。
+#      还需 GRAFANA_ADMIN_PASSWORD 与三个 LANGFUSE_* 密钥。
 #   2. docker compose up -d              # 全栈（PG/Redis/后端/前端）
 #
 # 分层启动：
@@ -350,6 +350,89 @@ services:
       - prometheus
       - loki
       - jaeger
+    logging: *default-logging
+    networks:
+      - aitown-net
+    profiles: [observability]
+
+  # ============================================================
+  # Langfuse（LLM Trace 自托管，R6-H3）
+  # ============================================================
+
+  # Langfuse 专用 PG：不暴露任何宿主端口，仅 compose 内网可达；
+  # 凭据为内部固定值（与主库 POSTGRES_PASSWORD 无关），泄露面限于容器网络
+  langfuse-db:
+    image: postgres:18-alpine
+    container_name: aitown-langfuse-db
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+      # 官方 postgres:18 镜像默认 PGDATA 已不在 /var/lib/postgresql/data 下，
+      # 显式指回挂载路径内，保证 bind mount 真正持久化数据
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data/langfuse-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - aitown-net
+    profiles: [observability]
+
+  langfuse-web:
+    image: langfuse/langfuse:2
+    container_name: aitown-langfuse-web
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3001 # 生产经反代暴露时改为实际域名
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET_required}
+      SALT_KEY: ${LANGFUSE_SALT_KEY:?LANGFUSE_SALT_KEY_required}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY_required}
+      TELEMETRY_ENABLED: "false"
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/public/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    networks:
+      - aitown-net
+    profiles: [observability]
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:2
+    container_name: aitown-langfuse-worker
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      # worker 校验与 web 的关键 env 一致，三个密钥必须同步提供
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET_required}
+      SALT_KEY: ${LANGFUSE_SALT_KEY:?LANGFUSE_SALT_KEY_required}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY_required}
+      TELEMETRY_ENABLED: "false"
+      TZ: Asia/Shanghai
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-web:
+        condition: service_started
     logging: *default-logging
     networks:
       - aitown-net

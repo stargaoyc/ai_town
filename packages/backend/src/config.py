@@ -80,7 +80,6 @@ class Settings(BaseSettings):
     # Observability
     otel_endpoint: str | None = None
     otel_service_name: str = "ai-town-backend"
-    otel_traces_sampler_rate: float = 0.5
     langfuse_host: str | None = None
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None

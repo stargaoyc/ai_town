@@ -373,21 +373,20 @@ Langfuse 与 OTel 通过 metadata 中的 `otel_trace_id` 关联，可在 Jaeger 
 
 ## 十、采样策略
 
-**当前实现为头采样（head sampling），OTLP HTTP 直连 Jaeger，无 Collector：**
+**头部采样已改为 always-on，是否保留链路由 OTel Collector 尾采样统一决定：**
 
-- 采样器为 `TraceIdRatioBased(OTEL_TRACES_SAMPLER_RATE)`（默认 0.5，见 `.env` 的
-  `OTEL_TRACES_SAMPLER_RATE`），在 trace 根部一次性决定整条链路是否记录；
-- 后端把 span 经 BatchSpanProcessor 直接发往 `OTEL_ENDPOINT`（Jaeger 的 4318 端口），
-  链路中不存在 OTel Collector；
-- 因此**没有「错误 Span 必采」的保证**：采样决定发生在请求开始时，与该请求最终
-  是否出错无关；
+- 后端采样器为 `ParentBased(ALWAYS_ON)`：本地全量生成 span 并发往 Collector，
+  错误 Span 不可能再因头部采样被提前丢弃；
+- `ParentBased` 尊重跨服务传播的上游采样决定，避免同一链路各段判定不一致；
+- 真正的保留决策在 Collector 的 `tail_sampling`：**错误必采 / >2s 必采 / 其余 20% 基线**，
+  决策等待 5s 聚合整条 trace 后统一判定（见 `docker/observability/otel-collector.yml`）；
 - 日志不受采样影响——structlog 只要 SpanContext 有效即注入 `trace_id`/`span_id`
   （不检查 `is_recording()`，R5-M17），未被采样的流量仍可从 Loki 按 trace_id
   还原事件序列，只是 Jaeger 中没有对应链路。
 
-后续可选演进（当前未实施）：引入 OTel Collector 做 tail-based sampling
-（错误/慢链路优先保留），或将采样率临时调高。在此之前，告警与排障流程
-不得假设「错误 trace 一定能在 Jaeger 中找到」。
+> 注意：未部署 observability profile（无 Collector）时，全量 span 会发往
+> `OTEL_ENDPOINT` 指向的后端存储，请确保该端点自身具备容量或显式关闭
+> （`OTEL_ENDPOINT` 留空即禁用 tracing）。
 
 ---
 
@@ -416,6 +415,10 @@ Langfuse 与 OTel 通过 metadata 中的 `otel_trace_id` 关联，可在 Jaeger 
 | `loki`       | `grafana/loki:3.0.0`            | 3100                    | 日志聚合存储                             |
 | `jaeger`     | `jaegertracing/all-in-one:1.60` | 16686 (UI), 4318 (OTLP) | 链路追踪存储与查询                       |
 | `alloy`      | `grafana/alloy:latest`          | 12345                   | 统一日志采集器（Docker 容器日志 → Loki） |
+| `otel-collector` | `otel/opentelemetry-collector-contrib:0.104.0` | 4317/4318 (OTLP) | 尾采样（错误必采 / >2s / 20% 基线）后入 Jaeger |
+| `langfuse-db` | `postgres:18-alpine`           | —（仅内网）             | Langfuse 专用 PostgreSQL                 |
+| `langfuse-web` | `langfuse/langfuse:2`         | 3001                    | Langfuse UI / LLM Trace 查询             |
+| `langfuse-worker` | `langfuse/langfuse-worker:2` | —                     | Langfuse 异步任务处理                    |
 | `grafana`    | `grafana/grafana:12.0.0`        | 3000                    | 统一可视化面板                           |
 
 ### 11.3 启动方式
@@ -434,6 +437,7 @@ docker compose --profile observability up -d
 | Jaeger UI  | http://localhost:16686 | —                |
 | Loki API   | http://localhost:3100  | —                |
 | Alloy UI   | http://localhost:12345 | —                |
+| Langfuse   | http://localhost:3001  | 首次访问自行注册 |
 
 ### 11.5 后端接入
 
@@ -482,6 +486,21 @@ Grafana 数据源已配置双向联动：
 
 - Loki 数据源 `derivedFields` 提取 `trace_id` 并关联 Jaeger（uid: `jaeger`）
 - Jaeger 数据源 `tracesToLogs` 关联 Loki（uid: `loki`），按 `trace_id` 标签过滤
+
+### 11.8 Langfuse（LLM Trace 自托管）
+
+Langfuse 属于 observability profile（自带专用 PG，数据落 `./data/langfuse-db/`，
+不暴露宿主端口）。部署与接入步骤：
+
+1. `.env` 填入三个 Langfuse 容器密钥（`openssl rand -base64 32` 生成）：
+   `LANGFUSE_NEXTAUTH_SECRET` / `LANGFUSE_SALT_KEY` / `LANGFUSE_ENCRYPTION_KEY`
+   （compose 以 `${VAR:?}` 强制必填）；
+2. `docker compose --profile observability up -d`；
+3. 打开 http://localhost:3001 注册首个账号，在 UI 创建 API Key；
+4. 将 pk/sk 填入 `.env` 的 `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`
+   （`LANGFUSE_HOST=http://localhost:3001`），重启 backend 生效。
+
+容器三密钥（加密 Langfuse 自身数据）与 API Key（backend 上报凭据）相互独立。
 
 ---
 

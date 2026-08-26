@@ -110,6 +110,11 @@ REDIS_PASSWORD=$(openssl rand -hex 24)
 # Grafana 管理密码（仅 --profile observability 需要，同样强制必填）
 GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)
 
+# Langfuse 容器密钥（仅 --profile observability 需要，同样强制必填；base64 32 生成）
+LANGFUSE_NEXTAUTH_SECRET=$(openssl rand -base64 32)
+LANGFUSE_SALT_KEY=$(openssl rand -base64 32)
+LANGFUSE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+
 # LLM API Key
 OPENAI_API_KEY=sk-your-api-key
 
@@ -294,11 +299,14 @@ asyncio.run(main())
 | `POSTGRES_PASSWORD`       | 数据库密码     | `openssl rand -hex 24`     |
 | `REDIS_PASSWORD`          | Redis 密码     | `openssl rand -hex 24`     |
 | `GRAFANA_ADMIN_PASSWORD`  | Grafana 管理密码 | `openssl rand -hex 24`   |
+| `LANGFUSE_NEXTAUTH_SECRET` | Langfuse 容器密钥 | `openssl rand -base64 32` |
+| `LANGFUSE_SALT_KEY`       | Langfuse 容器密钥 | `openssl rand -base64 32` |
+| `LANGFUSE_ENCRYPTION_KEY` | Langfuse 容器密钥 | `openssl rand -base64 32` |
 | `OPENAI_API_KEY`          | LLM API Key    | `sk-xxx`                   |
 | `JWT_SECRET`              | JWT 签名密钥   | 随机 32 字节               |
 | `ADMIN_PASSWORD`          | 管理员密码     | `your-password`            |
 
-> 前三项由 `docker-compose.yml` 以 `${VAR:?}` 插值校验强制必填：缺失或为空时
+> 前六项由 `docker-compose.yml` 以 `${VAR:?}` 插值校验强制必填：缺失或为空时
 > `docker compose up` 直接失败，不会带默认弱口令启动。
 
 ### 5.2 Docker Compose 环境变量覆盖
@@ -439,8 +447,20 @@ docker compose --profile observability up -d
 | Prometheus | http://localhost:9090         | -                              |
 | Jaeger     | http://localhost:16686        | -                              |
 | Loki       | http://localhost:3100         | 通过 Grafana 查询              |
+| Langfuse   | http://localhost:3001         | 首次访问自行注册               |
 
-### 8.3 预置 Dashboard
+### 8.3 Langfuse 部署与接入
+
+Langfuse 属 observability profile（自带专用 PG，数据落 `./data/langfuse-db/`，不暴露宿主端口）：
+
+1. `.env` 填入三个容器密钥：`LANGFUSE_NEXTAUTH_SECRET` / `LANGFUSE_SALT_KEY` /
+   `LANGFUSE_ENCRYPTION_KEY`（`openssl rand -base64 32`，compose 强制必填）；
+2. `docker compose --profile observability up -d`；
+3. 打开 http://localhost:3001 注册账号并创建 API Key；
+4. pk/sk 填入 `.env` 的 `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`
+   （`LANGFUSE_HOST=http://localhost:3001`），重启 backend 生效。
+
+### 8.4 预置 Dashboard
 
 Grafana 启动后自动加载 3 个预置 Dashboard（位于 `docker/observability/grafana/dashboards/`）：
 
@@ -450,7 +470,7 @@ Grafana 启动后自动加载 3 个预置 Dashboard（位于 `docker/observabili
 | LLM 监控         | `ai-town-llm.json`            | LLM 调用耗时、Token、成本、错误率         |
 | Character Tick   | `ai-town-character-tick.json` | 角色 Tick 耗时、Action 分布、错误         |
 
-### 8.4 日志查看
+### 8.5 日志查看
 
 ```bash
 # 查看后端日志

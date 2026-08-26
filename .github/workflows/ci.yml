@@ -124,6 +124,10 @@ jobs:
       # compose 对所有服务（含未激活 profile 的 observability 层）做插值，
       # grafana 的 ${GRAFANA_ADMIN_PASSWORD:?} 缺失会让 config 阶段直接失败
       GRAFANA_ADMIN_PASSWORD: ci-smoke-grafana
+      # langfuse-web/worker 的 ${LANGFUSE_*:?} 同理在插值期强制必填
+      LANGFUSE_NEXTAUTH_SECRET: ci-smoke-langfuse-nextauth
+      LANGFUSE_SALT_KEY: ci-smoke-langfuse-salt
+      LANGFUSE_ENCRYPTION_KEY: ci-smoke-langfuse-enc
     steps:
       - uses: actions/checkout@v5
       - name: Validate compose config
