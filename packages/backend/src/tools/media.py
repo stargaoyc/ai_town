@@ -38,7 +38,8 @@ async def generate_video_clip(prompt: str, frames: int = 25) -> dict[str, Any]:
     """根据文字描述生成一段短视频
 
     ⚠️ 同步轮询直至生成完成，典型耗时 1-3 分钟，上限约 10 分钟
-    （LLMClient 内 120 次 × 5 秒轮询间隔）——会占用当前角色 Tick 槽位，
+    （LLMClient 内 MEDIA_VIDEO_MAX_POLLS × MEDIA_VIDEO_POLL_INTERVAL 轮询，
+    可经 .env 调优）——会占用当前角色 Tick 槽位，
     其他角色不受影响。完成后返回视频 URL 与 CQ 码。
 
     Args:

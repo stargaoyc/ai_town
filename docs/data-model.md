@@ -364,7 +364,7 @@ CREATE TABLE conversations (
 );
 
 -- v4 变更：唯一约束改为 (user_id, platform, character_id)，允许同一用户在不同平台对同一角色各持一会话
-CREATE UNIQUE INDEX idx_conv_user_char ON conversations (user_id, platform, character_id);
+CREATE UNIQUE INDEX idx_conv_user_platform_char ON conversations (user_id, platform, character_id);
 -- 按最后消息时间排序活跃会话
 CREATE INDEX idx_conv_last_msg         ON conversations (last_message_at DESC);
 -- 按 character 查询所有相关会话（角色侧主动分享时使用）
@@ -394,12 +394,13 @@ CREATE TABLE world_events (
     event_type  TEXT NOT NULL,                           -- time/weather/scene/resource/event
     payload     JSONB NOT NULL,                          -- 变更内容（仅差分）
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    event_key   TEXT NOT NULL DEFAULT '',                -- 0006 新增：同类事件细分键
+    event_key   VARCHAR(100) NOT NULL DEFAULT 'default',  -- 0006 新增：同类事件细分键
     UNIQUE (tick_id, event_type, event_key)              -- 幂等约束（0006 扩展）
 );
 
-CREATE INDEX idx_world_events_tick      ON world_events (tick_id);
-CREATE INDEX idx_world_events_type_time ON world_events (event_type, created_at DESC);
+CREATE INDEX idx_world_events_tick        ON world_events (tick_id);
+CREATE INDEX idx_world_events_type_time   ON world_events (event_type, created_at DESC);
+CREATE INDEX idx_world_events_created_at  ON world_events (created_at);  -- 0014 新增：保留策略 DELETE 范围扫描
 ```
 
 ### 3.11 world_snapshots（世界快照，冷启动恢复）

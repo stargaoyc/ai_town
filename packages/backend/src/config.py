@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     llm_timeout: int = 30
     llm_max_retries: int = 2
 
+    # 视频生成同步轮询（R5-L13）：generate_video_clip 在 Tick 槽位内轮询直至完成，
+    # 上限 = max_polls × interval 秒。默认 120×5s≈10 分钟；调小可缩短角色被占用的时长，
+    # 但过小会导致长视频任务必然超时失败
+    media_video_poll_interval: int = 5
+    media_video_max_polls: int = 120
+
     # 多模型备用源（JSON 数组，按顺序尝试；失败冷却 5 分钟后仍可作末位兜底）
     # 每项: {"api_key": "...", "base_url": "...", "model": "可选，缺省用 model_chat"}
     llm_fallback_sources: str = "[]"

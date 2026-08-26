@@ -36,10 +36,10 @@ from src.observability.tracing import trace_span
 
 logger = get_logger(__name__)
 
-# 视频生成轮询间隔（秒）
-_VIDEO_POLL_INTERVAL = 5
-# 视频生成最大轮询次数
-_VIDEO_MAX_POLLS = 120
+# 视频生成轮询参数从 settings 读取（R5-L13）：同步轮询占用角色 Tick 槽位，
+# 上限需可按部署调优而非硬编码；默认值维持历史行为（120×5s≈10 分钟）
+_VIDEO_POLL_INTERVAL = settings.media_video_poll_interval
+_VIDEO_MAX_POLLS = settings.media_video_max_polls
 
 # 全库唯一的费用计算入口（见 estimate_cost / get_model_price），
 # 禁止调用方各自硬编码单价。
