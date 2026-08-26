@@ -101,7 +101,6 @@ class ReflectionService:
                     }
                 },
             },
-            model="chat",
         )
         themes = self._parse_themes(result, total=len(episodes))
         if not themes:
@@ -189,7 +188,6 @@ class ReflectionService:
                     }
                 },
             },
-            model="chat",
         )
         metas = [
             m

@@ -257,7 +257,7 @@ class TestGenerateDiaryMaterialSpan:
                 return name
 
         class _StubLLM:
-            async def structured_output(self, prompt: str, schema: Any, model: str) -> dict[str, str]:
+            async def structured_output(self, prompt: str, schema: Any) -> dict[str, str]:
                 return {"title": "t", "content": "c", "mood": "calm"}
 
         service = DiaryService(session_factory=lambda: _PlainCtx(), llm_client=_StubLLM(), prompts=_StubPrompts())

@@ -212,7 +212,6 @@ class DiaryService:
                     },
                     "required": ["title", "content", "mood"],
                 },
-                model="chat",
             )
 
             diary_data = {

@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import desc, select
 from structlog import get_logger
 
-from src.db.models import CharacterState, CharacterStateHistory
+from src.db.models import Character, CharacterState, CharacterStateHistory
 from src.db.repositories import (
     ActionRepository,
     CharacterRepository,
@@ -361,11 +361,18 @@ async def get_character_relations(character_id: str) -> dict[str, Any]:
     async with db.session() as session:
         graph = RelationGraph(session, redis)
         relations = await graph.get_all_relations(cid)
+        # 批量解析目标角色名：前端关系图谱展示名称而非 UUID
+        target_ids = [r.target_id for r in relations]
+        names: dict[UUID, str] = {}
+        if target_ids:
+            rows = await session.execute(select(Character.id, Character.name).where(Character.id.in_(target_ids)))
+            names = {row[0]: row[1] for row in rows.all()}
 
     return {
         "data": [
             {
                 "target_id": str(r.target_id),
+                "target_name": names.get(r.target_id),
                 "relationship_type": r.relationship_type,
                 "strength": r.strength,
                 "last_interaction_at": r.last_interaction_at.isoformat() if r.last_interaction_at else None,

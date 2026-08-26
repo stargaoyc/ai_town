@@ -1,9 +1,9 @@
 """创意生成工具 - 图片/视频生成（生成→QQ 链路的源头）
 
-角色通过 ReAct 调用 draw_image / generate_video，内部走 LLMClient。
-图片同步返回 URL；视频为异步任务：调用立即返回受理回执，
-轮询与产物落库在进程后台任务中完成（P0-1：同步轮询 1-10 分钟
-会占死角色 Tick 信号量槽位）。
+角色通过 ReAct 调用 draw_image / generate_video，内部走 LLMClient
+（图片 MODEL_IMAGE / 视频 MODEL_VIDEO）。图片同步返回 URL；
+视频为异步任务：调用立即返回受理回执，轮询与产物落库在进程后台
+任务中完成（P0-1：同步轮询 1-10 分钟会占死角色 Tick 信号量槽位）。
 
 限制：
 - 只读工具，不修改任何状态

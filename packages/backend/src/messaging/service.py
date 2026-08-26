@@ -243,10 +243,6 @@ class MessageService:
                 message=text,
             )
 
-            # 群聊判定档位可配（M15：README 宣称 flash 轻量判断，
-            # 此前被 structured_output 强制重定向到 chat；机制修复后此处接线配置）
-            from src.config import settings
-
             result = await self.llm.structured_output(
                 judge_prompt,
                 schema={
@@ -257,7 +253,6 @@ class MessageService:
                     },
                     "required": ["should_reply", "reason"],
                 },
-                model=settings.group_judge_model,
             )
 
             should = bool(result.get("should_reply", False))
@@ -691,7 +686,7 @@ class MessageService:
                 user_message=safe_user_message,
             )
 
-            response, usage = await self.llm.chat_with_usage(prompt, model="chat", system_prompt=system_prompt)
+            response, usage = await self.llm.chat_with_usage(prompt, system_prompt=system_prompt)
 
             # chat.yaml 要求 LLM 输出 JSON：{"response", "emotion", "action"}
             # 这里容错解析：优先提取 JSON 中的 response 字段；解析失败则直接使用原文
@@ -830,7 +825,7 @@ class MessageService:
                 character_name=character.name,
                 history_text=history_text,
             )
-            summary = await self.llm.chat(compress_prompt, model="chat")
+            summary = await self.llm.chat(compress_prompt)
 
             # 写入压缩后的 context
             existing_context = conversation.context or {}

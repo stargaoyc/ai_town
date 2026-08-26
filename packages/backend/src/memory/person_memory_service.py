@@ -114,7 +114,7 @@ class PersonMemoryService:
         )
 
         try:
-            response = await llm.chat(prompt, model="chat")
+            response = await llm.chat(prompt)
             facts, preferences = self._parse_memory_response(response)
 
             if not facts:

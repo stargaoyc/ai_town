@@ -241,8 +241,8 @@ ai-town/
 OPENAI_API_KEY=sk-...                              # OpenAI 兼容 API Key
 OPENAI_BASE_URL=https://api.openai.com/v1          # 可指向任何 OpenAI 兼容服务
 MODEL_CHAT=gpt-4o-mini                             # 日常对话模型
-MODEL_STRONG=gpt-4o                                # 强推理模型（决策、反思）
-MODEL_FLASH=gpt-3.5-turbo                          # 轻量判断模型（群聊回复决策）
+MODEL_IMAGE=agnes-image-2.1-flash                   # 图像生成模型（仅 generate_image 使用）
+MODEL_VIDEO=agnes-video-v2.0                        # 视频生成模型（仅 generate_video 使用）
 MODEL_EMBEDDING=text-embedding-3-small             # 向量化模型
 EMBEDDING_DIM=2048                                 # 向量维度（需与 pgvector 列维度一致，当前为 halfvec(2048)）
 LLM_TIMEOUT=30                                     # 单次请求超时（秒）

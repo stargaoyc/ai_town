@@ -381,7 +381,7 @@ class ProactiveSharingService:
         )
 
         try:
-            content = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
+            content = await self.llm.chat(prompt, system_prompt=self.prompts.render("safety"))
             # 清理可能的引号包裹
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
@@ -425,7 +425,7 @@ class ProactiveSharingService:
         )
 
         try:
-            content = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
+            content = await self.llm.chat(prompt, system_prompt=self.prompts.render("safety"))
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
                 return None

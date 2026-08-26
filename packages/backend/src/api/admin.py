@@ -42,6 +42,7 @@ from src.core.world.evolutions.time_evolution import (
     compute_day_phase,
     compute_season,
 )
+from src.cost_control import BudgetExceeded, CircuitOpen
 from src.db.models import Conversation, Message, WorldSnapshot
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
@@ -638,8 +639,16 @@ async def vector_search(
         raise HTTPException(400, "Query text is required")
 
     try:
-        # 生成查询向量
-        query_embedding = await llm.embed(query)
+        # 生成查询向量；上游限流/熔断时给出可操作的中文提示而非裸熔断信息
+        try:
+            query_embedding = await llm.embed(query)
+        except CircuitOpen as exc:
+            raise HTTPException(
+                503,
+                detail="向量化服务暂时不可用（embedding 上游限流触发熔断），请约 1 分钟后重试",
+            ) from exc
+        except BudgetExceeded as exc:
+            raise HTTPException(503, detail="LLM 日预算已耗尽，向量化暂不可用") from exc
 
         # 使用 MemoryRepository 进行向量检索（无角色 ID 时跨角色全局检索）
         async with db.session() as session:
@@ -674,6 +683,9 @@ async def vector_search(
             ],
             "total": len(results),
         }
+    except HTTPException:
+        # 结构化错误（向量化限流/预算提示）已带可读 detail，直接透传
+        raise
     except Exception as e:
         raise HTTPException(500, f"Vector search failed: {e}") from e
 

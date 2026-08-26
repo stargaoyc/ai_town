@@ -520,7 +520,7 @@ async def _merge_profile(prompts: Any, llm: Any, *, profile: str, entries: list[
             existing_content=profile or "（暂无主档）",
             facts_text="\n".join(f"- {fact}" for fact in entries),
         )
-        response = await llm.chat(prompt, model="chat")
+        response = await llm.chat(prompt)
         text = response.strip()
         if text.startswith("```"):
             text = "\n".join(ln for ln in text.split("\n") if not ln.startswith("```")).strip()
@@ -979,7 +979,7 @@ async def _summarize_group(
         memories_text=memories_text,
     )
     try:
-        response = await llm.chat(prompt, model="chat")
+        response = await llm.chat(prompt)
         text = response.strip()
         if text.startswith("```"):
             text = "\n".join(ln for ln in text.split("\n") if not ln.startswith("```")).strip()

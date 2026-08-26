@@ -17,10 +17,10 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_base_url: str = "https://api.openai.com/v1"
     model_chat: str = "gpt-4o-mini"
-    model_strong: str = "gpt-4o"
-    model_flash: str = "gpt-3.5-turbo"
     # 图像生成模型（P1-23：此前误用 model_strong 强推理模型计费）
     model_image: str = "agnes-image-2.1-flash"
+    # 视频生成模型（原 MODEL_FLASH 更名：该档位实际只被 generate_video 消费）
+    model_video: str = "agnes-video-v2.0"
     model_embedding: str = "text-embedding-3-small"
     embedding_model_key: str | None = None
     embedding_model_url: str | None = None
@@ -202,10 +202,6 @@ class Settings(BaseSettings):
     gossip_window_hours: int = 24  # 源记忆与去重回窗（小时）；每好友每窗口最多传播 1 条
     gossip_max_per_tick: int = 1  # 单次 Tick 最多传播条数（控制记忆膨胀速率）
     gossip_relation_min: int = 20  # 好友关系强度门槛（传闻沿既有社交关系流动）
-
-    # 群聊回复判定的 LLM 档位（"chat" 或 "flash"；README 宣称 flash 轻量判断，
-    # 三轮审查 M15 发现实现强制 chat——现恢复为可配置，默认维持 chat 行为不变）
-    group_judge_model: str = "chat"
 
     # 角色间多轮对话：每轮双方各生成一句，轮数上限 3（控制单次 chat_with 的 LLM 成本）
     chat_with_max_rounds: int = 2

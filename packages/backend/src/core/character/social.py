@@ -432,10 +432,10 @@ class SocialMixin:
                 strength=int(strength),
                 transcript=_clip_tail(transcript, _CHAT_TRANSCRIPT_MAX_CHARS),
             )
-            # R4-L3：关系评审与对话生成解耦——评审用强模型，避免「自己给自己打分」
-            # 的同源偏差；强模型未配置时回退 chat 档
-            judge_model = settings.model_strong or "chat"
-            result = await self.llm.structured_output(prompt, schema, model=judge_model)
+            # R4-L3：关系评审与对话生成解耦，避免「自己给自己打分」的同源偏差；
+            # 档位体系收敛后仅剩 chat 档（原 MODEL_STRONG 已移除），同源偏差
+            # 由 delta 钳制（_CHAT_QUALITY_DELTA_LIMIT）兜底
+            result = await self.llm.structured_output(prompt, schema)
             # 缺键直接 KeyError → 由降级路径捕获回退固定值
             return max(-_CHAT_QUALITY_DELTA_LIMIT, min(_CHAT_QUALITY_DELTA_LIMIT, int(result["delta"])))
         except Exception as e:

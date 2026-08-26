@@ -84,7 +84,7 @@ class EpisodeService:
         )
 
         try:
-            response = await self.llm.chat(prompt, model="chat")
+            response = await self.llm.chat(prompt)
             # 提取数字（容错：LLM 可能返回 "7" 或 "7分" 或 "重要性：7"）
             match = re.search(r"\b(\d+)\b", response.strip())
             if match:

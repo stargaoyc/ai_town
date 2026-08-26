@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from pytest import MonkeyPatch
 from redis.asyncio import Redis
 
+from src.config import settings
 from src.cost_control import BudgetExceeded, CircuitOpen, set_circuit_breaker
 from src.cost_control.budget_manager import set_budget_manager
 from src.llm.client import LLMClient
@@ -368,6 +369,11 @@ def _llm_call_total(model: str, status: str) -> float:
     return value or 0.0
 
 
+def _chat_call_total(status: str) -> float:
+    """档位体系收敛后 metrics label 统一为 settings.model_chat"""
+    return _llm_call_total(settings.model_chat, status)
+
+
 async def test_multimodal_structured_budget_exceeded_raises_and_skips_llm() -> None:
     """R5-H4：多模态结构化输出调用前必须过日预算检查"""
     redis = FakeRedis()
@@ -387,7 +393,7 @@ async def test_multimodal_structured_success_records_usage_and_counters() -> Non
     """R5-H4：成功路径入账预算账本并递增 LLM 调用计数"""
     redis = FakeRedis()
     set_budget_manager(cast(Redis, redis), daily_budget_usd=10.0)
-    calls_before = _llm_call_total("chat", "success")
+    calls_before = _chat_call_total("success")
     fake_llm = FakeChatLLM()
     client = _make_client(fake_llm)
 
@@ -399,7 +405,7 @@ async def test_multimodal_structured_success_records_usage_and_counters() -> Non
     assert usage["tokens"] == "15"
     assert usage["count"] == "1"
     assert float(usage["cost"]) > 0
-    assert _llm_call_total("chat", "success") == calls_before + 1
+    assert _chat_call_total("success") == calls_before + 1
 
 
 async def test_multimodal_structured_failure_traces_langfuse_error(monkeypatch: MonkeyPatch) -> None:
@@ -420,7 +426,7 @@ async def test_multimodal_structured_failure_traces_langfuse_error(monkeypatch: 
     monkeypatch.setattr(tracing_module, "trace_llm_error", fake_trace_llm_error)
     # 结构化路径经 with_structured_output 调用，FakeChatLLM.error 不生效，直接在源池调用处注入异常
     monkeypatch.setattr(client_module, "invoke_with_fallback", raise_boom)
-    failed_before = _llm_call_total("chat", "failed")
+    failed_before = _chat_call_total("failed")
     fake_llm = FakeChatLLM(error=RuntimeError("boom"))
     client = _make_client(fake_llm)
 
@@ -428,8 +434,8 @@ async def test_multimodal_structured_failure_traces_langfuse_error(monkeypatch: 
         await client.multimodal_structured_output("看看这张图", _DECISION_SCHEMA)
 
     assert len(errors) == 1
-    assert errors[0]["model"] == "chat"
+    assert errors[0]["model"] == settings.model_chat
     assert isinstance(errors[0]["error"], RuntimeError)
-    assert _llm_call_total("chat", "failed") == failed_before + 1
+    assert _chat_call_total("failed") == failed_before + 1
     state = await redis.hgetall("llm:circuit_breaker")
     assert state["failure_count"] == "1"
