@@ -8,6 +8,7 @@
 - 每轮 prompt 只携带对话记录末尾窗口
 - 单句解析失败 → 整场对话失败（返回 None，不写关系）
 - 双方记忆内容压缩到上限以内
+- R6-M7：双方记忆经 EpisodeService 落库，双写/互指/source_type 契约不变
 """
 
 import json
@@ -50,6 +51,14 @@ class FakeRedis:
         return {}
 
 
+class FakeResult:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> Any:
+        return self._value
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.added: list[Any] = []
@@ -60,6 +69,13 @@ class FakeSession:
 
     async def commit(self) -> None:
         self.commit_count += 1
+
+    async def flush(self) -> None:
+        pass
+
+    async def execute(self, stmt: Any) -> FakeResult:
+        # exists_recent_duplicate 探测：恒返回「无近邻重复」
+        return FakeResult(None)
 
 
 class FakeSessionCtx:
@@ -168,6 +184,8 @@ def _make_engine(
     llm = FakeLLM(lines, quality)
     graph = FakeRelationGraph(relationship_type=relationship_type)
     fake_session = FakeSession()
+    # 对话记忆评分关闭：FakeLLM.chat 按序弹出台词，评分调用会污染调用数断言
+    monkeypatch.setattr(settings, "memory_llm_scoring_enabled", False)
     monkeypatch.setattr(db_singleton, "session", lambda: FakeSessionCtx(fake_session))
     # _do_chat_with 已迁入 social.py，CharacterRepository/RelationGraph 在其模块命名空间解析
     monkeypatch.setattr(social_module, "CharacterRepository", FakeCharRepo)
@@ -361,3 +379,26 @@ async def test_memory_content_condensed_and_first_person(monkeypatch: pytest.Mon
     assert by_char[_TARGET_ID].content == expected_body
     assert len(by_char[_TARGET_ID].content) <= _CHAT_MEMORY_MAX_CHARS + 20
     assert by_char[_CHARACTER_ID].source_type == "conversation"
+
+
+async def test_memory_via_episode_service_keeps_dual_write_and_linkage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R6-M7 回归：双方记忆经 EpisodeService 写入后，双写、互指与 source_type 契约不变"""
+    monkeypatch.setattr(settings, "chat_with_max_rounds", 1)
+    engine, llm, _, fake_session = _make_engine(monkeypatch, _default_lines(2), {"delta": 2, "reason": "ok"})
+
+    with capture_logs() as logs:
+        dialogue = await _run_chat(engine)
+
+    assert dialogue is not None
+    assert not any(e.get("event") == "chat_memory_persist_failed_continue" for e in logs)
+    episodes = [obj for obj in fake_session.added if isinstance(obj, MemoryEpisode)]
+    by_char = {ep.character_id: ep for ep in episodes}
+    assert by_char[_CHARACTER_ID].related_characters == [_TARGET_ID]
+    assert by_char[_TARGET_ID].related_characters == [_CHARACTER_ID]
+    for ep in episodes:
+        assert ep.source_type == "conversation"
+        assert ep.importance == 6
+        assert ep.location == _LOCATION
+    assert fake_session.commit_count >= 1

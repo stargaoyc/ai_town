@@ -10,7 +10,6 @@
 
 import asyncio
 import json
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -20,7 +19,7 @@ from structlog import get_logger
 from src.actions import DecisionResult
 from src.config import settings
 from src.core.locks import acquire_resource_locks
-from src.db.models import Character, MemoryEpisode
+from src.db.models import Character
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
@@ -307,41 +306,43 @@ class SocialMixin:
             )
 
         # 为双方各写入一条记忆（source_type=conversation）
-        # 让两人都记得这次多轮交流，未来检索时可回忆起
+        # 让两人都记得这次多轮交流，未来检索时可回忆起。
+        # R6-M7：统一经 EpisodeService 落库——近邻去重、LLM 重要性评分与
+        # embedding worker 管线对对话记忆与 Action 记忆一致生效，
+        # 不再绕过服务层直插 ORM（此前无去重、无评分、importance 硬编码）
         try:
             async with db.session() as session:
-                now = datetime.now(UTC)
+                episode_service = EpisodeService(self.llm, MemoryRepository(session), prompts=self.prompts)
 
                 # 发起方记忆：第一人称视角
-                session.add(
-                    MemoryEpisode(
-                        character_id=character_id,
-                        content=(
-                            f"在{state.get('location', '某处')}和{target_char.name}聊天。"
-                            f"{dialogue[:_CHAT_MEMORY_MAX_CHARS]}"
-                        ),
-                        importance=6,
-                        timestamp=now,
-                        source_type="conversation",
-                        related_characters=[target_id],
-                        location=state.get("location"),
-                    )
+                await episode_service.create_episode(
+                    character_id=character_id,
+                    content=(
+                        f"在{state.get('location', '某处')}和{target_char.name}聊天。"
+                        f"{dialogue[:_CHAT_MEMORY_MAX_CHARS]}"
+                    ),
+                    location=state.get("location"),
+                    importance=6,
+                    character_name=character.name,
+                    reason=decision.reason,
+                    mood=state.get("mood"),
+                    related_characters=[target_id],
+                    source_type="conversation",
                 )
 
                 # 对方记忆：第一人称视角（target 视角）
-                session.add(
-                    MemoryEpisode(
-                        character_id=target_id,
-                        content=(
-                            f"在{state.get('location', '某处')}和{character.name}聊天。"
-                            f"{dialogue[:_CHAT_MEMORY_MAX_CHARS]}"
-                        ),
-                        importance=6,
-                        timestamp=now,
-                        source_type="conversation",
-                        related_characters=[character_id],
-                        location=state.get("location"),
-                    )
+                await episode_service.create_episode(
+                    character_id=target_id,
+                    content=(
+                        f"在{state.get('location', '某处')}和{character.name}聊天。{dialogue[:_CHAT_MEMORY_MAX_CHARS]}"
+                    ),
+                    location=state.get("location"),
+                    importance=6,
+                    character_name=target_char.name,
+                    reason=decision.reason,
+                    mood=state.get("mood"),
+                    related_characters=[character_id],
+                    source_type="conversation",
                 )
                 await session.commit()
         except Exception as e:

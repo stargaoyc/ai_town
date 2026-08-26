@@ -21,7 +21,10 @@ from src.actions.move import build_move_action
 from src.core.character.tick import CharacterTickEngine
 from src.db.session import db as db_singleton
 from src.llm import LLMClient, PromptTemplates
+from src.modules.duration.calculator import DurationCalculator
 from src.modules.movement.system import MovementResult
+from src.modules.town.loader import SceneLoader
+from src.modules.town.schema import Scene, SceneType, WorldMap
 
 _CHARACTER_ID = UUID("01964000-0000-7000-8000-000000000001")
 
@@ -31,12 +34,22 @@ class FakeRedis:
         self.hset_calls: list[tuple[str, dict[str, Any]]] = []
         self.hincrby_calls: list[tuple[str, str, int]] = []
 
-    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
+    async def hget(self, key: str, field: str) -> None:
+        return None
+
+    async def hset(self, key: str, *args: Any, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        # 兼容两种调用形态：tick 路径 hset(key, mapping=...)、loader 记账 hset(key, field, value)
         self.hset_calls.append((key, mapping or {}))
 
     async def hincrby(self, key: str, field: str, amount: int = 1) -> int:
         self.hincrby_calls.append((key, field, amount))
         return amount
+
+    async def sadd(self, key: str, member: str) -> int:
+        return 1
+
+    async def srem(self, key: str, member: str) -> int:
+        return 1
 
 
 class FakeSession:
@@ -74,7 +87,7 @@ class FakeCharRepo:
 class FakeMovementSystem:
     def __init__(self, result: MovementResult) -> None:
         self._result = result
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
 
     async def calculate_move(
         self,
@@ -82,8 +95,16 @@ class FakeMovementSystem:
         to_scene: str,
         hour: int | None = None,
         is_workday: bool = True,
+        *,
+        weather_move_multiplier: float = 1.0,
     ) -> MovementResult:
-        self.calls.append((from_scene, to_scene))
+        self.calls.append(
+            (
+                from_scene,
+                to_scene,
+                {"hour": hour, "is_workday": is_workday, "weather_move_multiplier": weather_move_multiplier},
+            )
+        )
         return self._result
 
 
@@ -118,6 +139,14 @@ def _make_registry() -> ActionRegistry:
             executor=lambda state, params: {"custom_flag": "on"},
         )
     )
+    registry.register(
+        Action(
+            id="long_task",
+            name="长任务",
+            category=ActionCategory.LIFE,
+            duration_minutes=480,
+        )
+    )
     return registry
 
 
@@ -145,8 +174,21 @@ def _make_context() -> dict[str, Any]:
             "social_energy": 60,
             "inventory": {},
         },
-        "world": {"world_time": "2026-08-22T10:00:00+00:00"},
+        "world": {"world_time": "2026-08-24T10:00:00+00:00"},
     }
+
+
+def _enable_duration_modules(monkeypatch: pytest.MonkeyPatch) -> SceneLoader:
+    """接入真实 DurationCalculator + 场景表（home 室内 / park 户外），捕获修正输入"""
+    loader = SceneLoader(cast(Redis, FakeRedis()))
+    loader._scenes = {
+        "home": Scene(id="home", name="家", type=SceneType.INDOOR, open_hours=[0, 24], capacity=5),
+        "park": Scene(id="park", name="公园", type=SceneType.OUTDOOR, open_hours=[0, 24], capacity=100),
+    }
+    loader._world_map = WorldMap(adjacency={"home": {"park": 15}, "park": {"home": 15}})
+    monkeypatch.setattr(tick_module, "get_scene_loader", lambda: loader)
+    monkeypatch.setattr(tick_module, "get_duration_calculator", lambda: DurationCalculator())
+    return loader
 
 
 @pytest.fixture
@@ -229,3 +271,133 @@ async def test_executor_changes_merged_into_new_state(persistence: dict[str, Any
 
     redis_mapping = redis.hset_calls[-1][1]
     assert redis_mapping["custom_flag"] == "on"
+
+
+class TestDurationModifiersInTick:
+    """round-6 M9c：DurationCalculator 接入 Tick 非移动耗时路径"""
+
+    async def test_stormy_outdoor_raises_duration_within_clamp(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        _enable_duration_modules(monkeypatch)
+        engine, _ = _make_engine(_make_registry())
+        decision = DecisionResult(action="relax", reason="公园放松")
+        context = _make_context()
+        context["state"]["location"] = "park"
+        context["world"]["weather"] = "stormy"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        record = persistence["action_repo"].added[-1]
+        assert record.duration_minutes == 45  # 30 × 1.5
+
+    async def test_indoor_location_immune_to_weather(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        _enable_duration_modules(monkeypatch)
+        engine, _ = _make_engine(_make_registry())
+        decision = DecisionResult(action="relax", reason="在家休息")
+        context = _make_context()
+        context["world"]["weather"] = "stormy"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        record = persistence["action_repo"].added[-1]
+        assert record.duration_minutes == 30
+
+    async def test_neutral_conditions_leave_duration_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        _enable_duration_modules(monkeypatch)
+        engine, _ = _make_engine(_make_registry())
+        decision = DecisionResult(action="relax", reason="休息")
+        context = _make_context()
+        context["world"]["weather"] = "sunny"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        record = persistence["action_repo"].added[-1]
+        assert record.duration_minutes == 30
+
+    async def test_multiplier_result_clamped_to_global_maximum(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        _enable_duration_modules(monkeypatch)
+        engine, _ = _make_engine(_make_registry())
+        decision = DecisionResult(action="long_task", reason="户外长任务")
+        context = _make_context()
+        context["state"]["location"] = "park"
+        context["state"]["stamina"] = 0
+        context["world"]["weather"] = "stormy"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        record = persistence["action_repo"].added[-1]
+        # 480 × 1.5(暴风) × 1.5(体力0) = 1080 → 全局钳制 480
+        assert record.duration_minutes == 480
+
+    async def test_modules_degraded_keep_base_duration(self, persistence: dict[str, Any]) -> None:
+        engine, _ = _make_engine(_make_registry())
+        decision = DecisionResult(action="relax", reason="模块降级时休息")
+        context = _make_context()
+        context["world"]["weather"] = "stormy"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        record = persistence["action_repo"].added[-1]
+        assert record.duration_minutes == 30
+
+
+class TestMoveWeatherAndWorkdayWiring:
+    """round-6 M9a/M9b：Tick 向 MovementSystem 传天气倍率与工作日标记"""
+
+    async def test_move_receives_workday_flag_and_weather_multiplier(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        engine, _ = _make_engine(_make_registry())
+        fake_movement = FakeMovementSystem(MovementResult(success=True, path=["home", "cafe"], total_minutes=18))
+        monkeypatch.setattr(tick_module, "get_movement_system", lambda: fake_movement)
+
+        decision = DecisionResult(action="move", reason="雨天出门", params={"target_scene": "cafe"})
+        context = _make_context()  # 周一 + 无天气字段
+        context["world"]["weather"] = "rainy"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        _, _, kwargs = fake_movement.calls[0]
+        assert kwargs["is_workday"] is True
+        assert kwargs["weather_move_multiplier"] == 1.5
+
+    async def test_weekend_world_time_marks_non_workday(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        engine, _ = _make_engine(_make_registry())
+        fake_movement = FakeMovementSystem(MovementResult(success=True, path=["home", "cafe"], total_minutes=12))
+        monkeypatch.setattr(tick_module, "get_movement_system", lambda: fake_movement)
+
+        decision = DecisionResult(action="move", reason="周末出门", params={"target_scene": "cafe"})
+        context = _make_context()
+        context["world"]["world_time"] = "2026-08-22T10:00:00+00:00"  # 周六
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        _, _, kwargs = fake_movement.calls[0]
+        assert kwargs["is_workday"] is False
+
+    async def test_move_duration_not_double_adjusted(
+        self, monkeypatch: pytest.MonkeyPatch, persistence: dict[str, Any]
+    ) -> None:
+        _enable_duration_modules(monkeypatch)
+        engine, _ = _make_engine(_make_registry())
+        # total_minutes 已含矩阵 × 天气倍率（MovementSystem 内完成）
+        fake_movement = FakeMovementSystem(MovementResult(success=True, path=["home", "cafe"], total_minutes=18))
+        monkeypatch.setattr(tick_module, "get_movement_system", lambda: fake_movement)
+
+        decision = DecisionResult(action="move", reason="暴雨天移动", params={"target_scene": "cafe"})
+        context = _make_context()
+        context["world"]["weather"] = "stormy"
+
+        await engine._execute_action(_CHARACTER_ID, decision, context)
+
+        record = persistence["action_repo"].added[-1]
+        assert record.duration_minutes == 18

@@ -47,6 +47,7 @@ class EpisodeService:
         reason: str | None,
         mood: str | None,
         location: str | None,
+        fallback_importance: int,
     ) -> int:
         """使用 LLM 对记忆重要性进行评分（1-10）
 
@@ -63,16 +64,17 @@ class EpisodeService:
             reason: 决策理由
             mood: 当前情绪
             location: 当前位置
+            fallback_importance: 调用方规则计算的评分，LLM 评分任一环节失败时原样返回
 
         Returns:
-            重要性评分 1-10，失败时返回 5（默认值）
+            重要性评分 1-10，失败时返回 fallback_importance（调用方规则分）
         """
         from src.runtime import get_prompts
 
         prompts = self._prompts or get_prompts()
         if not prompts:
-            logger.warning("memory_score_prompts_unavailable", fallback=5)
-            return 5
+            logger.warning("memory_score_prompts_unavailable", fallback=fallback_importance)
+            return fallback_importance
         prompt = prompts.render(
             "memory_score",
             character_name=character_name,
@@ -93,16 +95,16 @@ class EpisodeService:
             logger.warning(
                 "llm_importance_parse_failed",
                 response=response[:100],
-                fallback=5,
+                fallback=fallback_importance,
             )
-            return 5
+            return fallback_importance
         except Exception as e:
             logger.warning(
                 "llm_importance_scoring_failed",
                 error=str(e),
-                fallback=5,
+                fallback=fallback_importance,
             )
-            return 5
+            return fallback_importance
 
     async def create_episode(
         self,
@@ -166,6 +168,7 @@ class EpisodeService:
                 reason=reason,
                 mood=mood,
                 location=location,
+                fallback_importance=importance,
             )
             logger.info(
                 "memory_importance_llm_scored",

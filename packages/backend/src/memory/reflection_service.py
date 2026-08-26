@@ -114,20 +114,34 @@ class ReflectionService:
             ]
 
         saved: Reflection | None = None
+        produced = 0
         for theme in themes:
             # P2-10：重要性按支撑记忆占比推导——覆盖池内过半记忆的主题
             # 属稳定认知（8-9 分），零星单条支撑的观察降为低档（3-4 分）
             support_count = len(theme["memory_ids"])
             derived_importance = max(3, min(9, 3 + round(support_count * 6 / max(len(episodes), 1))))
-            reflection = Reflection(
-                character_id=character_id,
-                content=f"{theme['summary']}：{theme['detail']}",
-                tier=1,
-                importance=derived_importance,
+            content = f"{theme['summary']}：{theme['detail']}"
+            embedding = await self._embed_content(character_id, content)
+            # R6-M8：写前近重复拦截——同一主题跨批次被再次归纳时不再无限累积新行；
+            # embedding 缺失（embed 失败降级）时跳过去重而非阻塞插入
+            if embedding is not None and await self.ref_repo.find_paraphrase_duplicate(character_id, embedding):
+                logger.info(
+                    "reflection_duplicate_skipped",
+                    character_id=str(character_id),
+                    content_preview=content[:80],
+                )
+                continue
+            stored = await self.ref_repo.add(
+                Reflection(
+                    character_id=character_id,
+                    content=content,
+                    tier=1,
+                    importance=derived_importance,
+                    embedding=embedding,
+                )
             )
-            stored = await self.ref_repo.add(reflection)
+            produced += 1
             saved = stored
-            await self._embed_saved(stored)
             for memory_id in theme["memory_ids"]:
                 episode = episodes[memory_id - 1]
                 self.ref_repo.session.add(
@@ -143,7 +157,7 @@ class ReflectionService:
         logger.info(
             "thematic_reflection_completed",
             character_id=str(character_id),
-            themes=len(themes),
+            themes=produced,
             episodes=len(episodes),
         )
         return saved
@@ -211,26 +225,26 @@ class ReflectionService:
                 source_reflection_ids=[str(sid) for sid in source_ids],
             )
             saved = await self.ref_repo.add(reflection)
-            await self._embed_saved(saved)
+            saved.embedding = await self._embed_content(character_id, saved.content)
 
         logger.info("meta_reflection_completed", character_id=str(character_id), metas=len(metas))
         return saved
 
-    async def _embed_saved(self, stored: Reflection) -> None:
-        """为已保存的反思即时生成语义向量（与 EmbeddingWorker 同一 llm.embed 路径）
+    async def _embed_content(self, character_id: UUID, content: str) -> list[float] | None:
+        """即时生成语义向量（与 EmbeddingWorker 同一 llm.embed 路径），失败返回 None
 
-        失败降级：embedding 留 NULL，search_semantic 自动跳过该行，
+        失败降级：embedding 留 None，search_semantic 自动跳过该行，
         检索回退 recency——反思低频，不值得像记忆 worker 那样建重试队列。
         """
         try:
-            stored.embedding = await self.llm.embed(stored.content)
+            return await self.llm.embed(content)
         except Exception as e:
             logger.warning(
                 "reflection_embedding_failed",
-                character_id=str(stored.character_id),
-                reflection_id=str(stored.id),
+                character_id=str(character_id),
                 error=str(e),
             )
+            return None
 
     def _parse_themes(self, result: dict[str, Any], total: int) -> list[dict[str, Any]]:
         """解析主题输出：过滤非法条目，memory_ids 收敛到 [1, total] 且去重"""

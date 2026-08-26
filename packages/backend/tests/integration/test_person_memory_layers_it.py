@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
 
@@ -109,6 +109,82 @@ class TestExtractionAppend:
         entry = await it_session.scalar(select(PersonMemoryEntry).where(PersonMemoryEntry.user_id == "qq_456"))
         assert entry is not None
         assert "海边" in entry.content
+
+
+class TestUpsertConflictRegression:
+    async def test_second_upsert_updates_instead_of_raising(
+        self, it_session: AsyncSession, pm_character: Character
+    ) -> None:
+        """R6-M5 回归：同一 (character, user) 连续两次交互走 ON CONFLICT 更新，不抛唯一冲突"""
+        first = _service(it_session, StubLLM('{"facts": ["用户偏好安静"], "preferences": {"称呼": "小K"}}'))
+        await first.update_memory(
+            character_id=pm_character.id,
+            character_name="小艾",
+            user_id="qq_dup",
+            platform="qq",
+            user_message="我喜欢安静的地方",
+            character_reply="好的",
+        )
+        second = _service(it_session, StubLLM('{"facts": ["用户养猫"], "preferences": {"时区": "UTC+8"}}'))
+        result = await second.update_memory(
+            character_id=pm_character.id,
+            character_name="小艾",
+            user_id="qq_dup",
+            platform="qq",
+            user_message="我家猫很粘人",
+            character_reply="哈哈",
+        )
+
+        assert result is not None and result["appended"] == 1
+        # 用标量列查询绕开会话身份映射：get_memory 已把旧状态载入缓存，
+        # 实体查询会返回第二次 upsert 前的陈旧快照
+        row_count = await it_session.scalar(
+            select(func.count())
+            .select_from(PersonMemory)
+            .where(PersonMemory.character_id == pm_character.id, PersonMemory.user_id == "qq_dup")
+        )
+        heat = await it_session.scalar(
+            select(PersonMemory.heat).where(
+                PersonMemory.character_id == pm_character.id, PersonMemory.user_id == "qq_dup"
+            )
+        )
+        preferences = await it_session.scalar(
+            select(PersonMemory.preferences).where(
+                PersonMemory.character_id == pm_character.id, PersonMemory.user_id == "qq_dup"
+            )
+        )
+        assert row_count == 1, "唯一索引下只允许一行主档"
+        assert heat == 2
+        # 顶层合并语义保持：新键并入、旧键保留
+        assert preferences == {"称呼": "小K", "时区": "UTC+8"}
+        entries = list(
+            (await it_session.execute(select(PersonMemoryEntry).where(PersonMemoryEntry.user_id == "qq_dup"))).scalars()
+        )
+        assert len(entries) == 2
+
+    async def test_heat_increment_clamped_at_cap(self, it_session: AsyncSession, pm_character: Character) -> None:
+        """R6-M5 回归：ON CONFLICT 路径保留 LEAST(heat+1, cap) 钳制语义"""
+        cap = settings.person_memory_heat_cap
+        it_session.add(PersonMemory(character_id=pm_character.id, user_id="qq_cap", content="", heat=cap))
+        await it_session.flush()
+
+        service = _service(it_session, StubLLM('{"facts": ["随便聊聊"], "preferences": {}}'))
+        result = await service.update_memory(
+            character_id=pm_character.id,
+            character_name="小艾",
+            user_id="qq_cap",
+            platform="web",
+            user_message="在吗",
+            character_reply="在的",
+        )
+
+        assert result is not None
+        heat = await it_session.scalar(
+            select(PersonMemory.heat).where(
+                PersonMemory.character_id == pm_character.id, PersonMemory.user_id == "qq_cap"
+            )
+        )
+        assert heat == cap
 
 
 class TestTwoLayerContextAndCompaction:

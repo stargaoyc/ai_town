@@ -9,7 +9,9 @@ import json
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import cast, func, select, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from structlog import get_logger
 
 from src.config import settings
@@ -196,48 +198,51 @@ class PersonMemoryService:
         platform: str,
         preferences: dict[str, Any] | None = None,
     ) -> None:
-        """确保主档行存在并累积热度（content 由压缩任务维护，此处不写）
+        """单语句 upsert 主档行并累积热度（content 由压缩任务维护，此处不写）
 
-        preferences 为顶层合并语义（round-3 review M6）：新偏好覆盖同键、保留旧键，
-        避免 LLM 只返回增量偏好时把既有偏好整表清空。
+        R6-M5：此前 UPDATE-then-INSERT 在并发首聊时双双看到 rowcount=0，
+        败者撞 idx_pmem_char_user 唯一索引抛异常被 update_memory 兜底吞掉，
+        丢失该次交互的主档更新；改为 INSERT..ON CONFLICT 后并发路径
+        在数据库侧原子收敛，不再依赖应用层行数判断。
+        preferences 为顶层合并语义（round-3 review M6）：jsonb || 新偏好覆盖同键、
+        保留旧键，避免 LLM 只返回增量偏好时把既有偏好整表清空；
+        合并下推到 SQL 内完成，并发更新不会互相整表覆盖。
         """
         async with self.session_factory() as session:
-            merged_prefs: dict[str, Any] | None = None
+            values: dict[str, Any] = {
+                "character_id": character_id,
+                "user_id": user_id,
+                "platform": platform,
+                "content": "",
+                "heat": 1,
+                "last_interaction_at": func.now(),
+            }
             if preferences:
-                existing: dict[str, Any] | None = await session.scalar(
-                    select(PersonMemory.preferences).where(
-                        PersonMemory.character_id == character_id,
-                        PersonMemory.user_id == user_id,
-                    )
-                )
-                merged_prefs = {**(existing or {}), **preferences}
+                values["preferences"] = preferences
             stmt = (
-                update(PersonMemory)
-                .where(
-                    PersonMemory.character_id == character_id,
-                    PersonMemory.user_id == user_id,
-                )
-                .values(
-                    # P2-11：热度钳制上限——高频用户无界增长会与低频用户拉开
-                    # 数千倍差距，使 heat 排序失去区分度
-                    heat=func.least(PersonMemory.heat + 1, settings.person_memory_heat_cap),
-                    last_interaction_at=func.now(),
-                    updated_at=func.now(),
-                    **({"preferences": merged_prefs} if merged_prefs else {}),
+                pg_insert(PersonMemory)
+                .values(**values)
+                .on_conflict_do_update(
+                    index_elements=[PersonMemory.character_id, PersonMemory.user_id],
+                    set_={
+                        # P2-11：热度钳制上限——高频用户无界增长会与低频用户拉开
+                        # 数千倍差距，使 heat 排序失去区分度
+                        "heat": func.least(PersonMemory.heat + 1, settings.person_memory_heat_cap),
+                        "last_interaction_at": func.now(),
+                        "updated_at": func.now(),
+                        **(
+                            {
+                                "preferences": func.coalesce(PersonMemory.preferences, text("'{}'::jsonb")).op("||")(
+                                    cast(preferences, JSONB)
+                                )
+                            }
+                            if preferences
+                            else {}
+                        ),
+                    },
                 )
             )
-            result = await session.execute(stmt)
-            if int(result.rowcount or 0) == 0:
-                session.add(
-                    PersonMemory(
-                        character_id=character_id,
-                        user_id=user_id,
-                        platform=platform,
-                        content="",
-                        heat=1,
-                        preferences=preferences,
-                    )
-                )
+            await session.execute(stmt)
             await session.commit()
 
     async def get_relevant_context(self, character_id: UUID, user_id: str, query_hint: str | None = None) -> str:
