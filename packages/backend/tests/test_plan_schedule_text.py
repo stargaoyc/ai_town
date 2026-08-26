@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from src.core.character.tick import _build_schedule_text, _world_hour
+from src.core.character.perception import _world_hour
+from src.core.character.tick import _build_schedule_text
 
 
 class StubScheduleSystem:

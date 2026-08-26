@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 from redis.asyncio import Redis
 
+import src.core.character.social as social_module
 import src.core.character.tick as tick_module
 from src.actions import ActionRegistry, DecisionResult
 from src.actions.base import Action, ActionCategory
@@ -156,7 +157,8 @@ async def test_execute_tick_fires_share_handler_when_intent_true(monkeypatch: py
     async def handler(cid: UUID) -> None:
         shared.append(cid)
 
-    monkeypatch.setattr(tick_module, "get_proactive_share_handler", lambda: handler)
+    # _maybe_proactive_share 已迁入 social.py，handler 注册表在其模块命名空间解析
+    monkeypatch.setattr(social_module, "get_proactive_share_handler", lambda: handler)
     engine = _make_engine()
     _stub_tick_pipeline(
         monkeypatch,
@@ -175,7 +177,7 @@ async def test_execute_tick_skips_share_handler_when_intent_false(monkeypatch: p
     async def handler(cid: UUID) -> None:
         shared.append(cid)
 
-    monkeypatch.setattr(tick_module, "get_proactive_share_handler", lambda: handler)
+    monkeypatch.setattr(social_module, "get_proactive_share_handler", lambda: handler)
     engine = _make_engine()
     _stub_tick_pipeline(
         monkeypatch,

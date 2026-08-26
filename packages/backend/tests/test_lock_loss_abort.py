@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 from redis.asyncio import Redis
 
+import src.core.character.social as social_module
 import src.core.character.tick as tick_module
 from src.actions import ActionRegistry, DecisionResult
 from src.actions.base import Action, ActionCategory
@@ -170,8 +171,9 @@ def _chat_decision() -> DecisionResult:
 
 
 def _stub_chat_pipeline(monkeypatch: pytest.MonkeyPatch, redis: FakeRedis) -> tuple[CharacterTickEngine, RecordingDB]:
-    monkeypatch.setattr(tick_module, "CharacterRepository", FakeTargetRepo)
-    monkeypatch.setattr(tick_module, "RelationGraph", FakeRelationGraph)
+    # _do_chat_with 已迁入 social.py，CharacterRepository/RelationGraph 在其模块命名空间解析
+    monkeypatch.setattr(social_module, "CharacterRepository", FakeTargetRepo)
+    monkeypatch.setattr(social_module, "RelationGraph", FakeRelationGraph)
     monkeypatch.setattr(settings, "chat_quality_enabled", False)
     monkeypatch.setattr(settings, "chat_with_max_rounds", 1)
 

@@ -19,17 +19,17 @@ import pytest
 from redis.asyncio import Redis
 from structlog.testing import capture_logs
 
-import src.core.character.tick as tick_module
+import src.core.character.social as social_module
 from src.actions import ActionRegistry, DecisionResult
 from src.config import settings
-from src.core.character.tick import (
+from src.core.character.social import (
     _CHAT_MEMORY_MAX_CHARS,
     _CHAT_QUALITY_DELTA_LIMIT,
     _CHAT_TRANSCRIPT_MAX_CHARS,
-    CharacterTickEngine,
     _clip_tail,
     _parse_chat_line,
 )
+from src.core.character.tick import CharacterTickEngine
 from src.db.models import MemoryEpisode
 from src.db.session import db as db_singleton
 from src.llm import LLMClient, PromptTemplates
@@ -169,8 +169,9 @@ def _make_engine(
     graph = FakeRelationGraph(relationship_type=relationship_type)
     fake_session = FakeSession()
     monkeypatch.setattr(db_singleton, "session", lambda: FakeSessionCtx(fake_session))
-    monkeypatch.setattr(tick_module, "CharacterRepository", FakeCharRepo)
-    monkeypatch.setattr(tick_module, "RelationGraph", graph)
+    # _do_chat_with 已迁入 social.py，CharacterRepository/RelationGraph 在其模块命名空间解析
+    monkeypatch.setattr(social_module, "CharacterRepository", FakeCharRepo)
+    monkeypatch.setattr(social_module, "RelationGraph", graph)
     engine = CharacterTickEngine(
         redis=cast(Redis, FakeRedis()),
         registry=ActionRegistry(),
