@@ -205,3 +205,64 @@ class TestRetentionCompression:
         )
         survivors = [r.content for r in rows if r.source_type == "archive"]
         assert survivors == ["[归档] 2025-01：旧积压摘要"]
+
+    async def test_terminal_plans_pruned_active_and_recent_kept(
+        self, it_session: AsyncSession, archive_character: Character, monkeypatch: Any
+    ) -> None:
+        """R5-L5：终态计划按 updated_at 超期修剪；active 与未超期终态行保留"""
+        from src.config import settings as _settings
+        from src.db.models import Plan
+        from src.scheduler.loops import run_cognition_retention_cycle
+
+        monkeypatch.setattr(_settings, "plans_retention_days", 30)
+        now = datetime.now(UTC)
+        old = now - timedelta(days=40)
+        recent = now - timedelta(days=1)
+
+        def plan(title: str, status: str, updated_at: datetime) -> Plan:
+            return Plan(
+                character_id=archive_character.id, type="daily", title=title, status=status, updated_at=updated_at
+            )
+
+        it_session.add_all(
+            [
+                plan("旧完成", "completed", old),
+                plan("旧放弃", "abandoned", old),
+                plan("旧过期", "expired", old),
+                plan("新完成", "completed", recent),
+                plan("旧活跃", "active", old),
+            ]
+        )
+        await it_session.flush()
+
+        deleted = await run_cognition_retention_cycle(lambda: _session_ctx(it_session))
+
+        assert deleted["plans"] == 3
+        remaining = list((await it_session.execute(select(Plan.title))).scalars())
+        assert sorted(remaining) == ["旧活跃", "新完成"]
+
+    async def test_plans_pruning_disabled_when_retention_zero(
+        self, it_session: AsyncSession, archive_character: Character, monkeypatch: Any
+    ) -> None:
+        """plans_retention_days=0 表示永久保留，跳过修剪"""
+        from src.config import settings as _settings
+        from src.db.models import Plan
+        from src.scheduler.loops import run_cognition_retention_cycle
+
+        monkeypatch.setattr(_settings, "plans_retention_days", 0)
+        it_session.add(
+            Plan(
+                character_id=archive_character.id,
+                type="daily",
+                title="远古完成",
+                status="completed",
+                updated_at=datetime.now(UTC) - timedelta(days=3650),
+            )
+        )
+        await it_session.flush()
+
+        deleted = await run_cognition_retention_cycle(lambda: _session_ctx(it_session))
+
+        assert deleted["plans"] == 0
+        remaining = list((await it_session.execute(select(Plan.title))).scalars())
+        assert remaining == ["远古完成"]

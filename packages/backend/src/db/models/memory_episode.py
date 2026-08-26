@@ -11,6 +11,10 @@
 - embedding 异步批量生成，不阻塞 Tick 循环
 - character_id 外键引用 characters(id) ON DELETE CASCADE
   PostgreSQL 11+ 支持分区表引用非分区表，角色删除时记忆自动级联清理
+
+⚠️ autovacuum 调优（0018 迁移，R5-M9）：本表是保留周期的删除热点，
+各 HASH 子分区 vacuum/analyze scale factor 收紧为 0.05/0.02（父表不承载
+reloption）；不设 fillfactor——追加写为主，无原地 UPDATE 热点。
 """
 
 from datetime import datetime

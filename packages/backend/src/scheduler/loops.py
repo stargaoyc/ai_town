@@ -10,17 +10,30 @@
 
 import asyncio
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, false, func, select, true, update
+from sqlalchemy import ColumnElement, Delete, delete, false, func, select, true, tuple_, update
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
 from src import runtime
 from src.config import settings
-from src.db.models import Character, MemoryEpisode, PersonMemory, PersonMemoryEntry, Plan
+from src.db.models import (
+    Character,
+    CharacterDiary,
+    MemoryEpisode,
+    Message,
+    PersonMemory,
+    PersonMemoryEntry,
+    Plan,
+    Reflection,
+    WorldEvent,
+    WorldSnapshot,
+)
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService, _diary_trigger_periods, _world_real_window_seconds
@@ -474,6 +487,49 @@ async def _merge_profile(prompts: Any, llm: Any, *, profile: str, entries: list[
         return None
 
 
+def _pk_batched_delete(
+    model: type[Any],
+    *conditions: ColumnElement[bool],
+    batch_size: int,
+) -> Delete:
+    """构造单批限量 DELETE：主键 IN (SELECT 主键 ... LIMIT n)（R5-L4）
+
+    为什么按主键子查询而非 ctid：ctid 是物理行位置，并发更新下会漂移；
+    主键定位对分区表同样成立——memory_episodes 的复合主键用 row-constructor
+    IN 表达，普通表走单列 IN。ORDER BY 主键保证逐批稳定推进（uuid7 时间有序，
+    近似最旧优先）。
+    """
+    pk_cols = list(model.__table__.primary_key.columns)
+    if len(pk_cols) == 1:
+        col = pk_cols[0]
+        return delete(model).where(col.in_(select(col).where(*conditions).order_by(col).limit(batch_size)))
+    return delete(model).where(
+        tuple_(*pk_cols).in_(select(*pk_cols).where(*conditions).order_by(*pk_cols).limit(batch_size))
+    )
+
+
+async def _delete_in_batches(
+    session: AsyncSession,
+    build_stmt: Callable[[], Delete],
+    batch_size: int,
+) -> int:
+    """循环执行单批删除直至删空，返回总删除行数（R5-L4）
+
+    大积压时一次性 DELETE 是长事务：锁与 WAL 在一个语句内一口气生成。
+    每批删除数等于 batch_size 时可能仍有剩余，必须再执行一轮；
+    某轮删除数小于 batch_size 即为最后一批（含 0 行的空轮）。
+    """
+    deleted_total = 0
+    while True:
+        result = cast("CursorResult[Any]", await session.execute(build_stmt()))
+        batch_deleted = int(result.rowcount or 0)
+        deleted_total += batch_deleted
+        logger.debug("retention_delete_batch", batch_deleted=batch_deleted, total=deleted_total)
+        if batch_deleted < batch_size:
+            break
+    return deleted_total
+
+
 async def expire_daily_plans(session_factory: Any | None = None) -> int:
     """当日计划滚动过期：创建超过 TTL 的 active daily 计划置 expired（审查清单 B2）
 
@@ -509,6 +565,7 @@ async def memory_retention_loop() -> None:
     1. 记忆两阶段治理：压缩归档 + 分级删除（importance>=7 永久保留）
     2. 世界历史清理：超期 world_events 删除、world_snapshots 仅保留最近 N 份
     3. 消息表清理：超期 messages 删除（三轮审查 M1：messages 无界增长）
+    4. 认知产物清理 + 终态计划修剪（R4-M7 / R5-L5）
 
     memory_episodes 为 HASH 分区表，无法像 RANGE 分区那样按时间 drop，
     膨胀治理只能在应用层定期处理。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
@@ -533,75 +590,98 @@ async def memory_retention_loop() -> None:
 
 
 async def run_cognition_retention_cycle(session_factory: Any | None = None) -> dict[str, int]:
-    """单次认知产物清理（R4-M7 可测试入口）
+    """单次认知产物清理 + plans 终态修剪（R4-M7 可测试入口）
 
-    覆盖此前无任何清理路径的四类数据：
+    覆盖此前无任何清理路径的五类数据：
     - tier=1 批次反思（tier=2 元反思跨期归纳，永久保留）
     - 角色日记
     - Person Memory 已压缩条目（compacted=TRUE 的软归档行此前永不清理）
     - 归档记忆行（source_type='archive'）：保留期按 created_at 计龄，
       不继承原事件时间戳——archive.timestamp 仅承载展示/排序语义（round-5 M2）
+    - 终态计划行（completed/abandoned/expired，R5-L5）：expire_daily_plans 只翻
+      状态不删行，终态行此前无界累积
 
-    各 retention_days<=0 时跳过对应类。返回各类删除行数。
+    各 retention_days<=0 时跳过对应类。所有删除经 _delete_in_batches 分批执行，
+    避免大积压首跑时单语句长事务锁表（R5-L4）。返回各类删除行数。
     """
     from src.config import settings as _settings
-    from src.db.models import CharacterDiary, PersonMemoryEntry, Reflection
 
     factory = session_factory or db.session
     now = datetime.now(UTC)
-    deleted = {"reflections": 0, "diaries": 0, "pm_entries": 0, "archive_episodes": 0}
+    batch_size = _settings.retention_delete_batch_size
+    deleted = {"reflections": 0, "diaries": 0, "pm_entries": 0, "archive_episodes": 0, "plans": 0}
 
     async with factory() as session:
         days = _settings.reflection_retention_days
         if days > 0:
-            res = cast(
-                "CursorResult[Any]",
-                await session.execute(
-                    delete(Reflection).where(
-                        Reflection.tier == 1,
-                        Reflection.created_at < now - timedelta(days=days),
-                    )
+            refl_cutoff = now - timedelta(days=days)
+            deleted["reflections"] = await _delete_in_batches(
+                session,
+                lambda: _pk_batched_delete(
+                    Reflection,
+                    Reflection.tier == 1,
+                    Reflection.created_at < refl_cutoff,
+                    batch_size=batch_size,
                 ),
+                batch_size,
             )
-            deleted["reflections"] = int(res.rowcount or 0)
 
         days = _settings.diary_retention_days
         if days > 0:
-            res = cast(
-                "CursorResult[Any]",
-                await session.execute(
-                    delete(CharacterDiary).where(CharacterDiary.generated_at < now - timedelta(days=days))
+            diary_cutoff = now - timedelta(days=days)
+            deleted["diaries"] = await _delete_in_batches(
+                session,
+                lambda: _pk_batched_delete(
+                    CharacterDiary,
+                    CharacterDiary.generated_at < diary_cutoff,
+                    batch_size=batch_size,
                 ),
+                batch_size,
             )
-            deleted["diaries"] = int(res.rowcount or 0)
 
         days = _settings.person_memory_entry_retention_days
         if days > 0:
-            res = cast(
-                "CursorResult[Any]",
-                await session.execute(
-                    delete(PersonMemoryEntry).where(
-                        PersonMemoryEntry.compacted.is_(True),
-                        PersonMemoryEntry.created_at < now - timedelta(days=days),
-                    )
+            pm_cutoff = now - timedelta(days=days)
+            deleted["pm_entries"] = await _delete_in_batches(
+                session,
+                lambda: _pk_batched_delete(
+                    PersonMemoryEntry,
+                    PersonMemoryEntry.compacted.is_(True),
+                    PersonMemoryEntry.created_at < pm_cutoff,
+                    batch_size=batch_size,
                 ),
+                batch_size,
             )
-            deleted["pm_entries"] = int(res.rowcount or 0)
 
         days = _settings.archive_episode_retention_days
         if days > 0:
             # 归档保留期按创建时间计龄，不继承原事件时间戳（round-5 M2）：
             # archive.timestamp 继承自原事件，旧积压压缩出的归档按它计龄会生来即到期
-            res = cast(
-                "CursorResult[Any]",
-                await session.execute(
-                    delete(MemoryEpisode).where(
-                        MemoryEpisode.source_type == "archive",
-                        MemoryEpisode.created_at < now - timedelta(days=days),
-                    )
+            archive_cutoff = now - timedelta(days=days)
+            deleted["archive_episodes"] = await _delete_in_batches(
+                session,
+                lambda: _pk_batched_delete(
+                    MemoryEpisode,
+                    MemoryEpisode.source_type == "archive",
+                    MemoryEpisode.created_at < archive_cutoff,
+                    batch_size=batch_size,
                 ),
+                batch_size,
             )
-            deleted["archive_episodes"] = int(res.rowcount or 0)
+
+        days = _settings.plans_retention_days
+        if days > 0:
+            plans_cutoff = now - timedelta(days=days)
+            deleted["plans"] = await _delete_in_batches(
+                session,
+                lambda: _pk_batched_delete(
+                    Plan,
+                    Plan.status.in_(("completed", "abandoned", "expired")),
+                    Plan.updated_at < plans_cutoff,
+                    batch_size=batch_size,
+                ),
+                batch_size,
+            )
 
         await session.commit()
 
@@ -614,18 +694,25 @@ async def run_messages_retention_cycle(session_factory: Any | None = None) -> in
     """单次消息表清理（可测试入口）；返回删除行数
 
     messages_retention_days=0 表示永久保留，直接跳过。
+    删除经 _pk_batched_delete 分批（R5-L4）：WHERE 条件与
+    MessageRepository.delete_older_than 保持一致，后者保留给其他调用方，
+    但本周期不再走它的单条全量 DELETE。
     """
     from src.config import settings as _settings
-    from src.db.repositories.message_repo import MessageRepository
 
     retention_days = _settings.messages_retention_days
     if retention_days <= 0:
         return 0
 
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    batch_size = _settings.retention_delete_batch_size
     factory = session_factory or db.session
     async with factory() as session:
-        deleted = await MessageRepository(session).delete_older_than(cutoff)
+        deleted = await _delete_in_batches(
+            session,
+            lambda: _pk_batched_delete(Message, Message.created_at < cutoff, batch_size=batch_size),
+            batch_size,
+        )
 
     if deleted:
         logger.info("messages_retention_done", deleted=deleted, retention_days=retention_days)
@@ -638,22 +725,25 @@ async def run_world_retention_cycle(session_factory: Any | None = None) -> tuple
     world_events 按创建时间删除超过 WORLD_EVENTS_RETENTION_DAYS 的行；
     world_snapshots 是冷启动恢复真相源，仅保留最近 WORLD_SNAPSHOTS_KEEP_LATEST 份。
 
+    两类删除均分批执行（R5-L4）。快照阈值子查询在批循环外构建一次，
+    与旧单语句语义严格一致——被删行都严格低于阈值，删后重算阈值只会得到同值。
+
     Returns:
         (deleted_events, deleted_snapshots)
     """
     from src.config import settings as _settings
-    from src.db.models import WorldEvent, WorldSnapshot
 
     factory = session_factory or db.session
     cutoff = datetime.now(UTC) - timedelta(days=_settings.world_events_retention_days)
     keep = _settings.world_snapshots_keep_latest
+    batch_size = _settings.retention_delete_batch_size
 
     async with factory() as session:
-        events_result = cast(
-            "CursorResult[Any]",
-            await session.execute(delete(WorldEvent).where(WorldEvent.created_at < cutoff)),
+        deleted_events = await _delete_in_batches(
+            session,
+            lambda: _pk_batched_delete(WorldEvent, WorldEvent.created_at < cutoff, batch_size=batch_size),
+            batch_size,
         )
-        deleted_events = int(events_result.rowcount or 0)
 
         deleted_snapshots = 0
         if keep > 0:
@@ -664,11 +754,12 @@ async def run_world_retention_cycle(session_factory: Any | None = None) -> tuple
                 .limit(1)
                 .scalar_subquery()
             )
-            snaps_result = cast(
-                "CursorResult[Any]",
-                await session.execute(delete(WorldSnapshot).where(WorldSnapshot.tick_id < threshold)),
+            snap_cond = WorldSnapshot.tick_id < threshold
+            deleted_snapshots = await _delete_in_batches(
+                session,
+                lambda: _pk_batched_delete(WorldSnapshot, snap_cond, batch_size=batch_size),
+                batch_size,
             )
-            deleted_snapshots = int(snaps_result.rowcount or 0)
 
     if deleted_events or deleted_snapshots:
         logger.info(

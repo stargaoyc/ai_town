@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     world_snapshots_keep_latest: int = 3
 
     # RANGE 分区表保留策略（三轮审查 H9：分区此前只建不删，action_records/state_history
-    # 以约 175 万行/年速度无限累积——按月分区必须配套按月丢弃才有生命周期闭环）
+    # 随 Tick 无限累积——按月分区必须配套按月丢弃才有生命周期闭环；增速量级
+    # 见 partition_scheduler 模块注释，以 ai_town_character_tick_total 实测为准）
     action_records_retention_months: int = 12
     state_history_retention_months: int = 6
 
@@ -60,6 +61,14 @@ class Settings(BaseSettings):
     diary_retention_days: int = 730
     person_memory_entry_retention_days: int = 180  # 仅清理已压缩（compacted）条目
     archive_episode_retention_days: int = 365  # source_type=archive 的归档行
+
+    # plans 终态修剪（R5-L5）：completed/abandoned/expired 行此前只翻状态不删除，
+    # 无界累积；0 = 永久保留
+    plans_retention_days: int = 90
+
+    # 保留周期单批删除行数（R5-L4）：大积压时一次性 DELETE 是长事务，锁与 WAL
+    # 一口气生成；所有保留周期共用此旋钮分批删空
+    retention_delete_batch_size: int = 5000
 
     # Observability
     otel_endpoint: str | None = None

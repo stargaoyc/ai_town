@@ -9,9 +9,13 @@
 - 每月 25 号 03:00 自动执行（提前 6 天预创建下月分区，留足容错窗口）
 - 通过 APScheduler AsyncIOScheduler 与 FastAPI lifespan 集成
 
-Round-3 H9 补充回收半区：pre-create 只增不删，action_records +
-character_state_history 合计约 175 万行/年的增速下，无回收会让分区数与
-存储无限膨胀。每月同刻在预创建之后执行 drop_old_partitions：
+Round-3 H9 补充回收半区：pre-create 只增不删，无回收会让分区数与存储无限膨胀。
+增速量级的两个边界（都不要当成事实使用）：
+- 理论上限由 character_tick_seconds 决定：=30 时每角色每天最多 2880 次 Tick，
+  20 角色下 action_records 与 character_state_history 各约 57,600 行/天；
+- 实际 Tick 周期受 LLM 延迟支配，通常远慢于配置值，真实增速只能实测。
+运维应以 Prometheus 指标 ai_town_character_tick_total 的实测斜率推算增速，
+不要信任理论值或任何历史估算。每月同刻在预创建之后执行 drop_old_partitions：
 - 按 pg_inherits 枚举子分区，解析分区名中的月份（与 pre_create 的
   `{table}_YYYY_MM` 命名约定一致），整月超出 retention 边界的才删除
 - 先 DETACH 再 DROP：DETACH 只需父表短时排他锁，DROP 作用于已脱钩子表，

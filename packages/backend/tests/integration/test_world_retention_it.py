@@ -61,6 +61,21 @@ class TestWorldRetention:
 
         assert (deleted_events, deleted_snaps) == (0, 0)
 
+    async def test_batch_size_one_deletes_all_rows(self, it_session: AsyncSession, monkeypatch: Any) -> None:
+        """R5-L4：批大小=1 时逐行分批删空，语义与单条全量 DELETE 一致"""
+        from src.config import settings as _settings
+
+        monkeypatch.setattr(_settings, "retention_delete_batch_size", 1)
+        for i in range(3):
+            await _seed_event(it_session, tick_id=100 + i, days_ago=120)
+        await it_session.flush()
+
+        deleted_events, deleted_snaps = await run_world_retention_cycle(session_factory=_ctx(it_session))
+
+        assert (deleted_events, deleted_snaps) == (3, 0)
+        remaining = (await it_session.execute(select(WorldEvent.tick_id))).scalars().all()
+        assert remaining == []
+
 
 def _ctx(session: AsyncSession) -> Any:
     from collections.abc import AsyncIterator
