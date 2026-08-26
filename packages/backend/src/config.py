@@ -144,6 +144,30 @@ class Settings(BaseSettings):
     memory_dedup_similarity_threshold: float = 0.95
     memory_dedup_window_hours: int = 24
 
+    # 记忆基础重要度（R6-L16c）：按 Action 类型定级，作为记忆写入的初始 importance，
+    # 直接参与「importance>=7 永久保留」的 retention 分级，故作为可调参数外置
+    action_base_importance: dict[str, int] = {
+        "wait": 2,
+        "rest": 3,
+        "sleep": 3,
+        "eat": 4,
+        "drink": 4,
+        "move": 4,
+        "go_out": 5,
+        "work": 6,
+        "study": 6,
+        "practice": 6,
+        "social": 5,
+        "chat": 5,
+        "play": 6,
+        "shop": 5,
+        "buy": 5,
+        "explore": 7,
+        "adventure": 8,
+    }
+    # 记忆重要度情绪加成：理由含情绪关键词时在该值基础上提升的分数（0 关闭）
+    action_emotion_importance_boost: int = 2
+
     # Plan 层级体系：当日计划滚动过期（创建超过 TTL 的 active daily 置 expired）
     daily_plan_ttl_hours: int = 24
 
@@ -198,6 +222,12 @@ class Settings(BaseSettings):
     character_max_concurrent: int = 10
     character_lock_ttl_seconds: int = 30
 
+    # 独处动作恢复社交能量（R6-L16b）：休息/睡觉/读书等独处活动列表，
+    # 执行时恢复 social_energy（上限 100），防资源永久为 0
+    solo_recovery_actions: frozenset[str] = frozenset({"relax", "sleep", "read_book"})
+    # 单次独处动作恢复的社交能量值
+    solo_recovery_social_energy_boost: int = 10
+
     # Tools / ReAct 工具调用（R6-L5）
     # 单次工具执行超时（秒）：0 = 禁用超时。默认 60s 兜底——挂死工具（如外部 API
     # 无响应）若任其执行会占死角色 Tick 的信号量槽位与分布式锁；工具均为本地
@@ -219,6 +249,10 @@ class Settings(BaseSettings):
     gossip_window_hours: int = 24  # 源记忆与去重回窗（小时）；每好友每窗口最多传播 1 条
     gossip_max_per_tick: int = 1  # 单次 Tick 最多传播条数（控制记忆膨胀速率）
     gossip_relation_min: int = 20  # 好友关系强度门槛（传闻沿既有社交关系流动）
+
+    # 群体动力学·群活动：同场景临时小聚的总参与人数上限（含发起者），
+    # 控制单次群活动记忆写入与关系加固的规模
+    group_activity_participant_max: int = 4
 
     # 角色间多轮对话：每轮双方各生成一句，轮数上限 3（控制单次 chat_with 的 LLM 成本）
     chat_with_max_rounds: int = 2

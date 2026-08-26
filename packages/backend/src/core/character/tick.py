@@ -1053,10 +1053,10 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         # 被动恢复：仅在"休息类"动作下恢复社交能量（休息/睡觉/读书等独处活动）
         # phone_battery 仅通过 charge_phone 恢复（已在 action cost 中定义）
         # 避免资源永久为 0，同时不违反常识（读书不会给手机充电）
-        _SOLO_RECOVERY_ACTIONS = {"relax", "sleep", "read_book"}
-        if decision.action in _SOLO_RECOVERY_ACTIONS:
+        # 动作集合与恢复量外置为配置（R6-L16b），无需改码即可调整
+        if decision.action in settings.solo_recovery_actions:
             cur_se = int(new_state.get("social_energy", 0) or 0)
-            new_state["social_energy"] = min(100, cur_se + 10)
+            new_state["social_energy"] = min(100, cur_se + settings.solo_recovery_social_energy_boost)
 
         # 设置当前动作（供前端展示"当前行为"）
         from datetime import timedelta
@@ -1459,31 +1459,14 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
 
             # P1-7：社交类基础分从 7 降到 5——此前撞上「importance>=7 永久保留」
             # 策略导致全部社交记忆不可清理；强情绪仍可经下方关键词修正回升，
-            # LLM 评分开启时由其给出更精准的分值
-            _ACTION_IMPORTANCE = {
-                "wait": 2,
-                "rest": 3,
-                "sleep": 3,
-                "eat": 4,
-                "drink": 4,
-                "move": 4,
-                "go_out": 5,
-                "work": 6,
-                "study": 6,
-                "practice": 6,
-                "social": 5,
-                "chat": 5,
-                "play": 6,
-                "shop": 5,
-                "buy": 5,
-                "explore": 7,
-                "adventure": 8,
-            }
-            base_importance = _ACTION_IMPORTANCE.get(decision.action, 5)
+            # LLM 评分开启时由其给出更精准的分值；基础分值外置为配置（R6-L16c）
+            base_importance = settings.action_base_importance.get(decision.action, 5)
             # 如果理由中包含情绪关键词，提升重要性
+            # 情绪关键词列表保持为模块常量（数据而非魔法数），提升值外置为配置
+            _EMOTION_KEYWORDS = ["开心", "兴奋", "生气", "难过", "惊讶", "重要", "特别"]
             reason_lower = (decision.reason or "").lower()
-            if any(kw in reason_lower for kw in ["开心", "兴奋", "生气", "难过", "惊讶", "重要", "特别"]):
-                base_importance = min(10, base_importance + 2)
+            if any(kw in reason_lower for kw in _EMOTION_KEYWORDS):
+                base_importance = min(10, base_importance + settings.action_emotion_importance_boost)
             importance = max(1, min(10, base_importance))
 
             # 群体动力学·共同经历：同场景在场者写入 related_characters，

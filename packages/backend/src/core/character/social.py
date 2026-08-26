@@ -481,7 +481,7 @@ class SocialMixin:
         character = context["character"]
         location = str(context["state"].get("location") or "未知")
         participants = [{"id": str(character_id), "name": character.name}] + [
-            {"id": n["id"], "name": n["name"]} for n in nearby[:3]
+            {"id": n["id"], "name": n["name"]} for n in nearby[: settings.group_activity_participant_max - 1]
         ]
         names_text = "、".join(p["name"] for p in participants)
 

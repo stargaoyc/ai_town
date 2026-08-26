@@ -169,46 +169,5 @@ class MovementSystem:
 
         return result
 
-    def find_shortest_path(self, from_scene: str, to_scene: str, max_hops: int = 3) -> tuple[list[str] | None, int]:
-        """寻找最短路径（Dijkstra 简化版）
-
-        用于无法直达时的路径规划。
-
-        Args:
-            from_scene: 起始场景
-            to_scene: 目标场景
-            max_hops: 最大中转次数
-
-        Returns:
-            (路径, 总耗时)，不可达返回 (None, 0)
-        """
-        if from_scene == to_scene:
-            return [from_scene], 0
-
-        # 简化的 BFS 搜索
-        import heapq
-
-        # 优先队列：(总耗时, 路径)
-        queue: list[tuple[int, list[str]]] = [(0, [from_scene])]
-        visited: set[str] = set()
-
-        while queue:
-            total_time, path = heapq.heappop(queue)
-            current = path[-1]
-
-            if current == to_scene:
-                return path, total_time
-
-            if current in visited:
-                continue
-            visited.add(current)
-
-            if len(path) - 1 >= max_hops + 1:  # 限制中转次数
-                continue
-
-            neighbors = self.scene_loader._world_map.get_neighbors(current)
-            for next_scene, time in neighbors.items():
-                if next_scene not in visited:
-                    heapq.heappush(queue, (total_time + time, path + [next_scene]))
-
-        return None, 0
+    # find_shortest_path 已删除（R6-L16a）：零调用者，BFS 路径规划从未被使用。
+    # 如需多跳路径，按场景从 world-map.yaml 矩阵查询或扩展 calculate_move 即可。
