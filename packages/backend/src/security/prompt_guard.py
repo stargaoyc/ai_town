@@ -52,6 +52,13 @@ _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
     ("data_leak_database", r"show (me )?(the )?database"),
     ("data_leak_dump_tables", r"dump (all )?tables"),
     ("data_leak_sql_select", r"SELECT.*FROM"),
+    # P2-19 增补：编码/间接指令/中文角色覆盖
+    ("obfuscation_base64_blob", r"\b[A-Za-z0-9+/]{48,}={0,2}\b"),
+    ("obfuscation_unicode_escape", r"(\\u[0-9a-fA-F]{4}){4,}"),
+    ("role_override_roleplay_cn", r"(假装|扮演|现在你是|从现在开始你是|你现在是)"),
+    ("role_override_disregard", r"disregard (all|previous|the above)"),
+    ("role_override_system_cn", r"(忽略|无视)(之前|以上|所有|上面的)(指令|提示|设定)"),
+    ("injection_translate_instructions", r"translate (the )?(above|previous) instructions"),
 ]
 
 # 控制字符（\x00-\x1f 除 \n \r \t）
@@ -133,7 +140,12 @@ class PromptGuard:
         # 1. 移除控制字符（保留 \n \r \t）
         sanitized = _CONTROL_CHARS_RE.sub("", text)
 
-        # 2. 转义 HTML 特殊字符（仅 < > &，不转义引号以保留正常文本可读性）
+        # 2. ASCII 引号全角化（P1-24）：chat 链路要求 LLM 输出 JSON，
+        #    半角引号可被用于闭合 JSON 字符串结构注入；全角等价字符
+        #    保留可读性同时消除定界符语义
+        sanitized = sanitized.replace('"', "＂").replace("'", "＇")
+
+        # 3. 转义 HTML 特殊字符（仅 < > &，不转义引号以保留正常文本可读性）
         sanitized = html.escape(sanitized, quote=False)
 
         # 3. 限制长度（按字符截断）

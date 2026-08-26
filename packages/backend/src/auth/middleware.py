@@ -145,6 +145,21 @@ class AuthMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
+    async def _public_rate_limit_ok(self, scope: Scope) -> bool:
+        """公开 GET 的每 IP 固定窗口限流（P1-25）；限流器未就绪时放行"""
+        from src.config import settings as _settings
+        from src.runtime import get_rate_limiter
+
+        limit = _settings.public_get_rate_limit_per_minute
+        if limit <= 0:
+            return True
+        limiter = get_rate_limiter()
+        if limiter is None:
+            return True
+        client = scope.get("client")
+        ip = client[0] if client else "unknown"
+        return await limiter.check(f"public_get:{ip}", max_requests=limit, window_seconds=60)
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             # WebSocket / lifespan 直接透传
@@ -168,6 +183,11 @@ class AuthMiddleware:
         if method == "GET":
             for prefix in self.PUBLIC_GET_PREFIXES:
                 if path.startswith(prefix):
+                    # P1-25：公开端点免鉴权不免滥用——按客户端 IP 限流，
+                    # 抑制对 world/tick 时序等公开读的高频爬取
+                    if not await self._public_rate_limit_ok(scope):
+                        await _send_429(send)
+                        return
                     await self.app(scope, receive, send)
                     return
 
@@ -203,6 +223,27 @@ async def _send_401(send: Send) -> None:
             "headers": [
                 [b"content-type", b"application/json"],
                 [b"content-length", str(len(body)).encode()],
+            ],
+        }
+    )
+    await send(
+        {
+            "type": "http.response.body",
+            "body": body,
+        }
+    )
+
+
+async def _send_429(send: Send) -> None:
+    body = b'{"detail":"Too many requests"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 429,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode()],
+                [b"retry-after", b"60"],
             ],
         }
     )

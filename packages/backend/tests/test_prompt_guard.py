@@ -103,12 +103,12 @@ def test_sanitize_preserves_newline_tab_carriage_return() -> None:
 
 
 def test_sanitize_escapes_html_special_chars() -> None:
-    """< > & 应被 HTML 转义（引号不转义）"""
+    """< > & 应被 HTML 转义；ASCII 引号全角化（P1-24 防 JSON 定界符闭合）"""
     guard = PromptGuard()
     assert guard.sanitize_user_input("<b>x</b>") == "&lt;b&gt;x&lt;/b&gt;"
     assert guard.sanitize_user_input("a & b") == "a &amp; b"
-    # 引号不转义（quote=False）
-    assert guard.sanitize_user_input('say "hi"') == 'say "hi"'
+    assert guard.sanitize_user_input('say "hi"') == "say ＂hi＂"
+    assert guard.sanitize_user_input("it's") == "it＇s"
 
 
 def test_sanitize_truncates_long_input() -> None:

@@ -71,6 +71,28 @@ def check_default_secrets() -> None:
         )
 
 
+def check_cors_origins() -> None:
+    """生产模式下 CORS_ORIGINS 为空即拒绝启动（P0-7）
+
+    main.py 的 CORS 中间件在未配置时静默降级为仅同源——开发便利，
+    但生产环境前端跨域会以浏览器侧模糊报错暴露且无任何服务端信号。
+    生产必须在部署清单显式声明前端来源列表。
+    """
+    if settings.environment != "production":
+        if not settings.cors_origins.strip():
+            logger.warning(
+                "cors_origins_not_configured_dev",
+                message="CORS_ORIGINS 未配置，跨域请求将被拒绝；生产环境将拒绝启动",
+            )
+        return
+    if not settings.cors_origins.strip():
+        logger.error(
+            "cors_origins_missing_blocked",
+            message="CORS_ORIGINS 未配置，生产模式下前端跨域必然失败，禁止启动；请配置实际前端域名列表",
+        )
+        raise RuntimeError("CORS_ORIGINS must be set when ENVIRONMENT=production")
+
+
 # 需要与 EMBEDDING_DIM 对齐的向量列：memory_episodes 自迁移 0005、
 # reflections 自迁移 0015 均为 halfvec(2048)；漏掉任一列都会把错配
 # 潜伏到该列首次向量写入/检索才暴露
