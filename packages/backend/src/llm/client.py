@@ -32,6 +32,7 @@ from src.cost_control import (
     get_circuit_breaker,
 )
 from src.llm.fallback import ModelSourcePool, invoke_with_fallback
+from src.observability.tracing import trace_span
 
 logger = get_logger(__name__)
 
@@ -296,6 +297,7 @@ class LLMClient:
         content, _ = await self.chat_with_usage(prompt, model=model, system_prompt=system_prompt)
         return content
 
+    @trace_span("llm.generate")
     async def chat_with_usage(
         self, prompt: str, model: str = "chat", system_prompt: str | None = None
     ) -> tuple[str, LLMUsage]:

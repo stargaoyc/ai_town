@@ -3,7 +3,6 @@
 覆盖：
 - get_langfuse() - 获取 Langfuse 客户端（未配置时返回 None）
 - record_llm_trace() - 独立记录函数（优雅降级 + 参数正确调用）
-- trace_llm_call(name) 装饰器（透传 + 返回值不变）
 
 使用 unittest.mock 模拟 Langfuse 客户端，不连接真实 Langfuse 服务器。
 """
@@ -19,7 +18,6 @@ from src.observability import langfuse_integration
 from src.observability.langfuse_integration import (
     get_langfuse,
     record_llm_trace,
-    trace_llm_call,
 )
 
 
@@ -217,110 +215,3 @@ def test_record_llm_trace_client_exception_swallowed() -> None:
         cost=0.0,
         duration=0.1,
     )
-
-
-# ---------------------------------------------------------------------------
-# trace_llm_call 装饰器
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_trace_llm_call_passthrough_when_uninitialized(unconfigured_langfuse: None) -> None:
-    """Langfuse 未初始化时直接透传（不影响业务）"""
-    assert get_langfuse() is None
-
-    @trace_llm_call("test_call")
-    async def mock_llm_call(prompt: str) -> str:
-        return "response: " + prompt
-
-    result = await mock_llm_call("hello")
-    assert result == "response: hello"
-
-
-@pytest.mark.asyncio
-async def test_trace_llm_call_preserves_return_value(unconfigured_langfuse: None) -> None:
-    """装饰 async 函数后正常执行，返回值不变"""
-    assert get_langfuse() is None
-
-    @trace_llm_call("test_call")
-    async def mock_llm_call(prompt: str) -> str:
-        return "test_response"
-
-    result = await mock_llm_call("test")
-    assert result == "test_response"
-
-
-@pytest.mark.asyncio
-async def test_trace_llm_call_with_mock_client() -> None:
-    """Langfuse 初始化后正确记录 generation"""
-    mock_client = MagicMock()
-    mock_trace = MagicMock()
-    mock_client.trace.return_value = mock_trace
-    langfuse_integration._langfuse_client = mock_client
-
-    @trace_llm_call("character_chat")
-    async def mock_llm_call(prompt: str, model: str = "chat") -> str:
-        return "response"
-
-    result = await mock_llm_call("hello", model="gpt-4o-mini")
-    assert result == "response"
-
-    mock_client.trace.assert_called_once_with(name="character_chat")
-    mock_trace.generation.assert_called_once()
-    call_kwargs = mock_trace.generation.call_args.kwargs
-    assert call_kwargs["name"] == "character_chat"
-    assert call_kwargs["model"] == "gpt-4o-mini"
-    assert call_kwargs["input"] == "hello"
-    assert call_kwargs["output"] == "response"
-
-
-@pytest.mark.asyncio
-async def test_trace_llm_call_records_exception_and_reraises() -> None:
-    """被装饰函数抛异常时记录 ERROR 并 re-raise"""
-    mock_client = MagicMock()
-    mock_trace = MagicMock()
-    mock_client.trace.return_value = mock_trace
-    langfuse_integration._langfuse_client = mock_client
-
-    @trace_llm_call("failing_call")
-    async def failing_llm_call(prompt: str) -> str:
-        raise RuntimeError("LLM failed")
-
-    with pytest.raises(RuntimeError, match="LLM failed"):
-        await failing_llm_call("test")
-
-    mock_trace.generation.assert_called_once()
-    call_kwargs = mock_trace.generation.call_args.kwargs
-    assert call_kwargs["level"] == "ERROR"
-    assert "RuntimeError: LLM failed" in call_kwargs["status_message"]
-
-
-@pytest.mark.asyncio
-async def test_trace_llm_call_preserves_function_metadata(unconfigured_langfuse: None) -> None:
-    """装饰器保留原函数元信息（functools.wraps）"""
-    assert get_langfuse() is None
-
-    @trace_llm_call("test_call")
-    async def documented_llm_call(prompt: str) -> str:
-        """This is a docstring."""
-        return "ok"
-
-    assert documented_llm_call.__name__ == "documented_llm_call"
-    assert documented_llm_call.__doc__ == "This is a docstring."
-
-
-@pytest.mark.asyncio
-async def test_trace_llm_call_extracts_prompt_from_args() -> None:
-    """装饰器从位置参数提取 prompt"""
-    mock_client = MagicMock()
-    mock_trace = MagicMock()
-    mock_client.trace.return_value = mock_trace
-    langfuse_integration._langfuse_client = mock_client
-
-    @trace_llm_call("extract_test")
-    async def llm_func(prompt: str) -> str:
-        return "resp"
-
-    await llm_func("my prompt text")
-    call_kwargs = mock_trace.generation.call_args.kwargs
-    assert call_kwargs["input"] == "my prompt text"

@@ -1,14 +1,19 @@
 """src/observability/logging.py 单元测试
 
 覆盖：
-- add_trace_context processor（trace_id 注入）
+- add_trace_context processor（trace_id 注入，不依赖采样决策）
+- mask_sensitive_keys processor（敏感键打码）
+- build_file_handler / setup_logging（轮转参数生效）
 - setup_logging（json / console 配置）
 - bind_context / clear_context（上下文绑定与清除）
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -17,10 +22,13 @@ import structlog
 from structlog.contextvars import merge_contextvars
 from structlog.testing import capture_logs
 
+from src.config import settings
 from src.observability.logging import (
     add_trace_context,
     bind_context,
+    build_file_handler,
     clear_context,
+    mask_sensitive_keys,
     setup_logging,
 )
 
@@ -105,6 +113,105 @@ def test_add_trace_context_otel_unavailable() -> None:
     assert result == {"event": "test", "key": "value"}
     assert "trace_id" not in result
     assert "span_id" not in result
+
+
+# ---------------------------------------------------------------------------
+# add_trace_context - 采样决策无关注入（R5-M17）
+# ---------------------------------------------------------------------------
+
+
+def _non_recording_span_with_valid_context() -> Any:
+    """构造携带有效 SpanContext 的 NonRecordingSpan（模拟头采样未命中）"""
+    from opentelemetry.trace import NonRecordingSpan, SpanContext
+
+    ctx = SpanContext(trace_id=0x1234567890ABCDEF1234567890ABCDEF, span_id=0x1234567890ABCDEF, is_remote=False)
+    return NonRecordingSpan(ctx)
+
+
+def test_add_trace_context_non_recording_span_still_injects() -> None:
+    """头采样未命中（NonRecordingSpan）但 SpanContext 有效时仍注入 trace_id"""
+    span = _non_recording_span_with_valid_context()
+    with patch("src.observability.logging._otel_trace.get_current_span", return_value=span):
+        event_dict = {"event": "sampled_out"}
+        result = add_trace_context(None, "info", event_dict)
+
+    assert result["trace_id"] == "1234567890abcdef1234567890abcdef"
+    assert result["span_id"] == "1234567890abcdef"
+    # 原有字段保留
+    assert result["event"] == "sampled_out"
+
+
+def test_add_trace_context_invalid_span_context_skipped() -> None:
+    """SpanContext 无效（trace_id=0）时不注入，避免产出全零假 trace_id"""
+    from opentelemetry.trace import NonRecordingSpan, SpanContext
+
+    invalid_ctx = SpanContext(trace_id=0, span_id=0, is_remote=False)
+    span = NonRecordingSpan(invalid_ctx)
+    with patch("src.observability.logging._otel_trace.get_current_span", return_value=span):
+        event_dict = {"event": "test"}
+        result = add_trace_context(None, "info", event_dict)
+
+    assert "trace_id" not in result
+    assert "span_id" not in result
+
+
+# ---------------------------------------------------------------------------
+# mask_sensitive_keys
+# ---------------------------------------------------------------------------
+
+
+def test_mask_sensitive_keys_masks_sensitive_key_values() -> None:
+    """键名命中敏感模式的字段整值打码为 ***"""
+    event_dict = {
+        "event": "redis_connected",
+        "password": "hunter2",
+        "api_key": "sk-abc123",
+        "access_token": "jwt-value",
+        "Authorization": "Bearer xyz",
+        "db_secret": "topsecret",
+    }
+    result = mask_sensitive_keys(None, "info", event_dict)
+    assert result["password"] == "***"
+    assert result["api_key"] == "***"
+    assert result["access_token"] == "***"
+    assert result["Authorization"] == "***"
+    assert result["db_secret"] == "***"
+    assert result["event"] == "redis_connected"
+
+
+def test_mask_sensitive_keys_keeps_normal_fields() -> None:
+    """普通字段原样保留（不做全文扫描）"""
+    long_text = "redis://:pw@host:6379 " * 100
+    event_dict = {"user_id": "u1", "content": long_text}
+    result = mask_sensitive_keys(None, "info", event_dict)
+    assert result["user_id"] == "u1"
+    assert result["content"] == long_text
+
+
+# ---------------------------------------------------------------------------
+# 日志文件轮转（R5-L17）
+# ---------------------------------------------------------------------------
+
+
+def test_build_file_handler_applies_rotation_config(tmp_path: Path) -> None:
+    """工厂按传入参数生成 RotatingFileHandler"""
+    log_file = tmp_path / "backend.log"
+    handler = build_file_handler(log_file, max_bytes=1024, backup_count=3)
+    try:
+        assert isinstance(handler, RotatingFileHandler)
+        assert handler.maxBytes == 1024
+        assert handler.backupCount == 3
+    finally:
+        handler.close()
+
+
+def test_setup_logging_installs_rotating_file_handler() -> None:
+    """setup_logging 在 root logger 上挂载使用配置旋钮的轮转 Handler"""
+    setup_logging(log_level="info", log_format="json")
+    rotating = [h for h in logging.getLogger().handlers if isinstance(h, RotatingFileHandler)]
+    assert len(rotating) == 1
+    assert rotating[0].maxBytes == settings.log_file_max_bytes
+    assert rotating[0].backupCount == settings.log_backup_count
 
 
 # ---------------------------------------------------------------------------

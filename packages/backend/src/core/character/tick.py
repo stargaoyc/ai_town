@@ -428,6 +428,7 @@ class CharacterTickEngine:
             action=decision.action,
         )
 
+    @trace_span("character.perceive")
     async def _perceive(self, character_id: UUID) -> dict[str, Any]:
         """感知环境 - 读取角色状态、世界状态、记忆、同场景其他角色
 
@@ -676,6 +677,7 @@ class CharacterTickEngine:
             "known_users": known_users_text,
         }
 
+    @trace_span("character.decide")
     async def _decide(
         self,
         character_id: UUID,
@@ -943,6 +945,7 @@ class CharacterTickEngine:
 
         return decision
 
+    @trace_span("tool.call")
     async def _execute_tool(
         self,
         character_id: UUID,
@@ -1164,6 +1167,7 @@ class CharacterTickEngine:
         """从世界状态解析当前虚拟小时；解析失败返回 None（移动校验跳过开放时间检查）"""
         return _parse_world_hour(str(context.get("world", {}).get("world_time") or ""))
 
+    @trace_span("action.execute")
     async def _execute_action(
         self,
         character_id: UUID,
@@ -1903,6 +1907,7 @@ class CharacterTickEngine:
             logger.info("plans_created_from_decision", character_id=str(character_id), count=created)
         return created
 
+    @trace_span("memory.write")
     async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """记忆沉淀
 

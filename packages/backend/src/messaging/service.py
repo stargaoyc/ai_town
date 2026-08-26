@@ -37,6 +37,7 @@ from src.db.repositories import (
     MessageRepository,
 )
 from src.llm import LLMClient, PromptTemplates
+from src.observability.tracing import trace_span
 from src.security.prompt_guard import PromptGuard
 
 if TYPE_CHECKING:
@@ -282,6 +283,7 @@ class MessageService:
                 return True, f"llm_error_fallback:{type(e).__name__}"
             return False, f"llm_judge_error:{type(e).__name__}"
 
+    @trace_span("message.process")
     async def handle_user_message(
         self,
         character_id: UUID,

@@ -2,22 +2,28 @@
 
 实现 Jaeger Span → Logs 联动：
 - add_trace_context processor 从 OTel context 读取 trace_id/span_id 注入日志事件
+  （只要 SpanContext 有效即注入，不依赖采样决策——头采样未命中的请求同样要能
+  从日志跳转到 Trace）
+- mask_sensitive_keys processor 对键名命中敏感模式的字段整值打码后进入渲染
 - bind_context / clear_context 基于 contextvars 实现请求级上下文绑定（user_id 等）
 - 标准库 logging 通过 ProcessorFormatter 也走 structlog 渲染，保证 uvicorn /
   sqlalchemy 等第三方库日志同样携带 trace_id，全链路可关联
-- 日志同时输出到 stderr 和文件（data/logs/backend.log），供 Alloy 采集到 Loki
+- 日志同时输出到 stderr 和轮转文件（data/logs/backend.log），供 Alloy 采集到 Loki
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
 import structlog
 import structlog.dev  # noqa: F401 - ConsoleRenderer 位于 structlog.dev
 
+from src.config import settings
+from src.observability.sanitizer import is_sensitive_key
 from src.paths import find_project_root
 
 try:
@@ -46,17 +52,16 @@ def add_trace_context(
 ) -> dict[str, Any]:
     """structlog processor：注入 OTel trace_id / span_id
 
-    从当前 OTel context 获取 active span，若有正在记录的 span 则将
-    trace_id（32 hex）/ span_id（16 hex）写入日志事件，便于在 Jaeger 中
-    从 Span 跳转到关联日志。
-
-    opentelemetry 未安装或无 active span 时不添加字段，原样返回 event_dict。
+    只要当前 SpanContext 有效（trace_id != 0）即注入，不检查 is_recording()：
+    头采样（TraceIdRatioBased）未命中的 NonRecordingSpan 同样携带有效
+    SpanContext，若因此丢弃 trace_id，未被采样的那半流量将永远无法从
+    日志跳转回 Trace。opentelemetry 未安装或无 active span 时不添加字段。
     """
     if not _OTEL_AVAILABLE:
         return event_dict
 
     span = _otel_trace.get_current_span()
-    if span is None or not span.is_recording():
+    if span is None:
         return event_dict
 
     ctx = span.get_span_context()
@@ -65,6 +70,24 @@ def add_trace_context(
 
     event_dict["trace_id"] = f"{ctx.trace_id:032x}"
     event_dict["span_id"] = f"{ctx.span_id:016x}"
+    return event_dict
+
+
+def mask_sensitive_keys(
+    logger: Any,
+    method_name: str,
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """structlog processor：键名命中敏感模式的字段整值打码为 ***
+
+    只做键匹配、不做全文扫描：逐值子串搜索会让每条日志都付出 O(n) 文本
+    开销，而敏感信息泄漏面几乎总是由字段名（password/token/api_key 等）
+    定位的。命中 sanitizer.SENSITIVE_KEY_PATTERNS 即打码，与手动脱敏共用
+    同一模式集合。
+    """
+    for key in list(event_dict):
+        if is_sensitive_key(str(key)):
+            event_dict[key] = "***"
     return event_dict
 
 
@@ -77,6 +100,20 @@ def _ensure_log_dir() -> Path:
     log_dir = find_project_root() / "data" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
+
+
+def build_file_handler(log_file: Path, *, max_bytes: int, backup_count: int) -> RotatingFileHandler:
+    """构造轮转文件 Handler（独立工厂，便于单测断言轮转参数）
+
+    长驻进程的日志文件无轮转会无限增长直至写满磁盘；max_bytes/backup_count
+    由 LOG_FILE_MAX_BYTES / LOG_BACKUP_COUNT 配置。
+    """
+    return RotatingFileHandler(
+        str(log_file),
+        encoding="utf-8",
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+    )
 
 
 def setup_logging(log_level: str = "info", log_format: str = "json") -> None:
@@ -95,12 +132,13 @@ def setup_logging(log_level: str = "info", log_format: str = "json") -> None:
         renderer = structlog.dev.ConsoleRenderer()
 
     # 共享 processor chain：structlog 与标准库 foreign 日志共用，
-    # 确保 trace_id / 上下文变量在两条路径上一致注入
+    # 确保 trace_id / 敏感键打码 / 上下文变量在两条路径上一致生效
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         add_trace_context,
+        mask_sensitive_keys,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
@@ -129,14 +167,15 @@ def setup_logging(log_level: str = "info", log_format: str = "json") -> None:
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(formatter)
 
-    # Handler 2: 文件（JSON 格式，供 Alloy 采集到 Loki）
+    # Handler 2: 轮转文件（JSON 格式，供 Alloy 采集到 Loki）
     handlers: list[logging.Handler] = [stderr_handler]
     try:
         log_dir = _ensure_log_dir()
         log_file = log_dir / "backend.log"
-        file_handler = logging.FileHandler(
-            str(log_file),
-            encoding="utf-8",
+        file_handler = build_file_handler(
+            log_file,
+            max_bytes=settings.log_file_max_bytes,
+            backup_count=settings.log_backup_count,
         )
         # 文件始终使用 JSON 格式
         file_formatter = structlog.stdlib.ProcessorFormatter(

@@ -1,18 +1,13 @@
-"""Langfuse LLM 追踪集成 - 记录每次 LLM 调用的 prompt/response/token/cost
+"""Langfuse 客户端单例与独立 LLM 追踪记录
 
 优雅降级策略：
 - langfuse 未安装 → 所有功能透传，不影响业务
-- langfuse 未配置（host/key 缺失）→ 跳过初始化，装饰器透传
+- langfuse 未配置（host/key 缺失）→ 跳过初始化，记录函数透传
 - 记录失败 → 仅记录 structlog 日志，不抛异常
 
-用法（装饰器）::
-
-    from src.observability import trace_llm_call
-
-    @trace_llm_call("character_chat")
-    async def call_llm(prompt: str, model: str = "chat") -> str:
-        ...
-        return response
+LLM 生成调用的 Tick 级追踪见 langfuse_tracing.trace_llm_call
+（自动挂到当前 Tick 根 trace 下形成父子层级）；本模块只承载
+Langfuse 客户端单例与无 Tick 上下文的手动记录入口。
 
 用法（独立记录）::
 
@@ -30,10 +25,7 @@
 
 from __future__ import annotations
 
-import functools
-import time
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING
 
 from structlog import get_logger
 
@@ -43,8 +35,6 @@ if TYPE_CHECKING:
     from langfuse import Langfuse
 
 logger = get_logger(__name__)
-
-T = TypeVar("T")
 
 # 全局 Langfuse 客户端单例
 _langfuse_client: Langfuse | None = None
@@ -122,150 +112,6 @@ def _truncate(text: str, max_length: int = _MAX_TEXT_LENGTH) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length] + "...[truncated]"
-
-
-def _extract_prompt(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    """从函数参数中提取 prompt 文本
-
-    优先从 kwargs 中查找 prompt/content/message/text/input 键，
-    其次从位置参数中取第一个字符串。
-    """
-    for key in ("prompt", "content", "message", "text", "input"):
-        val = kwargs.get(key)
-        if isinstance(val, str):
-            return val
-    for arg in args:
-        if isinstance(arg, str):
-            return arg
-    return ""
-
-
-def _extract_model(kwargs: dict[str, Any]) -> str:
-    """从函数参数中提取 model 名称"""
-    return str(kwargs.get("model", "unknown"))
-
-
-def _extract_result_info(result: Any) -> tuple[str, int, float]:
-    """从返回值中提取 response / tokens / cost
-
-    支持的返回值形式：
-    - str：response=result，tokens=0，cost=0.0
-    - dict：response 从 content/response/output 键取，
-            tokens 从 tokens 键取，cost 从 cost 键取
-    - tuple/list（len>=1）：response=result[0]，
-            tokens/cost 从索引 1/2 取（len>=3 时）
-
-    Returns:
-        (response_text, tokens, cost)
-    """
-    if isinstance(result, str):
-        return result, 0, 0.0
-    if isinstance(result, dict):
-        response = result.get("content") or result.get("response") or result.get("output") or ""
-        if not isinstance(response, str):
-            response = str(response)
-        tokens = int(result.get("tokens") or 0)
-        cost = float(result.get("cost") or 0.0)
-        return response, tokens, cost
-    if isinstance(result, (tuple, list)) and len(result) >= 1:
-        response = result[0]
-        if not isinstance(response, str):
-            response = str(response) if response is not None else ""
-        tokens = 0
-        cost = 0.0
-        if len(result) >= 3:
-            try:
-                tokens = int(result[1])
-                cost = float(result[2])
-            except (TypeError, ValueError):
-                pass
-        return response, tokens, cost
-    return str(result) if result is not None else "", 0, 0.0
-
-
-def trace_llm_call(name: str) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
-    """装饰器：记录 LLM 调用到 Langfuse
-
-    记录内容：
-    - prompt（截断 2000 字符）
-    - response（截断 2000 字符）
-    - model 名称
-    - tokens（prompt_tokens / completion_tokens / total_tokens）
-    - cost（USD）
-    - 耗时（秒）
-    - error（失败时记录异常信息）
-
-    装饰器仅支持 async 函数。如果 Langfuse 未初始化，装饰器直接透传调用。
-
-    Args:
-        name: 追踪名称（用于 Langfuse trace 标识）
-
-    Returns:
-        装饰器函数
-    """
-
-    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
-        @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> T:
-            client = get_langfuse()
-            # Langfuse 未初始化 → 透传，不影响业务
-            if client is None:
-                return await func(*args, **kwargs)
-
-            prompt = _extract_prompt(args, kwargs)
-            model = _extract_model(kwargs)
-            start_time = time.time()
-
-            trace = client.trace(name=name)
-
-            try:
-                result = await func(*args, **kwargs)
-            except Exception as e:
-                duration = time.time() - start_time
-                error_msg = f"{type(e).__name__}: {e}"
-                try:
-                    trace.generation(
-                        name=name,
-                        model=model,
-                        input=_truncate(prompt),
-                        output=None,
-                        usage=None,
-                        metadata={
-                            "cost_usd": 0.0,
-                            "duration_seconds": duration,
-                            "error": error_msg,
-                        },
-                        level="ERROR",
-                        status_message=error_msg,
-                    )
-                except Exception:
-                    logger.error("langfuse_record_error_failed", exc_info=True)
-                raise
-
-            # 成功：记录 generation
-            duration = time.time() - start_time
-            response, tokens, cost = _extract_result_info(result)
-
-            try:
-                trace.generation(
-                    name=name,
-                    model=model,
-                    input=_truncate(prompt),
-                    output=_truncate(response),
-                    usage=None,
-                    metadata={
-                        "cost_usd": cost,
-                        "duration_seconds": duration,
-                    },
-                )
-            except Exception:
-                logger.error("langfuse_record_failed", exc_info=True)
-
-            return result
-
-        return wrapper
-
-    return decorator
 
 
 def record_llm_trace(

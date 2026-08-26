@@ -4,7 +4,6 @@ from src.observability.langfuse_integration import (
     get_langfuse,
     record_llm_trace,
     setup_langfuse,
-    trace_llm_call,
 )
 from src.observability.logging import (
     add_trace_context,
@@ -61,7 +60,6 @@ __all__ = [
     "WORLD_TICK_ID",
     "setup_langfuse",
     "get_langfuse",
-    "trace_llm_call",
     "record_llm_trace",
     "setup_tracing",
     "get_tracer",

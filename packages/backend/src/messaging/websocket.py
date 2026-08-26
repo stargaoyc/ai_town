@@ -27,6 +27,7 @@ from structlog import get_logger
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.messaging import MessageService
+from src.observability.tracing import trace_span
 
 logger = get_logger(__name__)
 
@@ -136,6 +137,7 @@ class WebSocketManager:
                 return True
         return False
 
+    @trace_span("message.push")
     async def send_to_user(
         self,
         user_id: str,

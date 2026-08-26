@@ -100,6 +100,12 @@ LLM_COST_TOTAL = Counter(
     "ai_town_llm_cost_total_usd",
     "LLM 总费用（USD）",
 )
+# 日预算上限镜像（无标签）：告警规则用它作分母计算消耗比，
+# 预算值改配置即生效，无需改规则表达式
+LLM_DAILY_BUDGET_USD = Gauge(
+    "ai_town_llm_daily_budget_usd",
+    "每日 LLM 成本预算上限（USD），镜像 LLM_DAILY_BUDGET_USD 配置",
+)
 
 # === 消息指标 ===
 MESSAGE_PROCESSED_TOTAL = Counter(

@@ -29,8 +29,8 @@
 └─────────────────────────────┬───────────────────────────────────┘
                               │ OTLP / HTTP          │ stdout
 ┌─────────────────────────────▼─────────┐ ┌──────────▼──────────┐
-│        OTel Collector                 │ │   Grafana Alloy     │
-│   接收 → 批处理 → 采样 → 导出         │ │  统一采集日志/指标   │
+│  OTLP HTTP 直推 Jaeger（无 Collector）│ │   Grafana Alloy     │
+│  BatchSpanProcessor + 头采样          │ │  统一采集日志/指标   │
 └─────────────────────────────┬─────────┘ └──────────┬──────────┘
                               │                      │
         ┌─────────────────────┼──────────┐           │
@@ -54,11 +54,11 @@
 | 组件           | 职责                                                     | 版本    |
 | -------------- | -------------------------------------------------------- | ------- |
 | OTel SDK       | 应用层自动/手动埋点，生成 Span                           | 1.28+   |
-| Langfuse SDK   | LLM 专用追踪（Prompt/Completion/Token/Cost）             | 3.x     |
+| Langfuse SDK   | LLM 专用追踪（Prompt/Completion/Token/Cost）             | 2.x（锁 `>=2,<3`） |
 | structlog      | 结构化 JSON 日志（含 trace_id）                          | 最新    |
-| OTel Collector | 接收 OTLP，批处理/采样/过滤，导出到后端                  | 最新    |
+| （无 Collector） | 后端经 OTLP HTTP 直推 Jaeger；tail sampling 需先引入 Collector | —   |
 | Jaeger         | 分布式链路追踪存储与查询                                 | 最新    |
-| Langfuse       | LLM 调用观测（与 Jaeger 互补）                           | 3.x     |
+| Langfuse       | LLM 调用观测（与 Jaeger 互补）                           | 2.x（锁 `>=2,<3`） |
 | Prometheus     | 指标采集与存储（拉取模式）                               | 最新    |
 | Grafana Alloy  | 统一可观测性收集器（取代 Promtail），采集日志/指标/Trace | 最新    |
 | **Loki**       | **日志聚合存储，LogQL 查询**                             | **3.x** |
@@ -68,24 +68,30 @@
 
 ## 三、埋点覆盖矩阵
 
-| 埋点位置       | Span 名称                        | 关键属性                                                                 |
-| -------------- | -------------------------------- | ------------------------------------------------------------------------ |
-| World Tick     | `world.tick`                     | `tick_id`, `weather`, `time_advance`                                     |
-| Character Tick | `character.tick`                 | `character_id`, `tick_duration`                                          |
-| 角色感知       | `character.perceive`             | `character_id`, `memories_retrieved`                                     |
-| 角色决策       | `character.decide`               | `character_id`, `candidates_count`, `model`                              |
-| LLM 调用       | `llm.generate`                   | `model_name`, `tokens`, `temperature`, `cost`                            |
-| Action 决策    | `action.decision`                | `character_id`, `action_name`, `reason`                                  |
-| Action 执行    | `action.execute`                 | `action_id`, `duration`, `success`, `tx_id`                              |
-| 记忆写入       | `memory.write`                   | `character_id`, `importance`, `source_type`                              |
-| 记忆检索       | `memory.retrieve`                | `character_id`, `query`, `top_k`, `latency_ms`                           |
-| 反思生成       | `memory.reflect`                 | `character_id`, `memory_count`                                           |
-| 本地工具调用   | `tool.call`                      | `tool_name`（全名如 `shop.buy_item`）, `namespace`, `latency`, `success` |
-| 消息处理       | `message.process`                | `platform`, `session_id`, `response_time`                                |
-| 消息推送       | `message.push`                   | `character_id`, `target_user_id`, `reason`                               |
-| 模块操作       | `module.{enable\|disable\|call}` | `module_name`, `status`                                                  |
-| 模块健康检查   | `module.health_check`            | `module_name`, `status`                                                  |
-| DB 事务        | `db.tx`                          | `repo`, `op`, `latency_ms`, `rows`                                       |
+手动 span 统一由 `src/observability/tracing.py` 的 `@trace_span` 装饰器创建，
+属性集固定为 `code.function`、`args.*`（repr 截断 200 字符）、`result.type`，
+异常自动 `record_exception` 后原样上抛；span 名称即下表契约：
+
+| 埋点位置         | Span 名称          | 装饰目标                                          |
+| ---------------- | ------------------ | ------------------------------------------------- |
+| World Tick       | `world.tick`       | `WorldEngine._execute_tick`                       |
+| Character Tick   | `character.tick`   | `CharacterTickEngine.tick_character`              |
+| 角色感知         | `character.perceive` | `CharacterTickEngine._perceive`                 |
+| 角色决策         | `character.decide` | `CharacterTickEngine._decide`                     |
+| Action 执行      | `action.execute`   | `CharacterTickEngine._execute_action`             |
+| 记忆写入         | `memory.write`     | `CharacterTickEngine._memorize`                   |
+| 本地工具调用     | `tool.call`        | `CharacterTickEngine._execute_tool`               |
+| 消息处理         | `message.process`  | `MessageService.handle_user_message` 入口         |
+| 消息推送         | `message.push`     | `WebSocketManager.send_to_user`（Web 通道唯一埋点；QQ 通道经 OneBot 反向 WS 由外部实现发送，不加手动 span） |
+| LLM 调用         | `llm.generate`     | `LLMClient.chat_with_usage`                       |
+| Embedding 批处理 | `embedding.batch`  | `EmbeddingWorker._process_batch`                  |
+
+除上述手动 span 外：
+
+- **FastAPI 自动 instrumentation** 为每个 HTTP 请求生成 server span；
+- **AsyncPG 自动 instrumentation** 为每条 SQL 生成 client span——因此不再手写
+  `db.tx` span（避免双层重复）；
+- 模块系统无运行时 hook 点，`module.*` span 不存在，矩阵中不再列出。
 
 ---
 
@@ -95,16 +101,15 @@
 
 ```text
 trace_id: abc123
-├── span: character.tick (character_id=7f9c, duration=2.3s)
-│   ├── span: character.perceive (memories_retrieved=8)
-│   │   └── span: memory.retrieve (top_k=10, latency=18ms)
-│   ├── span: character.decide (candidates_count=5, model=gpt-4o)
-│   │   ├── span: llm.generate (tokens=850, cost=0.012)
-│   │   └── span: tool.call (tool=knowledge.query_kb, latency=18ms)
-│   └── span: action.execute (action_id=move_to_cafe, tx_id=tx_456)
-│       ├── span: db.tx (repo=action_repo, op=insert, rows=1)
-│       ├── span: db.tx (repo=memory_repo, op=insert, rows=1)
-│       └── span: memory.write (importance=6)
+├── span: character.tick
+│   ├── span: character.perceive
+│   │   └── AsyncPG 自动 span（状态/计划/记忆检索查询）
+│   ├── span: character.decide
+│   │   └── span: llm.generate（结构化决策调用）
+│   ├── span: tool.call（ReAct 循环命中工具时，内部可再嵌 llm.generate）
+│   ├── span: action.execute
+│   │   └── AsyncPG 自动 span（ActionRecord / 状态更新事务）
+│   └── span: memory.write
 ```
 
 ### 4.2 trace_id 注入日志
@@ -262,6 +267,7 @@ Grafana 数据源配置：
 | `tool_error_rate`          | Gauge     | 本地工具错误率    | > 5%              |
 | `tool_latency`             | Histogram | 本地工具延迟      | p95 > 1s          |
 | `action_execution_failed`  | Counter   | Action 执行失败   | > 10/h            |
+| `llm_daily_budget_usd`     | Gauge     | 日预算上限（镜像 `LLM_DAILY_BUDGET_USD`，启动时设置） | 与 `llm_cost_total_usd` 组合计算消耗比 |
 | `memory_retrieve_latency`  | Histogram | 记忆检索延迟      | p95 > 200ms       |
 | `db_tx_duration`           | Histogram | DB 事务耗时       | p95 > 500ms       |
 | `db_connection_pool_usage` | Gauge     | 连接池占用率      | > 80%             |
@@ -324,21 +330,25 @@ Grafana 数据源配置：
 
 ### 8.2 集成方式
 
+实际实现（`src/observability/langfuse_tracing.py`）在每次 LLM 调用完成后
+手动上报 generation，并自动挂到当前 Tick 的根 trace 下：
+
 ```python
-from langfuse import Langfuse
-from langfuse.openai import openai
+from src.observability.langfuse_tracing import trace_llm_call
 
-langfuse = Langfuse()
-
-# 使用 langfuse 包装的 openai 客户端, 自动追踪
-response = await openai.chat.completions.create(
-    model="gpt-4o",
-    messages=[...],
-    metadata={"character_id": str(cid), "trace_id": trace_id},
+trace_llm_call(
+    model=model,
+    prompt=prompt,
+    response=content,
+    tokens=total_tokens,
+    prompt_tokens=prompt_tokens,
+    completion_tokens=completion_tokens,
+    cost_usd=estimated_cost,
+    latency_ms=int(elapsed * 1000),
 )
 ```
 
-Langfuse 与 OTel 通过 `trace_id` 关联，可在 Jaeger 中跳转到 Langfuse 查看 LLM 详情。
+Langfuse 与 OTel 通过 metadata 中的 `otel_trace_id` 关联，可在 Jaeger 与 Langfuse 间互查。
 
 ---
 
@@ -348,11 +358,11 @@ Langfuse 与 OTel 通过 `trace_id` 关联，可在 Jaeger 中跳转到 Langfuse
 
 给定 `trace_id`，可还原：
 
-1. 角色当时的状态（从 `character.tick` span 属性）；
-2. 检索到的记忆（从 `memory.retrieve` span）；
+1. 角色当时的状态（从 `character.tick` / `character.perceive` span 属性与 Loki 日志）；
+2. 检索到的记忆（`character.perceive` 阶段的 AsyncPG 自动 span + PG 复查）；
 3. LLM 的完整 Prompt 与输出（从 Langfuse）；
 4. Action 执行结果（从 `action.execute` span）；
-5. 写入的数据库行（从 `db.tx` span + Loki 日志）；
+5. 写入的数据库行（AsyncPG 自动 span + Loki 日志）；
 6. 全部相关日志（Loki 按 `trace_id` 过滤）。
 
 ### 9.2 基于快照的世界回放
@@ -363,17 +373,21 @@ Langfuse 与 OTel 通过 `trace_id` 关联，可在 Jaeger 中跳转到 Langfuse
 
 ## 十、采样策略
 
-| Span 类型      | 采样率 | 说明                   |
-| -------------- | ------ | ---------------------- |
-| 错误 Span      | 100%   | 所有错误必采           |
-| LLM 调用       | 100%   | 通过 Langfuse 全量记录 |
-| World Tick     | 10%    | 高频，采样足够         |
-| Character Tick | 50%    | 兼顾性能与可观测       |
-| 本地工具调用   | 100%   | 关键路径               |     |
-| DB 事务        | 10%    | 高频，按需采样         |
-| 日志（Loki）   | 100%   | 全量采集，按需查询     |
+**当前实现为头采样（head sampling），OTLP HTTP 直连 Jaeger，无 Collector：**
 
-OTel Collector 配置 tail-based sampling，错误与慢请求优先保留。
+- 采样器为 `TraceIdRatioBased(OTEL_TRACES_SAMPLER_RATE)`（默认 0.5，见 `.env` 的
+  `OTEL_TRACES_SAMPLER_RATE`），在 trace 根部一次性决定整条链路是否记录；
+- 后端把 span 经 BatchSpanProcessor 直接发往 `OTEL_ENDPOINT`（Jaeger 的 4318 端口），
+  链路中不存在 OTel Collector；
+- 因此**没有「错误 Span 必采」的保证**：采样决定发生在请求开始时，与该请求最终
+  是否出错无关；
+- 日志不受采样影响——structlog 只要 SpanContext 有效即注入 `trace_id`/`span_id`
+  （不检查 `is_recording()`，R5-M17），未被采样的流量仍可从 Loki 按 trace_id
+  还原事件序列，只是 Jaeger 中没有对应链路。
+
+后续可选演进（当前未实施）：引入 OTel Collector 做 tail-based sampling
+（错误/慢链路优先保留），或将采样率临时调高。在此之前，告警与排障流程
+不得假设「错误 trace 一定能在 Jaeger 中找到」。
 
 ---
 

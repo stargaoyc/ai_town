@@ -183,6 +183,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         circuit_threshold=settings.llm_circuit_breaker_threshold,
     )
 
+    # 预算 gauge 只在启动时镜像一次配置值（告警规则以
+    # ai_town_llm_daily_budget_usd 为分母计算预算消耗比）
+    from src.observability.metrics import LLM_DAILY_BUDGET_USD
+
+    LLM_DAILY_BUDGET_USD.set(settings.llm_daily_budget_usd)
+
     # 1.5 预创建分区（确保月初写入不报错）
     try:
         from sqlalchemy import text
@@ -196,48 +202,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("partition_pre_create_failed", error=str(e), exc_info=True)
         # 不中断启动，分区可能已存在或由运维手动创建
-
-    # 1.55 校验 embedding 列物理维度与配置一致（Round-3 M2）
-    # halfvec(2048) 的维度记录在列 typmod 上，information_schema 直接暴露；
-    # 不一致时 HNSW 检索/写入会在运行期随机报错，必须在启动时 fail-fast
-    try:
-        from sqlalchemy import text as _text
-
-        from src.db.session import db as _db
-
-        async with _db.session() as session:
-            row = (
-                await session.execute(
-                    _text(
-                        "SELECT character_maximum_length FROM information_schema.columns "
-                        "WHERE table_name = 'memory_episodes' AND column_name = 'embedding'"
-                    )
-                )
-            ).first()
-        if row is None:
-            logger.warning(
-                "embedding_dimension_check_skipped",
-                reason="memory_episodes.embedding not found (fresh database pre-migration?)",
-            )
-        else:
-            physical_dim = int(row[0])
-            if physical_dim != settings.embedding_dim:
-                logger.error(
-                    "embedding_dimension_mismatch",
-                    physical_dim=physical_dim,
-                    configured_dim=settings.embedding_dim,
-                )
-                raise RuntimeError(
-                    f"embedding dim mismatch: DB has halfvec({physical_dim}), "
-                    f"settings.embedding_dim={settings.embedding_dim}. "
-                    "Fix EMBEDDING_DIM or run migration to alter the column."
-                )
-            logger.info("embedding_dimension_validated", dim=physical_dim)
-    except RuntimeError:
-        raise
-    except Exception as e:
-        logger.warning("embedding_dimension_check_failed", error=str(e), exc_info=True)
-        # 校验本身失败（如连接抖动）不阻断启动，维度不匹配才 fail-fast
 
     # 1.6 启动时从 PG 回灌 Redis 缺失的实时状态（P0-3）
     # Redis 重启/清空后恢复角色与世界状态，避免从零开始

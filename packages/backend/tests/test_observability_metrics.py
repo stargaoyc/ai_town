@@ -14,6 +14,7 @@ from prometheus_client import Counter, Gauge, Histogram
 
 from src.observability.metrics import (
     ACTIVE_CHARACTERS,
+    LLM_DAILY_BUDGET_USD,
     LLM_TOKENS_USED,
     REDIS_CONNECTED,
     WORLD_TICK_DURATION,
@@ -63,6 +64,18 @@ def test_redis_connected_is_gauge() -> None:
 def test_world_tick_id_is_gauge() -> None:
     """WORLD_TICK_ID 是 Gauge"""
     assert isinstance(WORLD_TICK_ID, Gauge)
+
+
+def test_llm_daily_budget_usd_is_unlabeled_gauge() -> None:
+    """LLM_DAILY_BUDGET_USD 是无标签 Gauge（告警规则按裸指标名消费）"""
+    assert isinstance(LLM_DAILY_BUDGET_USD, Gauge)
+    assert list(LLM_DAILY_BUDGET_USD._labelnames) == []
+
+
+def test_llm_daily_budget_usd_set_reflected() -> None:
+    """Gauge.set() 镜像预算配置值"""
+    LLM_DAILY_BUDGET_USD.set(12.5)
+    assert LLM_DAILY_BUDGET_USD._value.get() == 12.5
 
 
 # ---------------------------------------------------------------------------

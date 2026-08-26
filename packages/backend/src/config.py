@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     loki_url: str = "http://loki:3100"
     log_level: str = "info"
     log_format: str = "json"
+    # 日志文件轮转（RotatingFileHandler）：单文件上限与保留份数，
+    # 长驻进程不轮转会写满磁盘
+    log_file_max_bytes: int = 50_000_000
+    log_backup_count: int = 5
 
     # Auth
     jwt_secret: str

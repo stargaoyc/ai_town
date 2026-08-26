@@ -71,29 +71,46 @@ def check_default_secrets() -> None:
         )
 
 
+# 需要与 EMBEDDING_DIM 对齐的向量列：memory_episodes 自迁移 0005、
+# reflections 自迁移 0015 均为 halfvec(2048)；漏掉任一列都会把错配
+# 潜伏到该列首次向量写入/检索才暴露
+_VECTOR_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("memory_episodes", "embedding"),
+    ("reflections", "embedding"),
+)
+
+
 async def check_embedding_dim(session_factory: Callable[[], AbstractAsyncContextManager[Any]]) -> None:
-    """启动时校验 EMBEDDING_DIM 声明与物理列维度一致（R4-H7 纵深防御）
+    """启动时校验 EMBEDDING_DIM 声明与全部向量列物理维度一致（R4-H7 纵深防御）
 
     ORM 已钉死 HALFVEC(2048) 与迁移链对齐；本检查拦截「改了 env 没配套迁移」
     的错配——否则问题会潜伏到首次向量写入/检索才以运行时报错暴露。
+    halfvec 的维度记录在列 typmod 上（information_schema 对其返回 NULL），
+    必须经 pg_attribute + format_type 读取。
     """
     from sqlalchemy import text
 
+    mismatches: list[str] = []
     async with session_factory() as session:
-        result = await session.execute(
-            text(
-                "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a "
-                "WHERE a.attrelid = 'memory_episodes'::regclass AND a.attname = 'embedding'"
+        for table, column in _VECTOR_COLUMNS:
+            result = await session.execute(
+                text(
+                    "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a "
+                    "WHERE a.attrelid = CAST(:table AS regclass) AND a.attname = :column"
+                ),
+                {"table": table, "column": column},
             )
-        )
-        type_str = result.scalar_one_or_none()
-    if type_str is None:
-        logger.warning("embedding_dim_check_skipped", reason="memory_episodes.embedding column not found")
-        return
-    physical = int(str(type_str).split("(")[1].rstrip(")"))
-    if physical != settings.embedding_dim:
+            type_str = result.scalar_one_or_none()
+            if type_str is None:
+                # 列不存在（全新库尚未跑迁移）只告警不阻断，语义与原单列检查一致
+                logger.warning("embedding_dim_check_skipped", reason=f"{table}.{column} column not found")
+                continue
+            physical = int(str(type_str).split("(")[1].rstrip(")"))
+            if physical != settings.embedding_dim:
+                mismatches.append(f"{table}.{column} 为 {type_str}")
+    if mismatches:
         raise RuntimeError(
-            f"EMBEDDING_DIM={settings.embedding_dim} 与物理列 {type_str} 不一致："
+            f"EMBEDDING_DIM={settings.embedding_dim} 与物理列不一致：{'；'.join(mismatches)}——"
             "请将 .env 的 EMBEDDING_DIM 改回 2048 或执行配套迁移，二者必须一致"
         )
-    logger.info("embedding_dim_check_passed", dim=physical)
+    logger.info("embedding_dim_check_passed", dim=settings.embedding_dim, columns=len(_VECTOR_COLUMNS))

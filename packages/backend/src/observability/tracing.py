@@ -234,7 +234,10 @@ def trace_span(name: str) -> Callable[[F], F]:
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as span:
-                    if span is not None:
+                    # 头采样丢弃 / NoOp tracer 下 span 不记录：签名绑定与 repr 截断
+                    # 纯属浪费，全部属性操作以 is_recording() 为门控保持近零开销
+                    recording = span is not None and span.is_recording()
+                    if recording:
                         span.set_attribute("code.function", func.__name__)
                         try:
                             bound = inspect.signature(func).bind(*args, **kwargs)
@@ -246,10 +249,10 @@ def trace_span(name: str) -> Callable[[F], F]:
                     try:
                         result = await func(*args, **kwargs)
                     except Exception as e:
-                        if span is not None:
+                        if recording:
                             span.record_exception(e)
                         raise
-                    if span is not None:
+                    if recording:
                         span.set_attribute("result.type", type(result).__name__)
                     return result
 
