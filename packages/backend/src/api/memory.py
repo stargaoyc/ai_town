@@ -8,10 +8,11 @@
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 from structlog import get_logger
 
+from src.auth import decode_token, get_current_user
 from src.auth.rbac import require_role
 from src.db.repositories import MemoryRepository
 from src.db.session import db
@@ -30,6 +31,23 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["memory-extension"])
 
 AdminOrOperator = Annotated[dict[str, Any], Depends(require_role("admin", "operator"))]
+
+# 聚合类端点的跨用户读权限角色（round-6 review H2）
+_PRIVILEGED_ROLES = frozenset({"admin", "operator"})
+
+
+async def principal_with_role(request: Request) -> dict[str, Any]:
+    """鉴权并返回带角色的主体：JWT 取 token 的 role claim；API Key 无 RBAC 角色，按最小权限处理"""
+    user = await get_current_user(request)
+    role = "viewer"
+    if user["auth_method"] == "jwt":
+        payload = decode_token(request.headers.get("authorization", "")[7:])
+        role = str(payload.get("role", "viewer"))
+    return {"user_id": user["user_id"], "auth_method": user["auth_method"], "role": role}
+
+
+# 依赖类型别名（规避 B008：不在函数默认参数中调用 Depends）
+PrincipalWithRole = Annotated[dict[str, Any], Depends(principal_with_role)]
 
 
 def _get_diary_service() -> DiaryService:
@@ -114,9 +132,16 @@ async def generate_diary(
 @router.get("/characters/{character_id}/person-memory", response_model=PersonMemoryGetOut)
 async def get_person_memory(
     character_id: str,
+    user: PrincipalWithRole,
     user_id: str = Query(..., description="用户标识"),
 ) -> dict[str, Any]:
-    """获取角色对某用户的记忆"""
+    """获取角色对某用户的记忆
+
+    归属校验（round-6 review H2）：仅本人或 admin/operator 可查询。
+    """
+    if user_id != user["user_id"] and user["role"] not in _PRIVILEGED_ROLES:
+        raise HTTPException(status_code=403, detail="Not allowed to access other user's person-memory")
+
     try:
         cid = UUID(character_id)
     except ValueError:
@@ -132,9 +157,13 @@ async def get_person_memory(
 @router.get("/characters/{character_id}/person-memory/list", response_model=PersonMemoriesListOut)
 async def list_person_memories(
     character_id: str,
+    _user: AdminOrOperator,
     limit: int = Query(50, ge=1, le=500),
 ) -> dict[str, Any]:
-    """获取角色对所有用户的记忆列表（按热度倒序）"""
+    """获取角色对所有用户的记忆列表（按热度倒序）
+
+    跨用户记忆汇总仅限 admin/operator（round-6 review H2）。
+    """
     try:
         cid = UUID(character_id)
     except ValueError:
