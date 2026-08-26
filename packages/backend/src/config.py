@@ -4,7 +4,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
     # Database
     database_url: str
     db_pool_size: int = 20
@@ -20,6 +19,8 @@ class Settings(BaseSettings):
     model_chat: str = "gpt-4o-mini"
     model_strong: str = "gpt-4o"
     model_flash: str = "gpt-3.5-turbo"
+    # 图像生成模型（P1-23：此前误用 model_strong 强推理模型计费）
+    model_image: str = "agnes-image-2.1-flash"
     model_embedding: str = "text-embedding-3-small"
     embedding_model_key: str | None = None
     embedding_model_url: str | None = None
@@ -140,6 +141,35 @@ class Settings(BaseSettings):
     # Plan 层级体系：当日计划滚动过期（创建超过 TTL 的 active daily 置 expired）
     daily_plan_ttl_hours: int = 24
 
+    # 反思机制参数（P1-10：此前硬编码为类常量，调参需改码发版）
+    reflection_threshold: int = 20  # 未反思记忆达到该数量触发批次反思
+    reflection_pool_size: int = 30  # 单次参与归纳的记忆池上限
+    meta_reflection_min_total: int = 6  # 累计反思达到该数量后才考虑元反思
+    meta_reflection_cooldown_days: int = 7  # 两次元反思的最小间隔
+    meta_source_limit: int = 10  # 元反思读取的最近 tier-1 反思条数
+
+    # 计划自动推进（P1-13）：Action 完成后按标题与决策理由的字符二元组重叠
+    # 启发式推进相关计划进度；0 关闭。delta 为单次推进百分比，overlap 为触发阈值
+    plan_auto_progress_enabled: bool = True
+    plan_auto_progress_delta: int = 10
+    plan_auto_progress_overlap: float = 0.34
+
+    # HNSW 索引维护（P1-1）：保留周期大量 DELETE 后索引项不被 VACUUM 回收，
+    # 定期 REINDEX CONCURRENTLY 在线重建；间隔天数 0 关闭
+    hnsw_reindex_enabled: bool = True
+    hnsw_reindex_interval_days: int = 30
+
+    # Person Memory 热度上限（P2-11）：高频用户 heat 无界增长会与低频用户
+    # 拉开数千倍差距，检索排序失去区分度；交互累加时钳制到该值
+    person_memory_heat_cap: int = 500
+
+    # 传闻单源传播上限（P2-12）：同一源记忆在窗口内最多扩散给 N 个听者，
+    # 抑制多好友路径对同一事件的放大
+    gossip_max_listeners_per_source: int = 3
+
+    # 公开只读 GET 端点限流（P1-25）：每 IP 每分钟请求数上限，0 关闭
+    public_get_rate_limit_per_minute: int = 120
+
     # HNSW 检索参数（SET LOCAL 事务内生效；调大提升召回率、增加延迟）
     hnsw_ef_search: int = 100
 
@@ -204,3 +234,8 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
+
+# P3-2 配套：空字符串归一为 None——setup_tracing 以 is None 判定「禁用」，
+# ci 冒烟覆盖层用 OTEL_ENDPOINT="" 显式关闭 tracing，避免空串被当端点尝试导出
+if settings.otel_endpoint is not None and not settings.otel_endpoint.strip():
+    settings.otel_endpoint = None

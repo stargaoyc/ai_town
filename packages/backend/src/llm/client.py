@@ -513,7 +513,7 @@ class LLMClient:
             extra_body["return_base64"] = True
 
         response = await self.openai.images.generate(
-            model=settings.model_strong,
+            model=settings.model_image,
             prompt=prompt,
             size=size,
             extra_body=extra_body,
