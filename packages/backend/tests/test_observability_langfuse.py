@@ -13,11 +13,16 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest import MonkeyPatch
 
-from src.observability import langfuse_integration
+from src.observability import langfuse_integration, langfuse_tracing
 from src.observability.langfuse_integration import (
     get_langfuse,
     record_llm_trace,
+)
+from src.observability.langfuse_tracing import (
+    bind_chat_context,
+    trace_llm_call,
 )
 
 
@@ -215,3 +220,44 @@ def test_record_llm_trace_client_exception_swallowed() -> None:
         cost=0.0,
         duration=0.1,
     )
+
+
+def _patch_tracing_client(monkeypatch: MonkeyPatch) -> MagicMock:
+    """将 langfuse_tracing 的客户端替换为 MagicMock，捕获 trace/generation 调用"""
+    client = MagicMock()
+    monkeypatch.setattr(langfuse_tracing, "get_langfuse", lambda: client)
+    return client
+
+
+def _reset_tracing_contexts() -> None:
+    """隔离 ContextVar：sync 测试共享主线程上下文，须显式清场"""
+    langfuse_tracing._tick_trace_id.set(None)
+    langfuse_tracing.clear_chat_context()
+
+
+def test_trace_llm_call_carries_bound_chat_context(monkeypatch: MonkeyPatch) -> None:
+    """R5-L16：绑定会话上下文后，独立 trace 携带 session_id/user_id 并入 metadata"""
+    _reset_tracing_contexts()
+    client = _patch_tracing_client(monkeypatch)
+    bind_chat_context(session_id="conv-1", user_id="qq_123")
+
+    trace_llm_call(model="m", prompt="p", response="r", latency_ms=1)
+
+    trace_kwargs = client.trace.call_args.kwargs
+    assert trace_kwargs["session_id"] == "conv-1"
+    assert trace_kwargs["user_id"] == "qq_123"
+    gen_kwargs = client.trace.return_value.generation.call_args.kwargs
+    assert gen_kwargs["metadata"]["session_id"] == "conv-1"
+    assert gen_kwargs["metadata"]["user_id"] == "qq_123"
+
+
+def test_trace_llm_call_without_context_stays_unscoped(monkeypatch: MonkeyPatch) -> None:
+    """未绑定时（如 Tick 链路）不携带会话维度，trace 保持无 session"""
+    _reset_tracing_contexts()
+    client = _patch_tracing_client(monkeypatch)
+
+    trace_llm_call(model="m", prompt="p", response="r", latency_ms=1)
+
+    trace_kwargs = client.trace.call_args.kwargs
+    assert trace_kwargs["session_id"] is None
+    assert trace_kwargs["user_id"] is None

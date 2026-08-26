@@ -2,6 +2,7 @@
 
 本模块复用 langfuse_integration 中的 Langfuse 单例，提供：
 - start_tick_trace()/end_tick_trace(): 以 Tick 为根 trace 串联全部子观测
+- bind_chat_context()/clear_chat_context(): 绑定会话上下文（session/user 归组）
 - trace_llm_call(): 记录 LLM 生成调用（自动挂到当前 Tick 根 trace 下，
   形成父子层级；无 Tick 上下文时独立成 trace）
 - flush_langfuse(): 关闭前刷新缓冲区
@@ -25,6 +26,23 @@ _MAX_TEXT_LENGTH = 2000
 
 # 当前 Tick 的根 trace id（ContextVar 跨 await 传播，任务间隔离）
 _tick_trace_id: ContextVar[str | None] = ContextVar("tick_trace_id", default=None)
+
+# 当前会话上下文（消息服务生成回复前绑定；Langfuse 的 session 是把同一
+# 会话的全部 trace 归组的一等概念，缺失时每次对话在 UI 里都是孤立记录）
+_chat_session_id: ContextVar[str | None] = ContextVar("chat_session_id", default=None)
+_chat_user_id: ContextVar[str | None] = ContextVar("chat_user_id", default=None)
+
+
+def bind_chat_context(session_id: str, user_id: str) -> None:
+    """绑定会话上下文：此后同任务内的 LLM 追踪携带 session_id/user_id"""
+    _chat_session_id.set(session_id)
+    _chat_user_id.set(user_id)
+
+
+def clear_chat_context() -> None:
+    """解除会话上下文绑定（与 bind_chat_context 配对）"""
+    _chat_session_id.set(None)
+    _chat_user_id.set(None)
 
 
 def _truncate(text: str, max_length: int = _MAX_TEXT_LENGTH) -> str:
@@ -119,6 +137,12 @@ def trace_llm_call(
             metadata["cost_usd"] = cost_usd
         if character_id:
             metadata["character_id"] = character_id
+        session_id = _chat_session_id.get()
+        user_id = _chat_user_id.get()
+        if session_id:
+            metadata["session_id"] = session_id
+        if user_id:
+            metadata["user_id"] = user_id
         otel_trace_id = _otel_trace_id()
         if otel_trace_id:
             metadata["otel_trace_id"] = otel_trace_id
@@ -148,6 +172,8 @@ def trace_llm_call(
         trace = client.trace(
             name="llm_call",
             metadata={"character_id": character_id} if character_id else None,
+            session_id=session_id,
+            user_id=user_id,
         )
         trace.generation(
             name="llm_generation",
@@ -179,6 +205,12 @@ def trace_llm_error(
 
     try:
         metadata: dict[str, Any] = {"latency_ms": latency_ms}
+        session_id = _chat_session_id.get()
+        user_id = _chat_user_id.get()
+        if session_id:
+            metadata["session_id"] = session_id
+        if user_id:
+            metadata["user_id"] = user_id
         otel_trace_id = _otel_trace_id()
         if otel_trace_id:
             metadata["otel_trace_id"] = otel_trace_id
@@ -198,7 +230,11 @@ def trace_llm_error(
             )
             return
 
-        trace = client.trace(name="llm_call")
+        trace = client.trace(
+            name="llm_call",
+            session_id=session_id,
+            user_id=user_id,
+        )
         trace.generation(
             name="llm_generation",
             model=model,

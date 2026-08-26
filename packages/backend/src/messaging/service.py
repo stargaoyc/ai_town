@@ -37,6 +37,7 @@ from src.db.repositories import (
     MessageRepository,
 )
 from src.llm import LLMClient, PromptTemplates
+from src.observability.langfuse_tracing import bind_chat_context, clear_chat_context
 from src.observability.tracing import trace_span
 from src.security.prompt_guard import PromptGuard
 
@@ -404,12 +405,18 @@ class MessageService:
         )
 
         # 5. 调用 LLM 生成回复
-        reply_text, tokens, cost, error = await self._generate_reply(
-            character=character,
-            context=context,
-            history=history,
-            user_message=content,
-        )
+        # 会话上下文仅覆盖主生成段：Langfuse 靠 session_id 把同一会话的
+        # trace 归组，缺失时对话在 UI 中无法按用户回溯（R5-L16）
+        bind_chat_context(session_id=str(conversation.id), user_id=user_id)
+        try:
+            reply_text, tokens, cost, error = await self._generate_reply(
+                character=character,
+                context=context,
+                history=history,
+                user_message=content,
+            )
+        finally:
+            clear_chat_context()
 
         # 6. 写入角色回复
         reply_msg = await self.message_repo.add(
