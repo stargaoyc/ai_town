@@ -61,6 +61,10 @@ class GossipService:
             # 去重键 = (好友, 窗口)：已有该好友的传闻则本窗口不再重复
             if await self._already_heard(character_id, friend_id, cutoff):
                 continue
+            # P2-12：单源传播上限——同一事件经多好友路径扩散会给大量角色
+            # 写入近似记忆，放大存储与检索噪声；超过上限的源本轮跳过
+            if await self._source_listeners_exhausted(source.id, cutoff):
+                continue
 
             created = await self._create_second_hand(
                 character_id=character_id,
@@ -114,6 +118,29 @@ class GossipService:
             )
         )
         return bool(await self.session.scalar(stmt))
+
+    async def _source_listeners_exhausted(self, source_memory_id: UUID, cutoff: datetime) -> bool:
+        """统计单条源记忆在窗口内已产生的传闻数，达到上限返回 True（P2-12）
+
+        溯源键：gossip 记忆的 related_characters[0] 指向源作者而非源记忆，
+        无法按记忆 ID 精确计数；退而以「同作者 + 同重要性 + 窗口内」的
+        gossip 行数近似同一事件的扩散规模。
+        """
+        source = await self.session.get(MemoryEpisode, source_memory_id)
+        if source is None:
+            return False
+        stmt = (
+            select(func.count())
+            .select_from(MemoryEpisode)
+            .where(
+                MemoryEpisode.source_type == "gossip",
+                MemoryEpisode.timestamp >= cutoff,
+                MemoryEpisode.related_characters.contains([source.character_id]),
+                MemoryEpisode.importance == max(2, source.importance // 2),
+            )
+        )
+        count = int(await self.session.scalar(stmt) or 0)
+        return count >= settings.gossip_max_listeners_per_source
 
     async def _create_second_hand(
         self, character_id: UUID, source: MemoryEpisode, importance: int

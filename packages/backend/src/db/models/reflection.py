@@ -7,11 +7,12 @@
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import ForeignKey, Index, Integer, Text
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
@@ -37,6 +38,15 @@ class Reflection(Base):
     content: Mapped[str] = mapped_column(Text, comment="反思内容")
     tier: Mapped[int] = mapped_column(
         Integer, default=1, server_default="1", comment="反思层级：1=批次主题反思，2=跨期元反思"
+    )
+    # P2-10：检索配额内按重要性加权，避免平庸与深刻反思平权竞争
+    importance: Mapped[int] = mapped_column(
+        Integer, default=5, server_default="5", comment="重要性 1-10（按支撑记忆数/主题数推导）"
+    )
+    # P1-11：元反思的来源 tier-1 反思 ID 列表——reflection_sources 复合外键
+    # 只能挂 memory_episodes，元认知溯源需独立承载
+    source_reflection_ids: Mapped[list[Any] | None] = mapped_column(
+        JSONB, comment="元反思来源的 tier-1 反思 ID 列表（仅 tier=2 使用）"
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
     # 0016 迁移补建（R4-M1：文档声称存在但从未创建）

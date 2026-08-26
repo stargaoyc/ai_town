@@ -55,19 +55,28 @@ class ReflectionRepository(BaseRepository[Reflection]):
 
     async def get_recent_contents(self, character_id: UUID, limit: int = 10, max_tier: int = 1) -> list[str]:
         """取最近若干条 tier<=max_tier 的反思正文（元反思原料）"""
+        rows = await self.get_recent_with_ids(character_id, limit=limit, max_tier=max_tier)
+        return [content for _rid, content in rows]
+
+    async def get_recent_with_ids(
+        self, character_id: UUID, limit: int = 10, max_tier: int = 1
+    ) -> list[tuple[UUID, str]]:
+        """取最近 tier<=max_tier 反思的 (id, content)（P1-11：元反思需回挂来源 ID）"""
         stmt = (
-            select(Reflection.content)
+            select(Reflection.id, Reflection.content)
             .where(Reflection.character_id == character_id, Reflection.tier <= max_tier)
             .order_by(Reflection.created_at.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return [row[0] for row in result.all()]
+        return [(row[0], row[1]) for row in result.all()]
 
     async def search_semantic(self, character_id: UUID, query_vec: list[float], limit: int = 5) -> list[Reflection]:
         """语义检索角色反思（HNSW 余弦近邻，距离升序即相似度降序）
 
         - WHERE character_id 过滤 + embedding IS NOT NULL（生成失败的降级行不参与）
+        - P2-10：距离相同（HNSW 近似返回的并列）时重要性高的反思优先，
+          避免 5 条配额被平庸反思占满
         - SET LOCAL hnsw.ef_search 提升召回质量（与 memory_repo.search_hybrid
           同一 raw-connection 模式；SET LOCAL 必须与查询在同一事务内）
         """
@@ -84,7 +93,10 @@ class ReflectionRepository(BaseRepository[Reflection]):
                 Reflection.character_id == character_id,
                 Reflection.embedding.is_not(None),
             )
-            .order_by(Reflection.embedding.cosine_distance(query_vec))
+            .order_by(
+                Reflection.embedding.cosine_distance(query_vec),
+                Reflection.importance.desc(),
+            )
             .limit(limit)
         )
         result = await self.session.execute(stmt)

@@ -127,8 +127,10 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         return int(result.scalar_one())
 
     async def fetch_unreflected(self, character_id: UUID, limit: int = 20) -> list[MemoryEpisode]:
-        """获取角色未反思的记忆（按时间正序，先入先反思）
+        """获取角色未反思的记忆（重要性降序优先，时间升序次之）
 
+        P2-9：此前纯时间正序 FIFO，池窗口固定 30 条会截断跨月长程主题——
+        高重要性旧事件先入池，保证跨期归纳不被近期流水淹没。
         利用 idx_mem_unreflected 部分索引加速查询。
         """
         stmt = (
@@ -138,7 +140,7 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
                 MemoryEpisode.is_reflected.is_(False),
                 MemoryEpisode.is_duplicate.is_(False),
             )
-            .order_by(MemoryEpisode.timestamp.asc())
+            .order_by(MemoryEpisode.importance.desc(), MemoryEpisode.timestamp.asc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)

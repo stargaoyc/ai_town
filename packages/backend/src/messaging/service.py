@@ -402,6 +402,7 @@ class MessageService:
             state=state,
             history=history,
             group_context=group_context,
+            user_message=content,
         )
 
         # 5. 调用 LLM 生成回复
@@ -496,6 +497,7 @@ class MessageService:
         state: CharacterState,
         history: list[Message],
         group_context: list[dict[str, str]] | None = None,
+        user_message: str | None = None,
     ) -> dict[str, Any]:
         """构造 LLM 上下文字段（供 chat.yaml 模板渲染使用）
 
@@ -551,7 +553,10 @@ class MessageService:
             from src.memory.person_memory_service import PersonMemoryService
 
             pm_service = PersonMemoryService(session_factory=db.session)
-            person_memory_text = await pm_service.get_relevant_context(character.id, conversation.user_id)
+            # P1-9：以当前消息为检索线索召回相关记忆条目
+            person_memory_text = await pm_service.get_relevant_context(
+                character.id, conversation.user_id, query_hint=user_message
+            )
         except Exception as e:
             logger.warning("person_memory_context_load_failed", error=str(e))
 

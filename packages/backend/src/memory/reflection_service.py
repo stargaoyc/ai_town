@@ -12,6 +12,7 @@ from uuid import UUID
 
 from structlog import get_logger
 
+from src.config import settings
 from src.db.models import Reflection, ReflectionSource
 from src.db.repositories import MemoryRepository, ReflectionRepository
 from src.llm import LLMClient
@@ -22,11 +23,12 @@ logger = get_logger(__name__)
 class ReflectionService:
     """反思服务（批次主题反思 + 跨期元反思）"""
 
-    REFLECTION_THRESHOLD = 20  # 每 N 条未反思记忆触发批次反思
-    REFLECTION_POOL_SIZE = 30  # 单次参与归纳的记忆池上限（跨期覆盖优于旧版固定 20）
-    META_REFLECTION_MIN_TOTAL = 6  # 累计反思达到该数量后才考虑元反思
-    META_REFLECTION_COOLDOWN_DAYS = 7  # 两次元反思的最小间隔
-    META_SOURCE_LIMIT = 10  # 元反思读取的最近 tier-1 反思条数
+    # P1-10：阈值全部下沉 settings（config.py reflection_*），支持部署级调参
+    REFLECTION_THRESHOLD = settings.reflection_threshold
+    REFLECTION_POOL_SIZE = settings.reflection_pool_size
+    META_REFLECTION_MIN_TOTAL = settings.meta_reflection_min_total
+    META_REFLECTION_COOLDOWN_DAYS = settings.meta_reflection_cooldown_days
+    META_SOURCE_LIMIT = settings.meta_source_limit
 
     def __init__(
         self,
@@ -114,10 +116,15 @@ class ReflectionService:
 
         saved: Reflection | None = None
         for theme in themes:
+            # P2-10：重要性按支撑记忆占比推导——覆盖池内过半记忆的主题
+            # 属稳定认知（8-9 分），零星单条支撑的观察降为低档（3-4 分）
+            support_count = len(theme["memory_ids"])
+            derived_importance = max(3, min(9, 3 + round(support_count * 6 / max(len(episodes), 1))))
             reflection = Reflection(
                 character_id=character_id,
                 content=f"{theme['summary']}：{theme['detail']}",
                 tier=1,
+                importance=derived_importance,
             )
             stored = await self.ref_repo.add(reflection)
             saved = stored
@@ -153,14 +160,17 @@ class ReflectionService:
         if total < self.META_REFLECTION_MIN_TOTAL:
             return None
 
-        contents = await self.ref_repo.get_recent_contents(character_id, limit=self.META_SOURCE_LIMIT, max_tier=1)
+        contents = await self.ref_repo.get_recent_with_ids(character_id, limit=self.META_SOURCE_LIMIT, max_tier=1)
         if len(contents) < 3:
             return None
 
         prompts = self._prompts or self._load_prompts(character_id)
         if prompts is None:
             return None
-        prompt = prompts.render("reflection_meta", reflections_text="\n".join(f"- {c}" for c in contents))
+        prompt = prompts.render(
+            "reflection_meta",
+            reflections_text="\n".join(f"- {c}" for _rid, c in contents),
+        )
 
         result = await self.llm.structured_output(
             prompt,
@@ -190,12 +200,17 @@ class ReflectionService:
             return None
 
         saved: Reflection | None = None
+        # P1-11：元反思回挂全部来源 tier-1 的 ID——reflections.source_reflection_ids
+        # 是元认知溯源的唯一通道（reflection_sources 外键只覆盖 memory_episodes）
+        source_ids = [rid for rid, _content in contents]
         for meta in metas:
             detail = meta.get("meta_detail") or ""
             reflection = Reflection(
                 character_id=character_id,
                 content=f"[长期倾向] {meta['meta_summary']}：{detail}".strip(),
                 tier=2,
+                importance=8,
+                source_reflection_ids=[str(sid) for sid in source_ids],
             )
             saved = await self.ref_repo.add(reflection)
             await self._embed_saved(saved)

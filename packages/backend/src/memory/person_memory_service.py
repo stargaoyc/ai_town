@@ -12,10 +12,19 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from structlog import get_logger
 
+from src.config import settings
 from src.db.models import PersonMemory, PersonMemoryEntry
 from src.runtime import get_llm
 
 logger = get_logger(__name__)
+
+
+def _char_bigrams(text: str) -> set[str]:
+    """字符二元组集合：中文无分词场景的轻量相似度原语"""
+    text = text.strip()
+    if len(text) <= 1:
+        return {text} if text else set()
+    return {text[i : i + 2] for i in range(len(text) - 1)}
 
 
 class PersonMemoryService:
@@ -209,7 +218,9 @@ class PersonMemoryService:
                     PersonMemory.user_id == user_id,
                 )
                 .values(
-                    heat=PersonMemory.heat + 1,
+                    # P2-11：热度钳制上限——高频用户无界增长会与低频用户拉开
+                    # 数千倍差距，使 heat 排序失去区分度
+                    heat=func.least(PersonMemory.heat + 1, settings.person_memory_heat_cap),
                     last_interaction_at=func.now(),
                     updated_at=func.now(),
                     **({"preferences": merged_prefs} if merged_prefs else {}),
@@ -229,11 +240,14 @@ class PersonMemoryService:
                 )
             await session.commit()
 
-    async def get_relevant_context(self, character_id: UUID, user_id: str) -> str:
+    async def get_relevant_context(self, character_id: UUID, user_id: str, query_hint: str | None = None) -> str:
         """获取角色对用户的记忆上下文，注入对话 system prompt（两层组装）
 
         = 主档 content（后台压缩合并的稳定认知）
-          + 最近未压缩事实条目（最多 8 条，时间倒序——最新交互的细节）
+          + 事实条目选取（P1-9）：提供 query_hint 时按与当前消息的字符二元组
+            重叠度从近 50 条未压缩条目中选最相关的 8 条——此前固定取最新 8 条，
+            用户多话题交错时无法召回「关于这个用户我记过的相关事」；
+            无 hint 时退化为时间倒序最新 8 条。
         """
         memory = await self.get_memory(character_id, user_id)
         profile = str(memory.get("content") or "").strip() if memory else ""
@@ -247,9 +261,24 @@ class PersonMemoryService:
                     PersonMemoryEntry.compacted.is_(False),
                 )
                 .order_by(PersonMemoryEntry.created_at.desc())
-                .limit(8)
+                .limit(50)
             )
-            recent = [row[0] for row in (await session.execute(stmt)).all()]
+            candidates = [row[0] for row in (await session.execute(stmt)).all()]
+
+        recent: list[str]
+        if query_hint and query_hint.strip():
+            hint_bigrams = _char_bigrams(query_hint)
+            if hint_bigrams:
+                scored = sorted(
+                    ((len(hint_bigrams & _char_bigrams(c)) / max(len(hint_bigrams), 1), c) for c in candidates),
+                    key=lambda pair: pair[0],
+                    reverse=True,
+                )
+                recent = [c for score, c in scored[:8] if score > 0]
+            else:
+                recent = candidates[:8]
+        else:
+            recent = candidates[:8]
 
         parts = []
         if profile:
