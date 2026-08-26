@@ -1,8 +1,9 @@
-"""创意生成工具 - 图片生成（生成→QQ 链路的源头）
+"""创意生成工具 - 图片/视频生成（生成→QQ 链路的源头）
 
-角色通过 ReAct 调用 draw_image，内部走 LLMClient.generate_image
-（MODEL_STRONG = agnes-image-2.1-flash），返回图片 URL 与可直接嵌入
-QQ 回复的 CQ 码；出站净化由 OneBot 适配器统一处理。
+角色通过 ReAct 调用 draw_image / generate_video，内部走 LLMClient。
+图片同步返回 URL；视频为异步任务：调用立即返回受理回执，
+轮询与产物落库在进程后台任务中完成（P0-1：同步轮询 1-10 分钟
+会占死角色 Tick 信号量槽位）。
 
 限制：
 - 只读工具，不修改任何状态
@@ -15,6 +16,7 @@ QQ 回复的 CQ 码；出站净化由 OneBot 适配器统一处理。
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -34,43 +36,82 @@ def _snap_frames(frames: int) -> int:
     return max(25, snapped)
 
 
-async def generate_video_clip(prompt: str, frames: int = 25) -> dict[str, Any]:
-    """根据文字描述生成一段短视频
+async def _finalize_video(character_id: str, prompt: str, frames: int) -> None:
+    """后台轮询视频任务并把产物写入角色记忆（P0-1 后台半场）
 
-    ⚠️ 同步轮询直至生成完成，典型耗时 1-3 分钟，上限约 10 分钟
-    （LLMClient 内 MEDIA_VIDEO_MAX_POLLS × MEDIA_VIDEO_POLL_INTERVAL 轮询，
-    可经 .env 调优）——会占用当前角色 Tick 槽位，
-    其他角色不受影响。完成后返回视频 URL 与 CQ 码。
+    在进程后台注册表中运行，不占用任何 Tick 槽位；完成后以
+    source_type=action 的记忆沉淀视频 URL，供后续决策/对话引用。
+    """
+    from src.core.background import spawn_background
+
+    llm = get_llm()
+    if llm is None:
+        return
+
+    async def _run() -> None:
+        try:
+            url = await llm.generate_video(prompt=prompt, num_frames=frames)
+        except Exception as exc:
+            MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="failed").inc()
+            logger.warning("generate_video_bg_failed", error=str(exc), character_id=character_id)
+            return
+        if not url.startswith("http"):
+            MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="failed").inc()
+            logger.warning("generate_video_bg_invalid_url", character_id=character_id)
+            return
+
+        MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="success").inc()
+        logger.info("generate_video_bg_ok", character_id=character_id, frames=frames)
+
+        from src.db.session import db
+        from src.memory.episode_service import EpisodeService
+
+        async with db.session() as session:
+            from src.db.repositories import MemoryRepository
+
+            service = EpisodeService(llm, MemoryRepository(session))
+            await service.create_episode(
+                character_id=UUID(character_id),
+                content=f"[视频作品] 我生成了一段短视频：{prompt[:80]}……成片已就绪：{url}",
+                action_id="media.generate_video",
+                importance=6,
+                character_name=None,
+                reason="完成一个异步视频生成任务",
+            )
+
+    spawn_background(_run(), name=f"media.generate_video:{character_id}")
+
+
+async def generate_video_clip(prompt: str, frames: int = 25, character_id: str = "") -> dict[str, Any]:
+    """提交一段短视频生成任务（异步受理，立即返回）
+
+    P0-1：此前在本函数内同步轮询直至完成（典型 1-3 分钟、上限约 10 分钟），
+    期间占死当前角色的 Tick 信号量槽位——两个并发视频即可吃掉 20% 吞吐。
+    现改为：校验后立即提交后台任务并返回受理回执；产物由后台半场
+    写入角色记忆（_finalize_video）。
 
     Args:
         prompt: 视频内容的文字描述
         frames: 目标帧数（自动对齐到 8n+1，越大越长越慢）
+        character_id: 发起角色 ID（registry 自动注入），用于产物记忆归属
 
     Returns:
-        成功：{"success": True, "url": ..., "cq_code": "[CQ:video,file=<URL>]", ...}
+        受理回执：{"success": True, "pending": True, "message": ..., ...}
     """
     llm = get_llm()
     if llm is None:
         return {"success": False, "error": "LLM 未初始化，无法生成视频"}
 
     snapped = _snap_frames(frames)
-    try:
-        url = await llm.generate_video(prompt=prompt, num_frames=snapped)
-    except Exception as exc:
-        MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="failed").inc()
-        logger.warning("generate_video_failed", error=str(exc))
-        return {"success": False, "error": f"视频生成失败: {exc}"}
+    if character_id:
+        await _finalize_video(character_id, prompt, snapped)
 
-    if not url.startswith("http"):
-        MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="failed").inc()
-        return {"success": False, "error": "video url invalid"}
-
-    MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="success").inc()
-    logger.info("generate_video_ok", frames=snapped)
+    MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="submitted").inc()
+    logger.info("generate_video_submitted", frames=snapped, character_id=character_id)
     return {
         "success": True,
-        "url": url,
-        "cq_code": f"[CQ:video,file={url}]",
+        "pending": True,
+        "message": f"视频生成任务已提交（约 {frames} 帧），完成后我会把成片分享出来",
         "prompt": prompt,
         "frames": snapped,
     }

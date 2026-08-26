@@ -74,35 +74,53 @@ class TestDrawImage:
 
 
 class TestGenerateVideoClip:
-    async def test_success_returns_url_and_cq(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls: list[dict[str, Any]] = []
+    async def test_submit_returns_pending_receipt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """P0-1：视频生成改为异步受理——立即返回回执，不再同步轮询"""
 
         class VideoLLM:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+
             async def generate_video(self, **kwargs: Any) -> str:
-                calls.append(kwargs)
+                self.calls.append(kwargs)
                 return "https://cdn.example.com/out/clip.mp4"
 
-        _patch_llm(monkeypatch, VideoLLM())
+        stub = VideoLLM()
+        _patch_llm(monkeypatch, stub)
 
         result = await media.generate_video_clip("猫追蝴蝶", frames=30)
 
         assert result["success"] is True
-        assert result["url"] == "https://cdn.example.com/out/clip.mp4"
-        assert result["cq_code"] == "[CQ:video,file=https://cdn.example.com/out/clip.mp4]"
+        assert result["pending"] is True
         # 30 对齐到 8n+1 -> 33
-        assert calls[0]["num_frames"] == 33
+        assert result["frames"] == 33
+        # 无 character_id 时不起后台任务，LLM 不应被调用
+        assert stub.calls == []
 
-    async def test_failure_returns_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_background_failure_is_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """后台半场轮询失败只记日志，不向调用方抛错"""
+
         class FailLLM:
             async def generate_video(self, **kwargs: Any) -> str:
                 raise TimeoutError("video_poll_timeout")
 
+        captured: dict[str, Any] = {}
+
+        def _fake_spawn(coro: Any, name: str) -> None:
+            captured["name"] = name
+            coro.close()  # 失败路径无需真正执行轮询
+
+        monkeypatch.setattr(
+            "src.core.background.spawn_background",
+            _fake_spawn,
+        )
         _patch_llm(monkeypatch, FailLLM())
 
-        result = await media.generate_video_clip("测试", frames=25)
+        result = await media.generate_video_clip("测试", frames=25, character_id="01964000-0000-7000-8000-000000000001")
 
-        assert result["success"] is False
-        assert "video_poll_timeout" in result["error"]
+        assert result["success"] is True
+        assert result["pending"] is True
+        assert "media.generate_video" in captured["name"]
 
     async def test_llm_not_initialized(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_llm(monkeypatch, None)
