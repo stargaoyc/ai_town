@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from typing import Any
+from uuid import uuid4
 
 from structlog import get_logger
 
@@ -79,7 +80,9 @@ def start_tick_trace(character_id: str) -> str | None:
     if client is None:
         return None
     try:
-        trace_id = client.create_trace_id()
+        # langfuse 2.x 无 create_trace_id()；根 trace id 由本地生成 32 位 hex，
+        # 后续 trace()/generation() 以同一 id 关联（与 OTel trace_id 格式对齐）
+        trace_id = uuid4().hex
         client.trace(id=trace_id, name="character_tick", metadata={"character_id": character_id})
         _tick_trace_id.set(trace_id)
         return str(trace_id)
