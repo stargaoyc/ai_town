@@ -6,10 +6,13 @@ Redis 是实时状态真相源，PG 是镜像。双写路径上的任何一环�
 
 本模块定期 diff 两库并自动修复：
 1. Redis 键缺失 → 从 PG 回灌（pg_to_redis）
-2. 数值/位置字段漂移 → 以 Redis 为准修正 PG（redis_to_pg）
+2. 数值/位置字段漂移 → 版本感知仲裁修复（方向见 run_reconciliation）
+3. 场景占用漂移 → 以 PG location 重算计数修正 visitors（P0-2）
+4. 优先队列：tick 双写失败路径写入 reconcile:prioritize，
+   每轮先处理队列内角色再全量扫描（P1-2）
 
-漂移判定只针对 Tick 链路真正双写的字段；current_action 是纯瞬态
-（每 Tick 都变），不参与对账。
+漂移判定只针对 Tick 链路真正双写的字段；current_action 自 P1-3 起纳入
+对账（dict 比较）——中途崩溃残留的陈旧动作由下轮对账收敛。
 """
 
 from __future__ import annotations
@@ -37,14 +40,33 @@ _RECONCILE_FIELDS = (
     "phone_battery",
     "social_energy",
     "inventory",
+    "current_action",
 )
 
 # 数值字段集合（PG int 列；Redis 侧经 decode_state_value 已还原为 int）
 _INT_FIELDS = frozenset({"stamina", "satiety", "money", "phone_battery", "social_energy"})
 
+# 复合字段集合（PG JSONB 列；dict 语义比较）
+_JSON_FIELDS = frozenset({"inventory", "current_action"})
+
+# tick 双写失败时的优先修复队列（P1-2）：SADD 幂等，对账每轮先 SPOP 排空
+_PRIORITIZE_KEY = "reconcile:prioritize"
+
 # 修复临界区（复核+HSET）远短于 Tick 的 30s 锁 TTL，短 TTL 即可：
 # 持有者崩溃时最多阻塞下一轮 Tick 5 秒
 _REPAIR_LOCK_TTL = 5
+
+
+async def request_character_repair(redis: Redis, character_id: Any) -> None:
+    """把角色加入优先修复队列（tick 写 Redis 失败时调用，P1-2）
+
+    队列消费后角色立即进入本轮对账，无需等待最长一个全量周期；
+    Redis 本身不可用时入队失败——此时全量扫描路径会照常兜底。
+    """
+    try:
+        await redis.sadd(_PRIORITIZE_KEY, str(character_id))
+    except Exception as e:
+        logger.warning("reconcile_prioritize_enqueue_failed", error=str(e))
 
 
 def fields_differ(field: str, redis_value: Any, pg_value: Any) -> bool:
@@ -54,7 +76,7 @@ def fields_differ(field: str, redis_value: Any, pg_value: Any) -> bool:
             return int(redis_value) != int(pg_value or 0)
         except (TypeError, ValueError):
             return True
-    if field == "inventory":
+    if field in _JSON_FIELDS:
         return dict(redis_value or {}) != dict(pg_value or {})
     # location / mood：字符串比较（空值归一为 None）
     return (str(redis_value) if redis_value else None) != (str(pg_value) if pg_value else None)
@@ -78,6 +100,55 @@ def collect_drift(pg_state: CharacterState, redis_hash: dict[Any, Any]) -> list[
 SessionFactory = Any  # () -> AbstractAsyncContextManager[AsyncSession]
 
 
+def _expected_occupancy(rows: list[tuple[Character, CharacterState]]) -> dict[str, int]:
+    """从 (Character, CharacterState) 行集推导各场景期望在场人数（P0-2）"""
+    counts: dict[str, int] = {}
+    for _character, pg_state in rows:
+        loc = pg_state.location
+        if loc:
+            counts[loc] = counts.get(loc, 0) + 1
+    return counts
+
+
+async def _reconcile_scene_visitors(redis: Redis, rows: list[tuple[Character, CharacterState]]) -> int:
+    """校验并修复 world:scene:visitors 与 PG location 的漂移（P0-2）
+
+    Returns:
+        修复的场景数
+    """
+    from src.modules.town.loader import SceneLoader
+    from src.observability.metrics import RECONCILE_DRIFT_TOTAL, RECONCILE_REPAIR_TOTAL
+
+    expected = _expected_occupancy(rows)
+    raw = await redis.hgetall(SceneLoader.VISITORS_KEY)
+    actual: dict[str, int] = {}
+    for scene_id, count_raw in raw.items():
+        scene_str = scene_id.decode("utf-8") if isinstance(scene_id, bytes | bytearray) else str(scene_id)
+        try:
+            actual[scene_str] = int(count_raw)
+        except (TypeError, ValueError):
+            actual[scene_str] = -1
+
+    drifted = {sid: cnt for sid, cnt in expected.items() if actual.get(sid, 0) != cnt}
+    stale = [sid for sid in actual if sid not in expected and actual[sid] != 0]
+    if not drifted and not stale:
+        return 0
+
+    pipe = redis.pipeline(transaction=False)
+    for sid in set(drifted) | set(stale):
+        target = drifted.get(sid, 0)
+        if target:
+            pipe.hset(SceneLoader.VISITORS_KEY, sid, str(target))
+        else:
+            pipe.hdel(SceneLoader.VISITORS_KEY, sid)
+    await pipe.execute()
+
+    RECONCILE_DRIFT_TOTAL.labels(kind="scene_visitors").inc()
+    RECONCILE_REPAIR_TOTAL.labels(direction="pg_to_redis").inc()
+    logger.warning("reconcile_scene_visitors_repaired", scenes=sorted(set(drifted) | set(stale)))
+    return len(set(drifted) | set(stale))
+
+
 async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> dict[str, int]:
     """执行一轮全量对账，返回统计计数。
 
@@ -89,6 +160,10 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
             变更回滚成陈旧的 Redis 值；
         * 基线未变（漂移来自绕过双写的路径）→ 以 Redis 为准修正 PG。
       每轮处理完记录基线 `char:{id}:rec_ver`。
+    - 场景占用漂移 → 以 PG location 重算修正 visitors 计数（P0-2）
+
+    P1-4：每角色的 exists/hgetall/get 三次往返合并进 pipeline；
+    P1-2：每轮先排空 reconcile:prioritize 优先队列。
 
     Args:
         redis: Redis 客户端（decode_responses=True）
@@ -104,10 +179,46 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
 
     async with session_factory() as session:
         rows = (await session.execute(select(Character, CharacterState).join(CharacterState))).unique().all()
+        by_id = {character.id: (character, pg_state) for character, pg_state in rows}
+
+        # P1-2：优先队列排空——双写失败的角色不等全量周期
+        prioritized: list[str] = []
+        while True:
+            cid_raw = await redis.spop(_PRIORITIZE_KEY)
+            if cid_raw is None:
+                break
+            cid_str = cid_raw.decode("utf-8") if isinstance(cid_raw, bytes | bytearray) else str(cid_raw)
+            prioritized.append(cid_str)
+
+        ordered: list[tuple[Character, CharacterState]] = []
+        seen: set[Any] = set()
+        for cid_str in prioritized:
+            try:
+                from uuid import UUID
+
+                cid = UUID(cid_str)
+            except ValueError:
+                continue
+            pair = by_id.get(cid)
+            if pair is not None and cid not in seen:
+                ordered.append(pair)
+                seen.add(cid)
         for character, pg_state in rows:
+            if character.id not in seen:
+                ordered.append((character, pg_state))
+                seen.add(character.id)
+
+        for character, pg_state in ordered:
             key = f"char:{character.id}:state"
             ver_key = f"char:{character.id}:rec_ver"
-            if not await redis.exists(key):
+            # P1-4：exists + hgetall + get 合并为一次 pipeline 往返
+            pipe = redis.pipeline(transaction=False)
+            pipe.exists(key)
+            pipe.hgetall(key)
+            pipe.get(ver_key)
+            exists, raw_hash, rec_ver_raw = await pipe.execute()
+
+            if not exists:
                 await restore_character_to_redis(redis, pg_state)
                 await redis.set(ver_key, pg_state.version)
                 stats["missing_keys"] += 1
@@ -117,7 +228,6 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 logger.warning("reconcile_missing_key_rehydrated", character_id=str(character.id))
                 continue
 
-            raw_hash = await redis.hgetall(key)
             drift = collect_drift(pg_state, raw_hash)
             if not drift:
                 continue
@@ -125,7 +235,6 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
             # 版本感知仲裁：PG 在上次对账后发生过写入 → PG 更可信，
             # 反向把 PG 镜像推回 Redis，而不是用陈旧 Redis 覆盖新写入。
             # 首次对账无基线：无法判定新旧，维持「Redis 为准」的默认方向。
-            rec_ver_raw = await redis.get(ver_key)
             if rec_ver_raw is None:
                 pg_advanced = False
                 rec_ver = 0
@@ -213,6 +322,9 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 pg_version=int(pg_state.version),
                 reconciled_version=rec_ver,
             )
+
+        # P0-2：场景占用对账（复用同一批行集推导期望值）
+        stats["scene_visitors_repairs"] = await _reconcile_scene_visitors(redis, rows)
 
     if stats["repairs"]:
         logger.info("reconciliation_completed_with_repairs", **stats)

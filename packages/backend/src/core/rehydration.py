@@ -50,6 +50,7 @@ async def rehydrate_states(redis: Redis) -> None:
 
     1. character_states → char:{id}:state（键缺失才写）
     2. 最新 world_snapshots → world:state（键缺失才写）
+    3. 场景占用全量重建（P0-2：visitors/成员名单无其他恢复路径）
     """
     # 角色状态回灌
     restored_chars = 0
@@ -78,3 +79,42 @@ async def rehydrate_states(redis: Redis) -> None:
             }
             await redis.hset("world:state", mapping=mapping)  # type: ignore[arg-type]
             logger.info("rehydrated_world_state", tick_id=snapshot.tick_id)
+
+    await rebuild_scene_occupancy(redis)
+
+
+async def rebuild_scene_occupancy(redis: Redis) -> int:
+    """从 PG location 全量重建场景占用三件套（P0-2）
+
+    world:scene:visitors / scene:{id}:characters / scene:{id}:state.current_count
+    此前无任何恢复路径：Redis 丢失后拥挤度静默归零，而 PG 中角色位置仍在，
+    漂移要等每个角色下次 move 才逐个修正。PG 的 location 是唯一可推导真相源。
+
+    Returns:
+        参与重建的角色数
+    """
+    from src.modules.town.loader import SceneLoader
+
+    async with db.session() as session:
+        states = await CharacterRepository(session).get_all_states()
+
+    members: dict[str, list[str]] = {}
+    for st in states:
+        if st.location:
+            members.setdefault(st.location, []).append(str(st.character_id))
+
+    pipe = redis.pipeline(transaction=False)
+    pipe.delete(SceneLoader.VISITORS_KEY)
+    known_scenes = set(members.keys())
+    for scene_id, ids in members.items():
+        chars_key = SceneLoader.SCENE_CHARACTERS_KEY.format(scene_id=scene_id)
+        state_key = SceneLoader.SCENE_STATE_KEY.format(scene_id=scene_id)
+        pipe.delete(chars_key)
+        if ids:
+            pipe.sadd(chars_key, *ids)
+        pipe.hset(state_key, "current_count", str(len(ids)))
+        pipe.hset(SceneLoader.VISITORS_KEY, scene_id, str(len(ids)))
+    await pipe.execute()
+
+    logger.info("scene_occupancy_rebuilt", characters=len(states), scenes=len(known_scenes))
+    return len(states)

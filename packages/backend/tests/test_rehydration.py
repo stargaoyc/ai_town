@@ -22,12 +22,71 @@ class FakeRedis:
     def __init__(self) -> None:
         self.hashes: dict[str, dict[str, Any]] = {}
         self.hset_calls: list[tuple[str, dict[str, Any]]] = []
+        self.sets: dict[str, set[str]] = {}
+        self.deleted_keys: list[str] = []
 
     async def exists(self, key: str) -> int:
         return 1 if key in self.hashes else 0
 
     async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self.hset_calls.append((key, mapping or {}))
+
+    async def delete(self, *keys: str) -> int:
+        for key in keys:
+            self.deleted_keys.append(key)
+            self.hashes.pop(key, None)
+            self.sets.pop(key, None)
+        return len(keys)
+
+    async def sadd(self, key: str, *members: str) -> int:
+        self.sets.setdefault(key, set()).update(members)
+        return len(members)
+
+    def pipeline(self, transaction: bool = False) -> "FakePipe":
+        return FakePipe(self)
+
+
+class FakePipe:
+    """批量写直接落到 hashes/sets（不进 hset_calls，保持旧断言口径）"""
+
+    def __init__(self, parent: FakeRedis) -> None:
+        self._parent = parent
+        self._ops: list[tuple[str, tuple[Any, ...]]] = []
+
+    def delete(self, *keys: str) -> "FakePipe":
+        self._ops.append(("delete", keys))
+        return self
+
+    def sadd(self, key: str, *members: str) -> "FakePipe":
+        self._ops.append(("sadd", (key, members)))
+        return self
+
+    def hset(
+        self,
+        key: str,
+        field: str | None = None,
+        value: str | None = None,
+        mapping: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> "FakePipe":
+        if field is not None:
+            mapping = {field: value or ""}
+        self._ops.append(("hset", (key, mapping or {})))
+        return self
+
+    async def execute(self) -> list[int]:
+        for name, args in self._ops:
+            if name == "delete":
+                await self._parent.delete(*args)
+            elif name == "sadd":
+                key, members = args
+                await self._parent.sadd(key, *members)
+            else:
+                key, mapping = args
+                self._parent.hashes.setdefault(key, {}).update(mapping)
+        applied = len(self._ops)
+        self._ops.clear()
+        return [1] * applied
 
 
 class FakeSession:
@@ -136,3 +195,23 @@ async def test_rehydrate_skips_existing_world_state(monkeypatch: MonkeyPatch) ->
     await rehydration.rehydrate_states(cast(Redis, redis))
 
     assert redis.hset_calls == []
+
+
+async def test_rehydrate_rebuilds_scene_occupancy(monkeypatch: MonkeyPatch) -> None:
+    """P0-2：启动回灌必须从 PG location 重建场景占用三件套"""
+    redis = FakeRedis()
+    states = [
+        _fake_char_state(location="cafe"),
+        _fake_char_state(),
+        _fake_char_state(character_id=UUID("01964000-0000-7000-8000-000000000002"), location="cafe"),
+    ]
+    _patch_repos(monkeypatch, states, None)
+
+    await rehydration.rehydrate_states(cast(Redis, redis))
+
+    visitors = redis.hashes.get("world:scene:visitors", {})
+    assert visitors["cafe"] == "2"
+    assert visitors["home"] == "1"
+    cafe_members = redis.sets.get("scene:cafe:characters", set())
+    assert len(cafe_members) == 2
+    assert redis.hashes["scene:cafe:state"]["current_count"] == "2"
