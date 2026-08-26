@@ -8,6 +8,80 @@
 
 ### Added
 
+- **主动分享激活**：决策 schema 补 `proactiveShareIntent` 字段——此前 structured_output 按 schema 建
+  模型丢弃额外键，分享闸门恒关，README 特性自诞生起不可达。
+- **OneBot 入站限流**：单群/私聊固定窗口限流（复用 RateLimiter 原子 INCR+EXPIRE），超限静默丢弃；
+  配置 `ONEBOT_RATE_LIMIT_PER_MINUTE`（0=禁用）。
+- **告警链路自监控**：Prometheus 抓取 alertmanager 自身指标 + `AlertmanagerDeliveryFailing` 规则——
+  webhook 403/网络断时投递失败即触发 critical，「告警发不出去」首次可自证。
+- **预算 gauge 锚点**：新增 `ai_town_llm_daily_budget_usd`（启动期镜像 `LLM_DAILY_BUDGET_USD`），
+  预算告警改比价 gauge 随配置缩放，不再硬编码 $8。
+- **Langfuse 会话归组**：消息服务主生成段绑定 conversation id 与用户标识（ContextVar），
+  LLM 追踪携带 session_id/user_id，对话可按用户回溯。
+- **路由级错误/404 页面**：根路由补 errorComponent/notFoundComponent，错误页仅露 message 无堆栈，
+  404 复用 GlassCard/EmptyState 模式。
+- **聊天区分页**：角色详情页「加载更多」按 20 条扩窗（invalidate 同 key，不改 key 形状），
+  容器加高至 max-h-96，滚动改依赖末条消息 id。
+- **plans 终态保留策略**：completed/abandoned/expired 超期行随 cognition 周期清理；
+  配置 `PLANS_RETENTION_DAYS`（默认 90，0=禁用）。
+- **保留策略分批删除**：七处 retention DELETE 改主键子查询限量循环；配置
+  `RETENTION_DELETE_BATCH_SIZE`（默认 5000），大积压首跑不再长时间持锁刷 WAL。
+- **memory_episodes autovacuum 调优**：迁移 0018 经 pg_inherits 枚举 HASH 子分区逐个设置
+  （分区父表不接受 reloption）；不设 fillfactor——追加写为主无原地 UPDATE 热点。
+- **视频轮询可调**：`MEDIA_VIDEO_MAX_POLLS` × `MEDIA_VIDEO_POLL_INTERVAL` 决定角色 Tick 槽位
+  被占时长（默认维持 120×5s≈10 分钟）。
+- **CI openapi 再生守卫**：backend job 测试后重导出 openapi.json 并 diff，路由漂移即 CI 失败。
+
+### Changed
+
+- **日记素材等距采样**：抓取上限提至 400 后均匀取 20 条覆盖窗口首尾四分位——此前 ASC LIMIT 100 +
+  尾部取样使日记系统性描述窗口开头内容。
+- **运维页轮询放宽**：adminStatus/nearbyCharacters/onebotMessages 10s→30s、logs/metrics 5s→15s；
+  notifications 移除轮询（WS 推送已失效缓存，双通道冗余）。
+- **span 矩阵兑现**：决策链/消息/工具/LLM 八个关键跳数补齐 @trace_span（perceive/decide/
+  action.execute/memory.write/tool.call/message.process/push/llm.generate），装饰器加 is_recording
+  门控——头采样丢弃时不再白做签名绑定与 repr 截断；observability.md 矩阵改为与实现一致。
+- **日志 trace_id 全量注入**：不再要求 is_recording——未采样流量的 NonRecordingSpan 同样携带有效
+  SpanContext，Logs→Trace 跳转对全量流量恢复。
+- **文件日志轮转 + 敏感键打码**：RotatingFileHandler（`LOG_FILE_MAX_BYTES`/`LOG_BACKUP_COUNT`，
+  默认 50MB×5）；structlog 管道接入敏感键打码 processor（复用 sanitizer 键模式，不做全文扫描）。
+- **成本面板重启诚实**：overview/llm 两处成本面板改 `sum(increase(...[$__range]))`——Counter 跨重启
+  归零后裸 gauge 展示误导；顺带修正 llm 面板标题无中生有的 by model。
+- **tick.py 拆分**：2107→1176 行——_perceive 及胶水迁入 perception.py（PerceptionMixin），
+  chat_with/群活动/传闻/主动分享处理器迁入 social.py（SocialMixin），纯机械搬移零行为变更。
+
+### Fixed
+
+- **deploy-smoke 红到货修复（R5-H1 P1）**：新增 docker-compose.ci.yml 注入 CI 占位凭据
+  （openai_api_key/jwt_secret 为 pydantic 必填，缺失时容器导入期即崩）+ job 补 GRAFANA_ADMIN_PASSWORD
+  （compose 对未激活 profile 同样插值）；本机以 CI 同款环境实证 config -q 通过。
+- **日记幂等世界时透传（R5-H3 P1）**：批量路径漏转发 world_now 致 diary_date 落真实日历而幂等键比
+  世界日历，触发窗内每轮重复生成。
+- **multimodal_structured_output 接入成本契约（R5-H4 P1）**：镜像 multimodal_chat 纪律——前置熔断+
+  预算检查、include_raw 取真实用量、失败路径补 Langfuse；此前整体游离于预算/熔断/指标之外。
+- **OneBot token 生产 fail-fast（R5-H5 P1）**：ENVIRONMENT=production 且 ONEBOT_ACCESS_TOKEN 未配置时
+  拒绝启动——无令牌端点允许任意客户端伪造 QQ 事件。
+- **归档按创建时间计龄（R5-M2）**：memory_episodes 新增 created_at（迁移 0017），旧积压压缩出的
+  归档不再因继承事件时间戳而在 24h 内被删；存量回填保持等效年龄。
+- **WS 驱逐身份校验（R5-M4）**：broadcast/send_to_user/端点 finally 三处仅清理失败时那条连接，
+  广播挂起期间重连的新连接不再被误杀。
+- **分享扇出 rollback（R5-M5）**：单条约束失败不再把 session 打入 pending-rollback 态毒化整批投递。
+- **失锁不变量对齐（R5-M6/L11/L12）**：chat_with 关系/记忆写入前补失锁检查；工具记忆改经 context
+  暂存随主事务落库（回滚不留孤儿记忆）；tool_name 缺失合成失败观察终止盲轮。
+- **工具提示门控（R5-M3）**：decision_tools.yaml 仅在确有可用工具时追加——空列表仍渲染模板会诱导
+  LLM 输出注定失败的 use_tool 白烧最多 3 轮全量 prompt。
+- **维度守卫收敛（R5-L1/L2）**：删除 main.py 中 information_schema 版死路径检查；守卫扩展覆盖
+  reflections.embedding。
+- **文档↔schema 三处漂移（R5-L3）**：conversations 索引名/event_key 类型默认值/0014 索引补录。
+- **群上下文环序修正（R5-L9）**：读取反转为旧→新序与契约一致；角色群回复写回环内，多角色同群
+  互相可见对方发言。
+- **杂项卫生**：reconcile pg_to_redis 修复持 Tick 锁互斥（R5-L7）；search_hybrid_global 加显式
+  allow_cross_character 声明（R5-L8）；self_id 双缺一次性告警（R5-L10）；exportHistory 收编
+  queryKeys 工厂（R5-L19a）；.env.example 补认知产物保留期旋钮（R5-L19b）；langfuse_integration
+  死装饰器路径移除（零生产调用方实证）。
+
+### Added
+
 - **告警回流后端**：Alertmanager 默认 receiver 接入 `/api/v1/system/alerts/webhook`（bearer token 鉴权），
   告警经结构化日志 + `ai_town_alerts_received_total` 指标双通道落地，不再只进 Grafana UI；配置
   `ALERT_WEBHOOK_TOKEN`。
