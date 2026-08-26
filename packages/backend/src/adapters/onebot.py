@@ -71,6 +71,8 @@ _SEND_TIMEOUT_SECONDS = 10.0
 # 群共享上下文环容量与过期（R4-M14）
 _GROUP_CONTEXT_MAX_MESSAGES = 20
 _GROUP_CONTEXT_TTL_SECONDS = 24 * 3600
+# 入站限流固定窗口宽度（秒，R5-M7）：窗口与 onebot_rate_limit_per_minute 配套
+_RATE_LIMIT_WINDOW_SECONDS = 60
 # 心跳新鲜度阈值（秒，M17）：约 2 倍常见 OneBot 心跳间隔（30s）。超过该时长
 # 未收到心跳的连接在选择发送目标时排到新鲜连接之后。
 _HEARTBEAT_FRESH_SECONDS = 60.0
@@ -189,6 +191,26 @@ def _get_configured_self_id() -> str | None:
     from src.config import settings
 
     return settings.onebot_self_id
+
+
+# R5-L10：self_id 全缺失只告警一次——每条消息事件都会走到该分支，逐条告警等于刷屏
+_SELF_ID_WARNING_EMITTED = False
+
+
+def _warn_self_id_missing() -> None:
+    """事件与配置均无 self_id 时给出一次性显式信号
+
+    self_id 缺失时回显抑制（user_id == self_id）恒为假，机器人可能对自己的
+    回显再次回复形成死循环；此前该失效完全静默。
+    """
+    global _SELF_ID_WARNING_EMITTED
+    if _SELF_ID_WARNING_EMITTED:
+        return
+    _SELF_ID_WARNING_EMITTED = True
+    logger.warning(
+        "onebot_self_id_unavailable",
+        hint="事件与 ONEBOT_SELF_ID 均未提供 self_id，自身回显抑制已失效，建议设置 ONEBOT_SELF_ID",
+    )
 
 
 def _get_llm_globals() -> tuple[LLMClient | None, PromptTemplates | None, Redis | None]:
@@ -445,6 +467,12 @@ class OneBotAdapter:
     """
 
     def __init__(self) -> None:
+        # R5-H5：构造即暴露 /ws/onebot/v12 路由，令牌检查必须在路由可用前完成；
+        # 放在 start() 会被 main.py 的降级 try/except 吞掉，生产 fail-fast 失效
+        from src.security.startup_checks import check_onebot_access_token
+
+        check_onebot_access_token()
+
         self.router = APIRouter()
         self.router.websocket("/ws/onebot/v12")(self._ws_endpoint)
 
@@ -729,6 +757,8 @@ class OneBotAdapter:
         raw_message = _extract_text(event)
         # self_id 优先从事件读取，其次从配置读取
         self_id = str(event.get("self_id") or "") or _get_configured_self_id()
+        if not self_id:
+            _warn_self_id_missing()
 
         is_group = detail_type == "group"
 
@@ -749,6 +779,12 @@ class OneBotAdapter:
         # 会与本角色互相触发回复形成乒乓死循环（问候层无概率闸门，必然互答）
         if user_id is not None and str(user_id) == self_id:
             logger.debug("onebot_self_message_skipped", self_id=self_id, group_id=group_id)
+            return
+
+        # R5-M7：入站限流在一切 LLM 路径之前——洪泛群每条消息都会触发
+        # judge+reply 两次 LLM 调用，超限消息必须静默丢弃（不回复、不入环）
+        chat_kind, chat_id = ("g", group_id) if is_group and group_id is not None else ("u", user_id)
+        if not await self._check_inbound_rate_limit(chat_kind, chat_id):
             return
 
         message_id = str(event.get("message_id") or "")
@@ -949,6 +985,34 @@ class OneBotAdapter:
             return
         await redis_client.delete(_reply_dedup_key(message_id))
 
+    async def _check_inbound_rate_limit(self, chat_kind: str, chat_id: str | int | None) -> bool:
+        """每会话入站固定窗口限流（R5-M7），返回 False 表示超限应静默丢弃
+
+        复用 security.RateLimiter 的 INCR+EXPIRE 原子实现；Redis 不可用时与
+        回复去重层同理放行（无 Redis 不改变消息语义，只失去保护层）。
+        """
+        limit = _get_rate_limit_per_minute()
+        if limit <= 0 or chat_id is None:
+            return True
+
+        from src.runtime import get_redis
+        from src.security.rate_limiter import RateLimiter
+
+        redis_client = get_redis()
+        if redis_client is None:
+            return True
+        limiter = RateLimiter(redis_client, key_prefix=f"onebot:rl:{chat_kind}")
+        allowed = await limiter.check(str(chat_id), max_requests=limit, window_seconds=_RATE_LIMIT_WINDOW_SECONDS)
+        if not allowed:
+            logger.warning(
+                "onebot_rate_limited",
+                chat_kind=chat_kind,
+                chat_id=str(chat_id),
+                limit=limit,
+                window_seconds=_RATE_LIMIT_WINDOW_SECONDS,
+            )
+        return allowed
+
     async def _handle_meta_event(self, event: dict[str, Any], onebot_ws: WebSocket) -> None:
         """处理 OneBot 元事件（心跳 / 生命周期）
 
@@ -993,10 +1057,14 @@ class OneBotAdapter:
         await redis.expire(key, _GROUP_CONTEXT_TTL_SECONDS)
 
     async def _read_group_context(self, redis: Any, group_id: str) -> list[dict[str, str]]:
-        """读取群共享上下文环（旧→新顺序）；坏行跳过"""
+        """读取群共享上下文环（旧→新顺序）；坏行跳过
+
+        写入用 LPUSH（列表头=最新），LRANGE 天然最新在前，必须反转才满足
+        docstring 契约——LLM 按时间序理解群聊，倒序上下文会让角色误读因果。
+        """
         raw_items = await redis.lrange(self._group_context_key(group_id), 0, _GROUP_CONTEXT_MAX_MESSAGES - 1)
         out: list[dict[str, str]] = []
-        for item in raw_items:
+        for item in reversed(raw_items):
             try:
                 text = item.decode("utf-8") if isinstance(item, bytes | bytearray) else str(item)
                 parsed = json.loads(text)
@@ -1131,6 +1199,43 @@ class OneBotAdapter:
             # 多段之间添加间隔，避免刷屏
             if idx < len(segments) - 1:
                 await asyncio.sleep(SEGMENT_SEND_INTERVAL)
+
+        # R5-L9：群回复发送成功后写回共享上下文环——多角色同群时互相可见对方
+        # 发言，否则各角色只能看到用户消息、会重复自问自答
+        if event_type == "group":
+            await self._record_bot_group_reply(group_id, message)
+
+    async def _record_bot_group_reply(self, group_id: str | int | None, text: str) -> None:
+        """角色群回复写入共享上下文环（R5-L9）
+
+        记录失败必须就地吞掉：此时消息已发出，向上抛错会误触发回复槽位释放，
+        重放路径会重发同一条回复。
+        """
+        if group_id is None:
+            return
+        character_id = _resolve_character_id(is_group=True, group_id=group_id)
+        if character_id is None:
+            # 未配置角色的系统兜底提示不属任何角色发言
+            return
+        try:
+            from src.runtime import get_redis
+
+            redis_client = get_redis()
+            if redis_client is None:
+                return
+            sender = await self._resolve_character_name(character_id)
+            await self._record_group_message(redis_client, str(group_id), sender, text)
+        except Exception as e:
+            logger.warning("onebot_bot_reply_record_failed", group_id=group_id, error=str(e))
+
+    async def _resolve_character_name(self, character_id: UUID) -> str:
+        """解析角色名用于环内 sender 标识；档案缺失时以 ID 代替保持可追溯"""
+        async with db.session() as session:
+            from src.db.repositories import CharacterRepository
+
+            char_repo = CharacterRepository(session)
+            character = await char_repo.get_by_id(character_id)
+        return character.name if character is not None else str(character_id)
 
     async def _send_single(
         self,
@@ -1323,6 +1428,13 @@ def _get_at_only() -> bool:
     from src.config import settings
 
     return settings.onebot_group_at_only
+
+
+def _get_rate_limit_per_minute() -> int:
+    """从配置读取单会话每分钟入站消息上限（0=禁用）"""
+    from src.config import settings
+
+    return settings.onebot_rate_limit_per_minute
 
 
 def _resolve_character_id(is_group: bool, group_id: str | int | None) -> UUID | None:

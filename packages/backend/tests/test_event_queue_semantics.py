@@ -254,6 +254,12 @@ class FakeDedupRedis:
                 self.ops.append(f"del:{key}")
         return deleted
 
+    async def eval(self, script: str, numkeys: int, key: str, window_seconds: int) -> int:
+        """R5-M7 入站限流的 INCR+EXPIRE 原子脚本最小模拟（仅固定窗口计数语义）"""
+        count = int(self.keys.get(key, "0")) + 1
+        self.keys[key] = str(count)
+        return count
+
 
 PRIVATE_EVENT = {
     "post_type": "message",

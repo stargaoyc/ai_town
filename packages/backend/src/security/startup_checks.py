@@ -25,6 +25,33 @@ _INSECURE_DEFAULTS: list[tuple[str, str, str]] = [
     ("api_key", "your-api-key", "API_KEY"),
 ]
 
+# 开发模式告警每进程只发一次：适配器每次构造都会跑本检查，逐条刷屏无增量信息
+_ONEBOT_TOKEN_WARNED = False
+
+
+def check_onebot_access_token() -> None:
+    """OneBot 反向 WS 端点未配令牌时生产拒绝启动；开发仅首次告警（R5-H5）
+
+    /ws/onebot/v12 无鉴权时任何客户端可伪造消息事件驱动 LLM 消耗并操纵机器人
+    向任意群/私聊发消息，属未鉴权控制面暴露，不能靠事后日志兜底。
+    """
+    global _ONEBOT_TOKEN_WARNED
+
+    if settings.onebot_access_token:
+        return
+    if settings.environment == "production":
+        logger.error(
+            "onebot_access_token_missing_blocked",
+            message="ONEBOT_ACCESS_TOKEN 未配置，未鉴权的 /ws/onebot/v12 允许伪造 QQ 事件，生产模式禁止启动",
+        )
+        raise RuntimeError("ONEBOT_ACCESS_TOKEN must be set when ENVIRONMENT=production")
+    if not _ONEBOT_TOKEN_WARNED:
+        _ONEBOT_TOKEN_WARNED = True
+        logger.warning(
+            "onebot_access_token_missing",
+            message="ONEBOT_ACCESS_TOKEN 未配置，/ws/onebot/v12 接受任意客户端连接；生产环境将拒绝启动",
+        )
+
 
 def check_default_secrets() -> None:
     """生产模式下任一凭据仍为公开默认值即拒绝启动；开发模式逐项告警"""

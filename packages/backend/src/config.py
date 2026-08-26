@@ -173,8 +173,12 @@ class Settings(BaseSettings):
     onebot_group_at_only: bool = False
     # 群组-角色映射：JSON 字符串 {"群号": "角色UUID"}，未配置的群使用默认角色
     onebot_group_character_map: str = "{}"
-    # OneBot 反向 WS 接入令牌：配置后强制校验 Authorization: Bearer / access_token 参数
+    # OneBot 反向 WS 接入令牌：配置后强制校验 Authorization: Bearer / access_token 参数。
+    # 生产环境（ENVIRONMENT=production）未配置将拒绝启动（R5-H5：无令牌端点可被任意伪造事件）
     onebot_access_token: str | None = None
+    # 单群/单私聊每分钟入站消息上限（R5-M7）：洪泛会逐条触发 judge+reply 两次 LLM
+    # 调用打爆预算；超限静默丢弃。0=禁用
+    onebot_rate_limit_per_minute: int = 20
     # OneBot 事件流长度上限（round-3 H3：Streams 必须配 maxlen，否则已处理条目与
     # 死信永久累积；XDEL 只删单条，历史长度仍需上限收敛）
     onebot_stream_maxlen: int = 10_000
