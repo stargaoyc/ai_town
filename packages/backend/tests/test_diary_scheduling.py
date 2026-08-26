@@ -20,6 +20,7 @@ from src.memory.diary_service import (
     _sample_material,
     _world_real_window_seconds,
 )
+from src.scheduler.loops import DIARY_POLL_INTERVAL_SECONDS
 
 
 @pytest.fixture
@@ -27,6 +28,20 @@ def default_world_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     """钉住默认世界时钟参数，隔离 .env 覆盖（10 虚拟分 / 30 真实秒 → 1 世界日 = 72 真实分）"""
     monkeypatch.setattr(settings, "world_tick_seconds", 30)
     monkeypatch.setattr(settings, "world_tick_minutes", 10.0)
+
+
+class TestDiaryPollInterval:
+    """轮询间隔与夜间触发窗的数学约束（round-6 M6）"""
+
+    def test_interval_constant_is_600_seconds(self) -> None:
+        assert DIARY_POLL_INTERVAL_SECONDS == 600
+
+    def test_interval_strictly_shorter_than_night_window_at_default_clock(self, default_world_clock: None) -> None:
+        # 夜间窗 22:00-06:00 = 8 虚拟小时；默认倍率下换算为 8×60×30/10 = 1440 真实秒。
+        # 间隔必须严格小于窗长，最坏相位（窗开启前一刻刚轮询过）也能保证窗内至少一轮
+        night_window_real_seconds = 8 * 60 * settings.world_tick_seconds / settings.world_tick_minutes
+        assert night_window_real_seconds == pytest.approx(24 * 60)
+        assert DIARY_POLL_INTERVAL_SECONDS < night_window_real_seconds
 
 
 class TestWorldRealWindowSeconds:

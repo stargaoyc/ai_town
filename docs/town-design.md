@@ -200,6 +200,8 @@ LLM 在候选 Action 中看到所有可达场景的移动选项，描述格式�
 | `energy` | 城镇能源 0–100 | 室内场景开放（< 20 时部分场景关闭） |
 | `goods` | 商品种类 0–100 | 商业街购物多样性 |
 
+商品清单与基础库存/价格/消耗量由 `configs/resources.yaml` 定义（ResourceEvolution 启动加载，缺失即启动失败），详见 [配置参考](config-reference.md#六场景与资源配置)。
+
 ### 6.2 资源循环
 
 ```text

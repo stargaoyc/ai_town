@@ -3,28 +3,69 @@
 每 Tick 对各商品执行自然消耗、低库存补货，并基于库存相对基础量的偏离
 进行价格波动（供不应求涨价，供过于求降价）。
 状态存储于 Redis Hash: `world:state:resources`（field: good_id → JSON{inventory, price, base_price}）。
+商品配置唯一真相源为 configs/resources.yaml。
 """
 
 import random
+from pathlib import Path
 from typing import Any
 
 from redis.asyncio import Redis
 from structlog import get_logger
 
 from src.core.world.evolutions.base import WorldEvolution
+from src.paths import find_project_root
 
 logger = get_logger(__name__)
 
 # 资源状态在 Redis 中的 Key
 RESOURCES_KEY = "world:state:resources"
 
-# 默认商品：基础库存、基础价格、单 Tick 消耗量、补货目标
-DEFAULT_GOODS: dict[str, dict[str, Any]] = {
-    "food": {"base_inventory": 100, "base_price": 10, "consumption": 5, "restock_to": 100},
-    "energy": {"base_inventory": 80, "base_price": 15, "consumption": 4, "restock_to": 80},
-    "coffee": {"base_inventory": 50, "base_price": 8, "consumption": 3, "restock_to": 50},
-    "book": {"base_inventory": 30, "base_price": 25, "consumption": 1, "restock_to": 30},
-}
+# 商品配置的必填数值字段
+_GOOD_FIELDS = ("base_inventory", "base_price", "consumption", "restock_to")
+
+
+def _load_goods_config(path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """从 configs/resources.yaml 加载商品配置（round-6 L17b：真相源外置 + 启动校验）
+
+    Args:
+        path: 显式配置路径；缺省经 find_project_root 定位（测试注入用）
+
+    Returns:
+        {good_id: {base_inventory, base_price, consumption, restock_to}}
+
+    Raises:
+        FileNotFoundError: configs/resources.yaml 不存在（配置挂载缺失）
+        ValueError: 商品条目缺失必填字段或数值非法
+    """
+    import yaml as _yaml
+
+    config_path = path if path is not None else find_project_root() / "configs" / "resources.yaml"
+    if not config_path.is_file():
+        raise FileNotFoundError(
+            f"configs/resources.yaml not found at {config_path}; 容器部署需挂载 ./configs:/app/configs"
+        )
+    with open(config_path, encoding="utf-8") as f:
+        data = _yaml.safe_load(f) or {}
+
+    raw_goods = data.get("goods")
+    if not isinstance(raw_goods, dict) or not raw_goods:
+        raise ValueError(f"resources.yaml 必须包含非空 goods 映射: {config_path}")
+
+    goods: dict[str, dict[str, Any]] = {}
+    for gid, spec in raw_goods.items():
+        if not isinstance(spec, dict):
+            raise ValueError(f"resources.yaml 商品 {gid!r} 配置必须是映射: {spec!r}")
+        for field in _GOOD_FIELDS:
+            value = spec.get(field)
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"resources.yaml 商品 {gid!r} 的 {field} 必须为非负数: {value!r}")
+        if int(spec["base_inventory"]) < 1:
+            raise ValueError(f"resources.yaml 商品 {gid!r} 的 base_inventory 必须为正整数")
+        goods[str(gid)] = {field: spec[field] for field in _GOOD_FIELDS}
+
+    logger.info("goods_config_loaded", source=str(config_path), goods=list(goods.keys()))
+    return goods
 
 
 class ResourceEvolution(WorldEvolution):
@@ -39,7 +80,9 @@ class ResourceEvolution(WorldEvolution):
     name = "resource"
 
     def __init__(self, goods: dict[str, dict[str, Any]] | None = None) -> None:
-        self.goods = goods or DEFAULT_GOODS
+        # 显式传入优先（测试注入）；否则构造时从 configs/resources.yaml 加载，
+        # 缺失/损坏即失败——引擎在 app lifespan 构造演化器，等价于启动期 fail-fast
+        self.goods = goods if goods is not None else _load_goods_config()
 
     async def setup(self, redis: Redis) -> None:
         """首次运行时初始化各商品库存与价格"""

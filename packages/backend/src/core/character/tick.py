@@ -37,6 +37,7 @@ from src.core.character.social import SocialMixin
 from src.core.locks import release_lock, watch_locks
 from src.core.state_codec import encode_state_mapping
 from src.core.world.evolutions.scene_evolution import VISITORS_KEY
+from src.core.world.evolutions.weather_evolution import WEATHER_IMPACT
 from src.cost_control import CircuitOpen
 from src.db.models import ActionRecord, Character, CharacterStateHistory
 from src.db.repositories import (
@@ -50,6 +51,7 @@ from src.db.repositories import (
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
 from src.memory import EpisodeService, ReflectionService
+from src.modules.town.schema import SceneType
 from src.observability.langfuse_tracing import end_tick_trace, start_tick_trace, trace_character_tick
 from src.observability.metrics import (
     ACTION_EXECUTION_DURATION,
@@ -58,7 +60,7 @@ from src.observability.metrics import (
     CHARACTER_TICK_TOTAL,
 )
 from src.observability.tracing import trace_span
-from src.runtime import get_movement_system, get_scene_loader, get_schedule_system
+from src.runtime import get_duration_calculator, get_movement_system, get_scene_loader, get_schedule_system
 from src.tools import ToolRegistry
 
 logger = get_logger(__name__)
@@ -851,6 +853,54 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         """从世界状态解析当前虚拟小时；解析失败返回 None（移动校验跳过开放时间检查）"""
         return _parse_world_hour(str(context.get("world", {}).get("world_time") or ""))
 
+    @staticmethod
+    def _current_is_workday(context: dict[str, Any]) -> bool:
+        """从世界时钟推导是否工作日（周一至五），供 workday_only 场景开放判断（round-6 M9）
+
+        world_time 缺失/非法（冷启动早期）按工作日处理——与 is_workday 缺省值一致，
+        不因时钟未就绪而额外收紧场景准入。
+        """
+        raw = str(context.get("world", {}).get("world_time") or "")
+        try:
+            return datetime.fromisoformat(raw).weekday() < 5
+        except ValueError:
+            return True
+
+    @staticmethod
+    def _weather_move_multiplier(context: dict[str, Any]) -> float:
+        """当前天气的移动耗时倍率；无天气记录时 1.0，保持原行为（round-6 M9a）"""
+        weather = str(context.get("world", {}).get("weather") or "")
+        impact = WEATHER_IMPACT.get(weather)
+        return impact["move_multiplier"] if impact else 1.0
+
+    async def _apply_duration_modifiers(self, context: dict[str, Any], base_duration: int) -> int:
+        """非移动 Action 的动态耗时修正：天气/拥挤度/体力/情绪（round-6 M9c）
+
+        DurationCalculator 此前只被 API demo 端点触达；Tick 主路径统一在此接入。
+        结果仍受 [1, _MAX_DYNAMIC_DURATION] 全局钳制。模块降级（lifespan 初始化
+        失败）时跳过修正保持基础耗时，与 move 路径对 MovementSystem 缺失的处理同哲学。
+
+        未知位置（如初始 "unknown"）按室内处理——天气修正只对确认的户外场景生效，
+        避免对未知地点误加天气惩罚。
+        """
+        calculator = get_duration_calculator()
+        scene_loader = get_scene_loader()
+        if calculator is None or scene_loader is None:
+            return base_duration
+
+        state = context["state"]
+        location = str(state.get("location") or "")
+        scene = scene_loader.get_scene(location)
+        adjusted = calculator.calculate_duration(
+            base_duration,
+            weather=str(context.get("world", {}).get("weather") or "sunny"),
+            is_outdoor=scene is not None and scene.type == SceneType.OUTDOOR,
+            crowdedness=await scene_loader.get_crowdedness(location),
+            stamina=int(state.get("stamina", 100)),
+            mood=str(state.get("mood") or "calm"),
+        )
+        return max(1, min(_MAX_DYNAMIC_DURATION, adjusted))
+
     @trace_span("action.execute")
     async def _execute_action(
         self,
@@ -952,6 +1002,8 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                     current_location,
                     target,
                     hour=self._current_world_hour(context),
+                    is_workday=self._current_is_workday(context),
+                    weather_move_multiplier=self._weather_move_multiplier(context),
                 )
                 if not move_result.success:
                     logger.warning(
@@ -972,14 +1024,18 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                     move_total_minutes = move_result.total_minutes
 
         # 计算状态变更：
-        # - move 使用移动矩阵的真实耗时
+        # - move 使用移动矩阵的真实耗时（已在 MovementSystem 内乘天气移动倍率，
+        #   不再经 DurationCalculator 二次修正——天气对移动只计费一次）
+        # - 其余动作在基础/动态耗时之上叠加天气/拥挤/体力/情绪修正（round-6 M9c）
         # - LLM 动态时长仅在 Action 声明 allow_dynamic_duration 时生效，防止任意改时长
         if move_total_minutes is not None:
             duration = move_total_minutes
-        elif action_def.allow_dynamic_duration and decision.duration:
-            duration = decision.duration
         else:
-            duration = action_def.duration_minutes
+            if action_def.allow_dynamic_duration and decision.duration:
+                duration = decision.duration
+            else:
+                duration = action_def.duration_minutes
+            duration = await self._apply_duration_modifiers(context, duration)
         new_state = context["state"].copy()
 
         # 应用资源变更（使用 apply_cost_fields 辅助函数）

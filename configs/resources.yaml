@@ -1,0 +1,28 @@
+# 商品初始配置 - ResourceEvolution 的唯一真相源（round-6 L17b）
+#
+# 字段说明：
+#   base_inventory  基础库存（补货阈值 = 30% × 此值；价格波动以相对此值的偏离计算）
+#   base_price      基础价格（虚拟币）
+#   consumption     单 Tick 自然消耗量基准（实际按 ×[0.5, 1.5] 随机扰动）
+#   restock_to      低库存补货目标量
+goods:
+  food:
+    base_inventory: 100
+    base_price: 10
+    consumption: 5
+    restock_to: 100
+  energy:
+    base_inventory: 80
+    base_price: 15
+    consumption: 4
+    restock_to: 80
+  coffee:
+    base_inventory: 50
+    base_price: 8
+    consumption: 3
+    restock_to: 50
+  book:
+    base_inventory: 30
+    base_price: 25
+    consumption: 1
+    restock_to: 30

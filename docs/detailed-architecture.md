@@ -2645,7 +2645,7 @@ def setup_metrics(app: FastAPI):
 ```python
 def setup_tracing(app: FastAPI):
     """初始化 OpenTelemetry
-    - 采样率：otel_traces_sampler_rate（默认 0.5）
+    - 头采样：ParentBased(ALWAYS_ON)，保留与否由 Collector 尾采样决定
     - OTLP 导出：otel_endpoint
     - 服务名：otel_service_name（默认 ai-town-backend）
     """
@@ -3016,7 +3016,6 @@ class Settings(BaseSettings):
     # === Observability ===
     otel_endpoint: str | None = None
     otel_service_name: str = "ai-town-backend"
-    otel_traces_sampler_rate: float = 0.5      # Trace 采样率 50%
     langfuse_host: str | None = None
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None

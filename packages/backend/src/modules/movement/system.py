@@ -56,6 +56,8 @@ class MovementSystem:
         to_scene: str,
         hour: int | None = None,
         is_workday: bool = True,
+        *,
+        weather_move_multiplier: float = 1.0,
     ) -> MovementResult:
         """计算移动结果（不实际执行）
 
@@ -63,7 +65,9 @@ class MovementSystem:
             from_scene: 起始场景 ID
             to_scene: 目标场景 ID
             hour: 当前小时（用于场景开放判断），None 跳过判断
-            is_workday: 是否工作日
+            is_workday: 是否工作日（workday_only 场景据此放行/拒绝）
+            weather_move_multiplier: 天气移动耗时倍率（来自 WEATHER_IMPACT.move_multiplier），
+                乘入矩阵耗时；缺省 1.0 保持无天气记录时的原行为
 
         Returns:
             MovementResult
@@ -114,7 +118,8 @@ class MovementSystem:
         return MovementResult(
             success=True,
             path=[from_scene, to_scene],
-            total_minutes=travel_time,
+            # 天气倍率乘入最终耗时；下限 1 分钟防极端配置把耗时归零
+            total_minutes=max(1, round(travel_time * weather_move_multiplier)),
         )
 
     async def execute_move(

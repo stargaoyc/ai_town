@@ -108,6 +108,14 @@ async def test_execute_action_still_opens_transaction_when_lock_held(monkeypatch
 # ---------- R5-M6：chat_with 写入闸口 ----------
 
 
+class _FakeResult:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> Any:
+        return self._value
+
+
 class RecordingDB:
     """替换 db.session：记录会话内 add 的实体与 commit 次数，不触真实 PG"""
 
@@ -128,6 +136,13 @@ class RecordingDB:
 
             async def rollback(self) -> None:
                 pass
+
+            async def flush(self) -> None:
+                pass
+
+            async def execute(self, stmt: Any) -> _FakeResult:
+                # exists_recent_duplicate 探测：恒返回「无近邻重复」
+                return _FakeResult(None)
 
         yield _Session()
 
@@ -176,6 +191,8 @@ def _stub_chat_pipeline(monkeypatch: pytest.MonkeyPatch, redis: FakeRedis) -> tu
     monkeypatch.setattr(social_module, "RelationGraph", FakeRelationGraph)
     monkeypatch.setattr(settings, "chat_quality_enabled", False)
     monkeypatch.setattr(settings, "chat_with_max_rounds", 1)
+    # 记忆评分关闭：引擎 llm 为 None，评分路径不应被触达
+    monkeypatch.setattr(settings, "memory_llm_scoring_enabled", False)
 
     async def fake_turn(**kwargs: Any) -> str:
         return "今天天气不错。"

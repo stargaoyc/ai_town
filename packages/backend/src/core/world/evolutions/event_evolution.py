@@ -13,6 +13,7 @@ from structlog import get_logger
 
 from src.core.world.evolutions.base import WorldEvolution
 from src.core.world.evolutions.time_evolution import TIME_KEY
+from src.paths import find_project_root
 
 logger = get_logger(__name__)
 
@@ -21,8 +22,11 @@ EVENTS_KEY = "world:state:events"
 
 
 # 节日日历：(month, day) → 事件定义（name / 持续天数 / 描述）
-def _load_festival_calendar() -> dict[tuple[int, int], dict[str, Any]]:
+def _load_festival_calendar(path: Path | None = None) -> dict[tuple[int, int], dict[str, Any]]:
     """从 configs/events.yaml 加载节日日历（C-2：唯一真相源 + 启动校验）
+
+    Args:
+        path: 显式日历路径；缺省经 find_project_root 定位（测试注入用）
 
     校验项：
     - date 必须是 MM-DD 格式
@@ -32,21 +36,17 @@ def _load_festival_calendar() -> dict[tuple[int, int], dict[str, Any]]:
 
     Returns:
         {(month, day): {name, duration_days, description}} 日历
+
+    Raises:
+        FileNotFoundError: configs/events.yaml 不存在（配置挂载缺失）
+        ValueError: 节目条目结构非法
     """
     import yaml as _yaml
 
-    # 布局自适应：本地仓库（backend/packages/aitown 多层）与容器（/app/src/...）
-    # 的 __file__ 深度不同，向上逐级找 configs/events.yaml
-    here = Path(__file__).resolve()
-    calendar_path: Path | None = None
-    for parent in here.parents:
-        candidate = parent / "configs" / "events.yaml"
-        if candidate.is_file():
-            calendar_path = candidate
-            break
-    if calendar_path is None:
+    calendar_path = path if path is not None else find_project_root() / "configs" / "events.yaml"
+    if not calendar_path.is_file():
         raise FileNotFoundError(
-            f"configs/events.yaml not found in any parent of {here}; 容器部署需挂载 ./configs:/app/configs"
+            f"configs/events.yaml not found at {calendar_path}; 容器部署需挂载 ./configs:/app/configs"
         )
     with open(calendar_path, encoding="utf-8") as f:
         data = _yaml.safe_load(f) or {}
@@ -71,12 +71,8 @@ def _load_festival_calendar() -> dict[tuple[int, int], dict[str, Any]]:
             "description": entry.get("description", ""),
         }
 
-    logger.info("festival_calendar_loaded", source="configs/events.yaml", events=len(calendar))
+    logger.info("festival_calendar_loaded", source=str(calendar_path), events=len(calendar))
     return calendar
-
-
-# 进程级缓存：模块导入时加载一次，配置损坏即启动失败（fail-fast）
-FESTIVAL_CALENDAR: dict[tuple[int, int], dict[str, Any]] = _load_festival_calendar()
 
 
 class EventEvolution(WorldEvolution):
@@ -88,6 +84,12 @@ class EventEvolution(WorldEvolution):
     """
 
     name = "event"
+
+    def __init__(self, calendar_path: Path | None = None) -> None:
+        # 日历在构造时而非模块导入时加载（round-6 L17a）：import 副作用会让任何
+        # 触碰本模块的单测在缺 configs/ 的环境下炸 FileNotFoundError。
+        # 引擎在 app lifespan 构造演化器，配置损坏仍在启动期 fail-fast。
+        self.festival_calendar = _load_festival_calendar(calendar_path)
 
     async def setup(self, redis: Redis) -> None:
         """首次运行时确保事件哈希为空"""
@@ -110,7 +112,7 @@ class EventEvolution(WorldEvolution):
 
         # 1. 触发今日节日
         key = (today.month, today.day)
-        festival = FESTIVAL_CALENDAR.get(key)
+        festival = self.festival_calendar.get(key)
         if festival:
             event_id = f"{today.year:04d}-{key[0]:02d}-{key[1]:02d}"
             if event_id not in current:

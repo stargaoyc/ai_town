@@ -44,6 +44,13 @@ from src.memory.diary_service import (
 
 logger = get_logger(__name__)
 
+# 日记轮询间隔（真实秒）。夜间触发窗 22:00-06:00 共 8 个虚拟小时，
+# 按默认时钟倍率（10 虚拟分 / 30 真实秒 → 1 世界日 = 72 真实分）换算，
+# 整个夜间窗仅约 24 真实分钟——轮询间隔必须严格小于窗长，
+# 否则相位不利时会整窗错过、该世界日一篇日日记都没有（round-6 M6）。
+# 幂等键（diary_date::date EXISTS）保证窗内多轮轮询不会重复生成。
+DIARY_POLL_INTERVAL_SECONDS = 600
+
 
 def _is_rate_limit_error(exc: BaseException) -> bool:
     """判断异常是否为 LLM 供应商限流（429）
@@ -157,7 +164,7 @@ async def character_tick_loop() -> None:
 async def diary_scheduler_loop() -> None:
     """日记自动生成后台循环
 
-    每 1800 秒（30 分钟现实时间）检查一次世界时间，根据时段决定生成哪种周期的日记：
+    每 DIARY_POLL_INTERVAL_SECONDS 秒检查一次世界时间，根据时段决定生成哪种周期的日记：
     - 每日：世界时间 22:00-06:00（一天结束时）
     - 每周：每 7 个世界日
     - 每月：每 30 个世界日
@@ -171,7 +178,7 @@ async def diary_scheduler_loop() -> None:
     生成是幂等的：DiaryService 会跳过当前世界日已存在日记的角色。
     循环内部捕获所有异常，保证不会崩溃退出。
     """
-    interval = 1800
+    interval = DIARY_POLL_INTERVAL_SECONDS
     logger.info("diary_scheduler_loop_started", interval=interval)
 
     while True:

@@ -64,7 +64,6 @@
 | ----------------------------- | ---- | ---------------- | --------------------------------- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 否   | —                | OTel Collector 地址               |
 | `OTEL_SERVICE_NAME`           | 否   | ai-town-backend  | 服务名                            |
-| `OTEL_TRACES_SAMPLER_RATE`    | 否   | 0.5              | Trace 采样率                      |
 | `LANGFUSE_PUBLIC_KEY`         | 否   | —                | Langfuse 公钥                     |
 | `LANGFUSE_SECRET_KEY`         | 否   | —                | Langfuse 密钥                     |
 | `LANGFUSE_HOST`               | 否   | —                | Langfuse 地址                     |
@@ -286,7 +285,7 @@ template: |
 
 ---
 
-## 六、场景配置
+## 六、场景与资源配置
 
 ```yaml
 # configs/scenes.yaml
@@ -312,6 +311,26 @@ scenes:
     open_hours: [0, 24]
     capacity: 5
     activities: [sleep, eat, relax]
+```
+
+商品初始配置（`configs/resources.yaml`，ResourceEvolution 启动时加载，缺失/损坏即启动失败）：
+
+| 字段             | 说明                                                     |
+| ---------------- | -------------------------------------------------------- |
+| `base_inventory` | 基础库存（补货阈值 = 30% × 此值；价格波动相对此值计算）  |
+| `base_price`     | 基础价格                                                 |
+| `consumption`    | 单 Tick 自然消耗基准                                     |
+| `restock_to`     | 低库存补货目标量                                         |
+
+```yaml
+# configs/resources.yaml
+goods:
+  food:
+    base_inventory: 100
+    base_price: 10
+    consumption: 5
+    restock_to: 100
+  # energy / coffee / book 同结构，详见文件
 ```
 
 ---
