@@ -73,5 +73,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 # P1-20：迁移从 CMD 移入 entrypoint 并以 RUN_MIGRATIONS 门控——
 # 单副本默认执行；多副本部署时附加副本设 RUN_MIGRATIONS=0，
 # 或彻底改为独立 Init Job，避免并发 alembic upgrade
-ENTRYPOINT ["./docker-entrypoint.sh"]
+# 经 sh 调用，不依赖工作区保留的可执行位（Windows checkout 会丢 +x）
+ENTRYPOINT ["sh", "./docker-entrypoint.sh"]
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
