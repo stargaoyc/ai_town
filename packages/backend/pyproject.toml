@@ -38,7 +38,6 @@ dependencies = [
   # HTTP 客户端
   "httpx>=0.28",
   # 工具
-  "python-multipart>=0.0.12",
   "pyjwt>=2.8",
   "pyyaml>=6.0",
   # 定时调度（月度分区预创建、Phase 3.5 成本控制等）
