@@ -15,11 +15,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from structlog import get_logger
 
+from src.config import settings
+from src.observability.metrics import TOOL_CALL_TOTAL
 from src.tools import knowledge, media, self_info, shop, social, world
 
 logger = get_logger(__name__)
@@ -360,12 +363,7 @@ class ToolRegistry:
         if "quantity" in meta["llm_params"] and "quantity" not in final_args:
             final_args["quantity"] = 1
 
-        try:
-            result = await meta["func"](**final_args)
-            return {"success": True, "result": result, "error": None, "state_mutating": meta["state_mutating"]}
-        except Exception as e:
-            logger.warning("tool_call_failed", tool=full_name, error=str(e), exc_info=True)
-            return {"success": False, "error": str(e), "result": None}
+        return await self._call_tool(full_name, meta, final_args)
 
     def _resolve_injected_params(
         self,
@@ -398,6 +396,40 @@ class ToolRegistry:
                 if value is not None:
                     resolved[param_name] = value
         return resolved
+
+    async def _call_tool(
+        self,
+        full_name: str,
+        meta: dict[str, Any],
+        final_args: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行工具函数本体，带可配置超时，返回统一结果字典
+
+        挂死工具（如外部 API 无响应）若任其执行会占死角色 Tick 的信号量槽位与
+        分布式锁（R6-L5）；用 asyncio.wait_for 在 tool_timeout_seconds 后取消
+        内部协程并返回失败观察，绝不把 TimeoutError 抛给上层——ReAct 循环据此
+        走失败观察继续决策，而不是中断整轮。
+
+        已知取舍：wait_for 超时会取消工具协程，若工具持有 DB session 等上下文
+        管理器，取消路径可能跳过 __aexit__；此处可接受——工具均为本地只读或
+        状态快照，不持有跨调用事务，且失败观察不会携带被取消任务的结果。
+        """
+        timeout = settings.tool_timeout_seconds
+        try:
+            if timeout and timeout > 0:
+                result = await asyncio.wait_for(meta["func"](**final_args), timeout=timeout)
+            else:
+                result = await meta["func"](**final_args)
+        except TimeoutError:
+            logger.warning("tool_call_timeout", tool=full_name, timeout_seconds=timeout)
+            TOOL_CALL_TOTAL.labels(tool=full_name, outcome="timeout").inc()
+            return {"success": False, "error": f"tool timeout after {timeout:g}s: {full_name}", "result": None}
+        except Exception as e:
+            logger.warning("tool_call_failed", tool=full_name, error=str(e), exc_info=True)
+            TOOL_CALL_TOTAL.labels(tool=full_name, outcome="failed").inc()
+            return {"success": False, "error": str(e), "result": None}
+        TOOL_CALL_TOTAL.labels(tool=full_name, outcome="success").inc()
+        return {"success": True, "result": result, "error": None, "state_mutating": meta["state_mutating"]}
 
     async def call_tool_with_context(
         self,
@@ -450,17 +482,7 @@ class ToolRegistry:
                 if value is not None:
                     final_args[param_name] = value
 
-        try:
-            result = await meta["func"](**final_args)
-            return {
-                "success": True,
-                "result": result,
-                "error": None,
-                "state_mutating": meta["state_mutating"],
-            }
-        except Exception as e:
-            logger.warning("tool_call_failed", tool=full_name, error=str(e), exc_info=True)
-            return {"success": False, "error": str(e), "result": None}
+        return await self._call_tool(full_name, meta, final_args)
 
 
 def _missing_required_params(meta: dict[str, Any], args: dict[str, Any]) -> list[str]:

@@ -183,6 +183,14 @@ HTTP_REQUEST_TOTAL = Counter(
     ["method", "path", "status"],
 )
 
+# === 工具调用指标（R6-L5：单次工具执行有超时保护；以调用量计数，
+# outcome 区分 success/failed/timeout，timeout 用于监控挂死工具）===
+TOOL_CALL_TOTAL = Counter(
+    "ai_town_tool_call_total",
+    "工具调用总次数",
+    ["tool", "outcome"],  # tool: 全名; outcome: success/failed/timeout
+)
+
 # === Alertmanager 告警接收（R4-M2：告警经 webhook 回流后端，不再只进 UI）===
 ALERTS_RECEIVED_TOTAL = Counter(
     "ai_town_alerts_received_total",

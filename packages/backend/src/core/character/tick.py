@@ -537,7 +537,8 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                 # 失败观察可能只有 error（如缺 tool_name 的合成观察），回退展示原因
                 result_str = str(obs.get("result") or obs.get("error") or "")[:800]
                 obs_lines.append(
-                    f"{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) [{success_tag}]\n   结果: {result_str}"
+                    f"<observation>{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) "
+                    f"[{success_tag}]\n   结果: {result_str}</observation>"
                 )
             prompt += self.prompts.render("decision_react", observations=chr(10).join(obs_lines))
 

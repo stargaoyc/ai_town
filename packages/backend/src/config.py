@@ -186,6 +186,12 @@ class Settings(BaseSettings):
     character_max_concurrent: int = 10
     character_lock_ttl_seconds: int = 30
 
+    # Tools / ReAct 工具调用（R6-L5）
+    # 单次工具执行超时（秒）：0 = 禁用超时。默认 60s 兜底——挂死工具（如外部 API
+    # 无响应）若任其执行会占死角色 Tick 的信号量槽位与分布式锁；工具均为本地
+    # async 函数，正常耗时远低于此值，视频生成已在调用方改为后台任务异步受理
+    tool_timeout_seconds: float = 60.0
+
     # 主动分享配置
     share_cooldown_seconds: int = 1800  # 分享冷却时间（秒），同一角色两次分享的最小间隔
     share_daily_limit: int = 8  # 单角色每日最大主动分享次数（防刷屏）

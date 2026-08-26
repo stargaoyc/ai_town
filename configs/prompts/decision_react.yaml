@@ -1,5 +1,7 @@
 name: decision_react
 # 决策 Prompt 的 ReAct 观察追加段（有工具调用结果时渲染拼接）
+# 每条观察由 tick.py 以 <observation>...</observation> 包裹（内容截断发生在标签内，
+# 闭合标签始终完整），防止工具输出/知识库内容渗入周围 Prompt 文字间接影响 LLM
 template: |
 
   [工具调用观察（ReAct）]
