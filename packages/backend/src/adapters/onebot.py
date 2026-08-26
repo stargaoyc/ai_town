@@ -225,16 +225,11 @@ def _get_llm_globals() -> tuple[LLMClient | None, PromptTemplates | None, Redis 
 
 
 def _extract_text(event: dict[str, Any]) -> str:
-    """从 OneBot v12 消息事件中提取纯文本
+    """从 OneBot v11/v12 消息事件中提取纯文本
 
-    优先使用 raw_message（OneBot v12 规范定义的纯文本表示）；
-    若缺失则尝试从 message 段数组中拼接 text 段。
-
-    Args:
-        event: OneBot 事件字典
-
-    Returns:
-        提取出的纯文本；无法提取时返回空字符串
+    优先使用 raw_message；缺失则从 message 段数组拼接 text 段。
+    非文本段（图片/语音/视频/文件）以占位符并入正文（P2-13）：
+    此前被静默丢弃，角色对用户发的图完全无感知。
     """
     raw_message = event.get("raw_message")
     if isinstance(raw_message, str) and raw_message.strip():
@@ -244,11 +239,17 @@ def _extract_text(event: dict[str, Any]) -> str:
     if isinstance(message, list):
         parts: list[str] = []
         for seg in message:
-            if isinstance(seg, dict) and seg.get("type") == "text":
-                data = seg.get("data") or {}
+            if not isinstance(seg, dict):
+                continue
+            seg_type = seg.get("type")
+            data = seg.get("data") or {}
+            if seg_type == "text":
                 text = data.get("text", "")
                 if isinstance(text, str):
                     parts.append(text)
+            elif seg_type in ("image", "voice", "record", "video", "file"):
+                label = {"voice": "语音", "record": "语音"}.get(seg_type, seg_type)
+                parts.append(f"[{label}]")
         return "".join(parts).strip()
 
     return ""
@@ -348,23 +349,14 @@ def _strip_at_prefix(event: dict[str, Any], self_id: str | None, text: str) -> s
     return cleaned.strip()
 
 
-# 出站图片 URL（生成→QQ 链路）：仅 http(s) 且以常见图片扩展名结尾的地址
+# 出站媒体直链（生成→QQ 链路）：仅 http(s) 且以常见媒体扩展名结尾的地址
+# P3-1：视频侧补充流式与常见容器格式（m3u8/mp4/mov/webm/avi/mkv/flv）
 _IMAGE_URL_RE = re.compile(
     r"https?://[^\s\]]+?\.(?:png|jpe?g|gif|webp)(?:\?[^\s\]]*)?",
     re.IGNORECASE,
 )
-# 其余全部 CQ 码一律剥离——防止提示注入伪造 at/reply/JSON 等动作
-_CQ_CODE_RE = re.compile(r"\[CQ:[^\]]*\]")
-
-
-# 出站图片 URL（生成→QQ 链路）：仅 http(s) 且以常见图片扩展名结尾的地址
-_IMAGE_URL_RE = re.compile(
-    r"https?://[^\s\]]+?\.(?:png|jpe?g|gif|webp)(?:\?[^\s\]]*)?",
-    re.IGNORECASE,
-)
-# 出站视频 URL（media.generate_video 产物）
 _VIDEO_URL_RE = re.compile(
-    r"https?://[^\s\]]+?\.(?:mp4|mov|webm)(?:\?[^\s\]]*)?",
+    r"https?://[^\s\]]+?\.(?:mp4|mov|webm|avi|mkv|flv|m3u8)(?:\?[^\s\]]*)?",
     re.IGNORECASE,
 )
 # 其余全部 CQ 码一律剥离——防止提示注入伪造 at/reply/JSON 等动作
