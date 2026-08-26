@@ -27,9 +27,10 @@ from src.llm import LLMClient, PromptTemplates
 from src.messaging.proactive_sharing import ProactiveSharingService
 from src.messaging.service import (
     GROUP_REPLY_EMOTION_PROBABILITY,
-    GROUP_REPLY_LLM_ERROR_FALLBACK,
     GROUP_REPLY_LLM_NO_FALLBACK,
     GROUP_REPLY_PROBABILITY_CAP,
+    MessageService,
+    _match_greeting_keyword,
     _probability_roll,
 )
 from src.messaging.websocket import (
@@ -107,11 +108,112 @@ def test_group_reply_probabilities_valid() -> None:
         GROUP_REPLY_PROBABILITY_CAP,
         GROUP_REPLY_EMOTION_PROBABILITY,
         GROUP_REPLY_LLM_NO_FALLBACK,
-        GROUP_REPLY_LLM_ERROR_FALLBACK,
     ):
         assert 0 <= p <= 1
     assert _probability_roll(0.0) is False
     assert _probability_roll(1.0) is True
+
+
+# === Round-6 审查：R6-M1 问候词边界感知 / R6-M2 判定失败 fail-closed ===
+
+
+def test_greeting_ascii_keyword_requires_word_boundary() -> None:
+    """hi/hey 必须整词命中：不得误报 this/which/history/they 的内部子串"""
+    assert _match_greeting_keyword("what is this") is None
+    assert _match_greeting_keyword("which one do you like") is None
+    assert _match_greeting_keyword("history class was fun") is None
+    assert _match_greeting_keyword("they said so") is None
+
+
+def test_greeting_ascii_keyword_matches_standalone_case_insensitive() -> None:
+    assert _match_greeting_keyword("Hi everyone") == "hi"
+    assert _match_greeting_keyword("HEY!") == "hey"
+    assert _match_greeting_keyword("Hello~") == "hello"
+
+
+def test_greeting_cjk_keyword_matches_extension_forms() -> None:
+    """CJK 无词边界概念，子串匹配覆盖扩展语气形式"""
+    assert _match_greeting_keyword("早上好呀") == "早上好"
+    assert _match_greeting_keyword("晚安玛卡巴卡") == "晚安"
+
+
+async def test_group_reply_no_false_positive_greeting_inside_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """含 hi/hey 子串的英文消息应走后续启发式，而不是被问候层拦截"""
+    from src.messaging.service import MessageService
+
+    monkeypatch.setattr("src.messaging.service._probability_roll", lambda p: True)
+    svc = MessageService(
+        session=cast(Any, None),
+        llm=cast(LLMClient, object()),
+        prompts=cast(PromptTemplates, object()),
+    )
+
+    should, reason = await svc.should_reply_in_group(
+        character_id=_CHARACTER_ID,
+        character_name="小雪",
+        message="which one do you like?",
+        sender_user_id="qq_123",
+    )
+
+    assert should is True
+    assert reason == "question_heuristic"
+
+
+class _ExplodingLLM:
+    def structured_output(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("judge down")
+
+
+class _StubPrompts:
+    def render(self, name: str, **kwargs: Any) -> str:
+        return "prompt"
+
+
+class _StubCharacterRepo:
+    def __init__(self, character: Any) -> None:
+        self._character = character
+
+    async def get_by_id(self, character_id: UUID) -> Any:
+        return self._character
+
+
+async def test_group_reply_judge_exception_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R6-M2：LLM 判定调用异常时必须不回复（fail-closed），不再随机兜底"""
+    import src.messaging.service as service_module
+
+    warnings: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        service_module,
+        "logger",
+        SimpleNamespace(warning=lambda event, **kw: warnings.append((event, kw))),
+    )
+    svc = MessageService(
+        session=cast(Any, None),
+        llm=cast(LLMClient, _ExplodingLLM()),
+        prompts=cast(PromptTemplates, _StubPrompts()),
+    )
+    svc.character_repo = cast(
+        Any,
+        _StubCharacterRepo(SimpleNamespace(traits={"personality": ["温柔"]}, backstory="背景")),
+    )
+
+    should, reason = await svc.should_reply_in_group(
+        character_id=_CHARACTER_ID,
+        character_name="小雪",
+        message="随便聊聊今天的天气",
+        sender_user_id="qq_123",
+    )
+
+    assert should is False
+    assert reason.startswith("llm_judge_error:")
+    assert len(warnings) == 1
+    event, fields = warnings[0]
+    assert event == "group_reply_judge_failed"
+    assert fields["error_type"] == "RuntimeError"
 
 
 async def test_deliver_share_dedupes_users_and_passes_str_character_id(

@@ -71,7 +71,6 @@ GROUP_REPLY_EMOTION_PROBABILITY = 0.5  # 情绪句启发式回复概率
 # 两个关键词机器人互道早安永不停歇；0.9 闸门打破确定性互答，仅轻微降低活跃度）
 GROUP_REPLY_GREETING_PROBABILITY = 0.9
 GROUP_REPLY_LLM_NO_FALLBACK = 0.15  # LLM 判定不回复后的活跃度兜底
-GROUP_REPLY_LLM_ERROR_FALLBACK = 0.3  # LLM 调用失败时的 fail-open 兜底
 
 
 def _probability_roll(p: float) -> bool:
@@ -104,6 +103,37 @@ GREETING_KEYWORDS = frozenset(
         "大家好",
     }
 )
+
+
+def _build_greeting_matchers() -> tuple[tuple[str, re.Pattern[str]], ...]:
+    """问候关键词编译为匹配器：纯 ASCII 词用词边界，CJK 词用子串（R6-M1）
+
+    ASCII 词必须整词命中——裸子串会让 hi/hey 命中 this/they/which 的内部，
+    使 0.9 概率的问候层在混合语言群里变成误报引擎；CJK 无词边界概念，
+    子串匹配才能覆盖「早上好呀」等扩展语气形式。按关键词排序保证
+    多词同时命中时的决策与 reason 确定性。
+    """
+    return tuple(
+        (
+            keyword,
+            re.compile(rf"\b{re.escape(keyword)}\b", re.IGNORECASE)
+            if keyword.isascii()
+            else re.compile(re.escape(keyword), re.IGNORECASE),
+        )
+        for keyword in sorted(GREETING_KEYWORDS)
+    )
+
+
+_GREETING_MATCHERS = _build_greeting_matchers()
+
+
+def _match_greeting_keyword(text: str) -> str | None:
+    """边界感知的问候语匹配：命中返回首个关键词，未命中返回 None"""
+    for keyword, matcher in _GREETING_MATCHERS:
+        if matcher.search(text):
+            return keyword
+    return None
+
 
 # 匹配 [CQ:xxx,...] 码（OneBot 图片/表情/at 等）
 _CQ_CODE_PATTERN = re.compile(r"\[CQ:[^\]]+\]")
@@ -169,7 +199,7 @@ class MessageService:
 
         成本控制：
         - 每次调用最多 1 次 LLM 请求（chat 模型）
-        - LLM 判断失败时小概率回复（fail-open，更积极）
+        - LLM 判断失败时不回复（fail-closed），避免故障期间爆发无上下文回复
         - CQ 码（图片/表情等）在判断前清理，避免 URL 中 ? 误判为疑问句
 
         Args:
@@ -202,13 +232,13 @@ class MessageService:
         # 1b. 问候语关键词 → 概率回复（round-3 H5：不再确定性直接回复。
         # 问候层无任何上下文判断，回显实现或第二个关键词机器人会与本角色
         # 互相触发问候形成乒乓死循环；0.9 概率闸门打破确定性互答。
-        # 名字命中（1a）保持确定性：显式点名理应得到回应。）
-        text_lower = text.lower()
-        for keyword in GREETING_KEYWORDS:
-            if keyword in text_lower:
-                if _probability_roll(GROUP_REPLY_GREETING_PROBABILITY):
-                    return True, f"greeting:{keyword}"
-                return False, f"greeting_skip_probability:{keyword}"
+        # 名字命中（1a）保持确定性：显式点名理应得到回应。
+        # R6-M1：匹配边界感知——ASCII 词整词命中，不再误报单词内部子串。）
+        greeting_hit = _match_greeting_keyword(text)
+        if greeting_hit is not None:
+            if _probability_roll(GROUP_REPLY_GREETING_PROBABILITY):
+                return True, f"greeting:{greeting_hit}"
+            return False, f"greeting_skip_probability:{greeting_hit}"
 
         # 2. 启发式规则（概率回复）
         # 2a. 疑问句（包含问号或疑问词结尾）
@@ -273,10 +303,10 @@ class MessageService:
                 "group_reply_judge_failed",
                 character_id=str(character_id),
                 error=str(e),
+                error_type=type(e).__name__,
             )
-            # LLM 判断失败时按 fail-open 概率回复（更积极）
-            if _probability_roll(GROUP_REPLY_LLM_ERROR_FALLBACK):
-                return True, f"llm_error_fallback:{type(e).__name__}"
+            # R6-M2：fail-closed——判定链路不可用时保持沉默，故障期间
+            # 宁可少说话，也不发无上下文的随机回复（与文档承诺一致）
             return False, f"llm_judge_error:{type(e).__name__}"
 
     @trace_span("message.process")

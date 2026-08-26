@@ -12,7 +12,7 @@
 | **上下文连续** | 跨平台会话上下文持久化，角色"记得"用户；同一用户与同一角色的对话按 `(user_id, platform, character_id)` 唯一标识 | `conversations` 表唯一索引 `idx_conv_user_platform_char`；`context` JSONB 字段存储压缩摘要 |
 | **主动推送** | 角色可基于 `proactive_share_intent` 主动联系用户，覆盖 Web 实时推送与 QQ 主动消息 | `ProactiveSharingService.evaluate_and_share` + `OneBotAdapter.push_share` + `WebSocketManager.send_to_user` |
 | **异步解耦** | 平台收发与 LLM 回复生成异步解耦，避免阻塞；OneBot 反向 WebSocket 单事件失败不影响后续 | `async def` 全异步链路；单事件 `try/except` 兜底；`asyncio.Lock` 保护连接集合 |
-| **群聊智能回复** | 群聊场景下角色不仅在被 @ 时回复，还能基于关键词、启发式规则与 LLM 判断主动参与讨论 | `MessageService.should_reply_in_group` 三层决策；`GROUP_REPLY_PROBABILITY_CAP` 概率上限 |
+| **群聊智能回复** | 群聊场景下角色不仅在被 @ 时回复，还能基于关键词、启发式规则与 LLM 判断主动参与讨论 | `MessageService.should_reply_in_group` 多层决策（名字 → 问候 → 启发式 → LLM 判断）；LLM 判定失败 fail-closed 不回复 |
 
 ### 1.1 设计原则
 
@@ -355,13 +355,16 @@ def _extract_text(event: dict) -> str:
 
 ### 3.3 群聊智能回复
 
-群聊场景下，角色不仅在被 @ 时回复，还能基于消息内容智能决策是否参与讨论。决策逻辑位于 `MessageService.should_reply_in_group`，采用**三层过滤**（从轻到重）：
+群聊场景下，角色不仅在被 @ 时回复，还能基于消息内容智能决策是否参与讨论。决策逻辑位于 `MessageService.should_reply_in_group`，采用**多层过滤**（从轻到重）：
 
-#### 三层决策逻辑
+#### 多层决策逻辑
 
 ```python
 # src/messaging/service.py
-GROUP_REPLY_PROBABILITY_CAP = 0.4  # 群聊智能回复概率上限
+GROUP_REPLY_GREETING_PROBABILITY = 0.9  # 问候语命中回复概率
+GROUP_REPLY_PROBABILITY_CAP = 0.7       # 疑问句启发式回复概率
+GROUP_REPLY_EMOTION_PROBABILITY = 0.5   # 情绪句启发式回复概率
+GROUP_REPLY_LLM_NO_FALLBACK = 0.15      # LLM 判定不回复后的活跃度兜底
 
 async def should_reply_in_group(
     self,
@@ -370,20 +373,26 @@ async def should_reply_in_group(
     message: str,
     sender_user_id: str,
 ) -> tuple[bool, str]:
-    # 1. 关键词命中：消息包含角色名
+    # 1a. 名字命中：直接回复
     if character_name and character_name in text:
         return True, "name_mentioned"
 
-    # 2. 启发式规则
-    # 2a. 疑问句（包含问号）- 40% 概率回复
+    # 1b. 问候语命中（边界感知匹配）- 90% 概率回复
+    greeting_hit = _match_greeting_keyword(text)
+    if greeting_hit is not None:
+        if _probability_roll(GROUP_REPLY_GREETING_PROBABILITY):
+            return True, f"greeting:{greeting_hit}"
+        return False, f"greeting_skip_probability:{greeting_hit}"
+
+    # 2a. 疑问句（包含问号或以 吗/呢 结尾）- 70% 概率回复
     if "?" in text or "？" in text or text.endswith("吗") or text.endswith("呢"):
-        if random.random() < GROUP_REPLY_PROBABILITY_CAP:
+        if _probability_roll(GROUP_REPLY_PROBABILITY_CAP):
             return True, "question_heuristic"
         return False, "question_skip_probability"
 
-    # 2b. 情绪强烈（包含感叹号或表情）- 20% 概率回复
-    if "！" in text or "!" in text or "[CQ:face" in text:
-        if random.random() < 0.2:
+    # 2b. 情绪强烈（感叹号或表情码）- 50% 概率回复
+    if "！" in text or "!" in text or "[CQ:face" in raw_text:
+        if _probability_roll(GROUP_REPLY_EMOTION_PROBABILITY):
             return True, "emotion_heuristic"
         return False, "emotion_skip_probability"
 
@@ -391,24 +400,30 @@ async def should_reply_in_group(
     result = await self.llm.structured_output(
         judge_prompt,
         schema={...},
-        model="chat",
     )
     should = bool(result.get("should_reply", False))
     reason = result.get("reason", "llm_judgment")
 
-    # 概率上限控制：即使 LLM 说回复，也受概率上限约束
-    if should and random.random() > GROUP_REPLY_PROBABILITY_CAP:
-        return False, f"llm_yes_but_capped:{reason}"
+    # LLM 判断为回复时，不再受概率上限约束（LLM 已做了相关性判断）
+    if should:
+        return True, f"llm:{reason}"
 
-    return should, f"llm:{reason}"
+    # 4. 概率兜底：LLM 说不回复时，仍有 15% 小概率主动回复
+    if _probability_roll(GROUP_REPLY_LLM_NO_FALLBACK):
+        return True, f"random_fallback:{reason}"
+
+    return False, f"llm_no:{reason}"
+
+# LLM 调用异常：记录 group_reply_judge_failed 警告后保持沉默（fail-closed）
 ```
 
 | 层级 | 触发条件 | 回复概率 | 说明 |
 |------|----------|----------|------|
-| **1. 关键词命中** | 消息包含角色名 / 别名 | 100% | 直接回复，无需 LLM 判断 |
-| **2a. 疑问句启发式** | 消息含 `?` `？` 或以 `吗` `呢` 结尾 | 40% | 受 `GROUP_REPLY_PROBABILITY_CAP` 约束 |
-| **2b. 情绪强烈启发式** | 消息含 `!` `！` 或 `[CQ:face` 表情码 | 20% | 情绪强烈时较低概率回复 |
-| **3. LLM 判断** | 上述未命中时，调用 LLM 判断相关性 | 受 `GROUP_REPLY_PROBABILITY_CAP=0.4` 上限约束 | 失败时默认不回复（fail-safe） |
+| **1a. 名字命中** | 消息包含角色名 / 别名 | 100% | 直接回复，无需 LLM 判断 |
+| **1b. 问候语命中** | 边界感知匹配问候关键词（纯 ASCII 词按词边界整词匹配，CJK 词按子串匹配） | 90% | `GROUP_REPLY_GREETING_PROBABILITY`；ASCII 整词匹配防止 hi/hey 误报 this/they 内部子串 |
+| **2a. 疑问句启发式** | 消息含 `?` `？` 或以 `吗` `呢` 结尾 | 70% | 受 `GROUP_REPLY_PROBABILITY_CAP` 控制 |
+| **2b. 情绪强烈启发式** | 消息含 `!` `！` 或 `[CQ:face` 表情码 | 50% | 情绪强烈时中等概率回复 |
+| **3. LLM 判断** | 上述未命中时，调用 LLM 判断相关性 | 说“应回复”即回复（无概率上限）；说“不回复”仍有 15% 兜底 | 调用失败时记录警告并保持沉默（fail-closed） |
 
 **LLM 判断 Prompt 设计**：
 
@@ -432,9 +447,9 @@ judge_prompt = (
 ```
 
 **成本控制**：
-- 每次调用最多 1 次 LLM 请求（`model="chat"` 轻量级模型）；
-- LLM 判断失败时默认不回复（`fail-safe`），避免异常导致刷屏；
-- 即使 LLM 判断"应回复"，仍受 `GROUP_REPLY_PROBABILITY_CAP=0.4` 概率上限约束，避免角色过于活跃。
+- 每次调用最多 1 次 LLM 请求（chat 模型轻量级判定）；
+- LLM 判断失败时保持沉默（fail-closed），记录 `group_reply_judge_failed` 警告，避免故障期间爆发无上下文回复；
+- LLM 判断"应回复"时不再受概率上限约束（相关性判断已由 LLM 完成）；判断"不回复"时仍有 `GROUP_REPLY_LLM_NO_FALLBACK=0.15` 的小概率活跃度兜底。
 
 #### 配置项
 
@@ -574,7 +589,7 @@ async def push_share(
 ) -> bool:
     """主动推送分享消息给指定用户/群（无需用户先发消息）
 
-    会自动使用第一个活跃的 OneBot 连接发送。
+    会依次尝试所有活跃的 OneBot 连接发送（跨连接 failover）。
     """
     if not message:
         return False
@@ -588,9 +603,9 @@ async def push_share(
         logger.warning("onebot_push_share_no_target")
         return False
 
-    # 获取第一个活跃连接
+    # 获取所有 CONNECTED 状态的活跃连接
     async with self._lock:
-        conns = list(self._connections)
+        conns = [ws for ws in self._connections if ws.client_state == WebSocketState.CONNECTED]
     if not conns:
         logger.warning(
             "onebot_push_share_no_connection",
@@ -599,23 +614,28 @@ async def push_share(
         )
         return False
 
-    ws = conns[0]  # 取第一个活跃连接
-    try:
-        await self.send_message(
-            onebot_ws=ws,
-            event_type=event_type,
-            user_id=user_id,
-            group_id=group_id,
-            message=message,
-        )
-        return True
-    except Exception as e:
-        logger.error("onebot_push_share_failed", error=str(e), exc_info=True)
-        return False
+    # 依次尝试各连接：单个连接发送失败自动切换下一个（failover）
+    last_error: Exception | None = None
+    for ws in conns:
+        try:
+            await self.send_message(
+                onebot_ws=ws,
+                event_type=event_type,
+                user_id=user_id,
+                group_id=group_id,
+                message=message,
+            )
+            return True
+        except Exception as e:
+            last_error = e
+            logger.warning("onebot_push_share_send_failed_try_next", error=str(e))
+
+    logger.error("onebot_push_share_failed", error=str(last_error), exc_info=True)
+    return False
 ```
 
 **关键设计**：
-- **获取第一个活跃连接**：OneBot 实现通常只有 1 个连接，故取 `conns[0]`。多实例场景下可扩展为按 self_id 路由；
+- **跨连接 failover**：依次尝试所有 CONNECTED 状态的活跃连接，单条连接发送失败自动切换下一个，多实现（如多个 QQ 号）同时反连时不绑死在任意一条上；
 - **支持 user_id（私聊）和 group_id（群聊）**：优先群聊，其次私聊，两者都未提供则记录警告并返回 False；
 - **复用 send_message**：分享消息同样支持多段拆分与间隔发送；
 - **返回 bool**：成功返回 True，无连接/发送失败返回 False，调用方可据此决定是否记录失败。
@@ -636,8 +656,8 @@ CharacterTickEngine._execute_tick
     1. 加载 ActionRecord（从 action_repo.get_by_character 取最近一条）
     2. 调用 ProactiveSharingService.evaluate_and_share
        ├── 评估分享意图（_evaluate_intent）
-       ├── 检查冷却（_check_cooldown，1 小时）
-       ├── 检查日限额（DAILY_SHARE_LIMIT=5）
+       ├── 检查冷却（_check_cooldown，30 分钟）
+       ├── 检查日限额（share_daily_limit=8）
        ├── 生成分享文案（_generate_share_content）
        └── 投递分享（_deliver_share）
            ├── 写入 messages 表（sender=character, extra_data.share_type=proactive）
@@ -1187,8 +1207,8 @@ _maybe_proactive_share(character_id, decision, context)
    │   ├── 规则 2：state.mood in SHAREABLE_MOODS → 分享
    │   └── 规则 3：无触发条件 → 不分享
    ├── 3. 检查频率限制
-   │   ├── _check_cooldown（SHARE_COOLDOWN_SECONDS=3600，1 小时冷却）
-   │   └── _get_today_share_count（DAILY_SHARE_LIMIT=5，每日上限）
+    │   ├── _check_cooldown（settings.share_cooldown_seconds=1800，30 分钟冷却）
+    │   └── _get_today_share_count（settings.share_daily_limit=8，每日上限）
    ├── 4. 生成分享文案（_generate_share_content）
    │   └── LLM 基于角色性格 + action 结果 + 情绪生成 50-100 字文案
    └── 5. 投递分享（_deliver_share）
@@ -1217,8 +1237,8 @@ SHAREABLE_MOODS = {"excited", "happy", "surprised", "proud"}
 
 | 限制项 | 值 | 说明 |
 |--------|----|------|
-| `SHARE_COOLDOWN_SECONDS` | 3600（1 小时） | 同一角色对同一用户的最小分享间隔 |
-| `DAILY_SHARE_LIMIT` | 5 | 单角色每日最大主动分享次数（防刷屏） |
+| `share_cooldown_seconds`（配置项） | 1800（30 分钟） | 同一角色两次主动分享的最小间隔 |
+| `share_daily_limit`（配置项） | 8 | 单角色每日最大主动分享次数（防刷屏） |
 
 ### 5.3 分享文案生成
 
@@ -1582,7 +1602,10 @@ def _get_at_only() -> bool:
 | `DEFAULT_HISTORY_LIMIT` | 20 | 默认拉取最近 20 条消息构造 history |
 | `CONTEXT_COMPRESS_THRESHOLD` | 50 | 会话累计消息超过 50 条时触发压缩 |
 | `COMPRESSED_HISTORY_LIMIT` | 10 | 压缩后保留最近 10 条原文 |
-| `GROUP_REPLY_PROBABILITY_CAP` | 0.4 | 群聊智能回复概率上限 |
+| `GROUP_REPLY_GREETING_PROBABILITY` | 0.9 | 问候语命中回复概率（边界感知匹配） |
+| `GROUP_REPLY_PROBABILITY_CAP` | 0.7 | 疑问句启发式回复概率 |
+| `GROUP_REPLY_EMOTION_PROBABILITY` | 0.5 | 情绪句启发式回复概率 |
+| `GROUP_REPLY_LLM_NO_FALLBACK` | 0.15 | LLM 判定不回复后的活跃度兜底概率 |
 
 ### 8.4 OneBot 适配器常量
 
@@ -1593,16 +1616,16 @@ def _get_at_only() -> bool:
 | `MAX_SEGMENT_LENGTH` | 500 | 多段回复每段最大长度（字符） |
 | `SEGMENT_SEND_INTERVAL` | 0.6 | 多段回复段落间发送间隔（秒） |
 
-### 8.5 主动分享服务常量
+### 8.5 主动分享服务配置项
 
-定义在 `src/messaging/proactive_sharing.py`：
+定义在 `src/config.py` 的 `Settings` 类：
 
-| 常量 | 值 | 说明 |
-|------|----|------|
-| `SHARE_COOLDOWN_SECONDS` | 3600 | 分享冷却时间（秒），同一角色对同一用户的最小分享间隔 |
-| `DAILY_SHARE_LIMIT` | 5 | 单角色每日最大主动分享次数 |
-| `SHAREABLE_ACTION_IDS` | `{buy_item, receive_gift, ...}` | 触发分享的 Action 类型白名单 |
-| `SHAREABLE_MOODS` | `{excited, happy, surprised, proud}` | 触发分享的情绪状态 |
+| 配置项 | 值 | 说明 |
+|--------|----|------|
+| `share_cooldown_seconds` | 1800 | 分享冷却时间（秒），同一角色两次分享的最小间隔 |
+| `share_daily_limit` | 8 | 单角色每日最大主动分享次数 |
+| `SHAREABLE_ACTION_IDS`（常量） | `{buy_item, receive_gift, ...}` | 触发分享的 Action 类型白名单（定义在 `src/messaging/proactive_sharing.py`） |
+| `SHAREABLE_MOODS`（常量） | `{excited, happy, surprised, proud}` | 触发分享的情绪状态（同上） |
 
 ---
 
