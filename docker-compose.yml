@@ -98,6 +98,10 @@ services:
     build:
       context: ./packages/backend
       dockerfile: Dockerfile
+      # 中国网络加速：本地 .env 设 USE_CN_MIRROR=true 启用清华镜像；
+      # 缺省 false（CI/GitHub Actions 环境保持官方源）
+      args:
+        USE_CN_MIRROR: ${USE_CN_MIRROR:-false}
     container_name: aitown-backend
     restart: unless-stopped
     mem_limit: 2g
