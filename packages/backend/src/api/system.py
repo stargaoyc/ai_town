@@ -77,15 +77,21 @@ async def health() -> HealthOut:
         "partition_scheduler": partition_scheduler is not None,
         "onebot_adapter": onebot_adapter._running if onebot_adapter else False,
     }
-    all_must_ok = all(must_modules.values())
+
+    # P0-6：世界在推进但角色 Tick 缺员 = 小镇假活，必须显式降级而非仅靠
+    # optional_modules 布尔位让调用方自行推断
+    degraded_reasons = [name for name, ok in must_modules.items() if not ok]
+    if world_engine is not None and character_engine is None:
+        degraded_reasons.append("character_engine")
 
     return HealthOut(
-        status="ok" if all_must_ok else "degraded",
+        status="ok" if not degraded_reasons else "degraded",
         world_tick=world_engine.tick_id if world_engine else 0,
         redis="connected" if redis_alive else "disconnected",
         must_modules=must_modules,
         optional_modules=optional_modules,
         current_world_time=_get_current_world_time(),
+        degraded_reasons=degraded_reasons,
     )
 
 

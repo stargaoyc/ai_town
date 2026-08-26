@@ -105,38 +105,16 @@ async def get_character(character_id: str) -> dict[str, Any]:
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format") from None
 
-    async with db.session() as session:
-        repo = CharacterRepository(session)
-        result = await repo.get_character_with_state(cid)
+    # P2-3：编排逻辑下沉 Service 层，路由只做校验与 404 语义
+    from src.services import CharacterService
 
-    if not result:
+    async with db.session() as session:
+        detail = await CharacterService(session).get_character_detail(cid)
+
+    if detail is None:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    character, state = result
-
-    return {
-        "character": {
-            "id": str(character.id),
-            "name": character.name,
-            "age": character.age,
-            "occupation": character.occupation,
-            "personality": character.traits.get("personality", []),
-            "traits": character.traits,
-            "backstory": character.backstory,
-            "is_active": character.is_active,
-        },
-        "state": {
-            "location": state.location,
-            "stamina": state.stamina,
-            "satiety": state.satiety,
-            "mood": state.mood,
-            "money": state.money,
-            "phone_battery": state.phone_battery,
-            "social_energy": state.social_energy,
-            "current_action": state.current_action,
-            "version": state.version,
-        },
-    }
+    return detail
 
 
 @router.get("/characters/{character_id}/reflections", response_model=ReflectionsOut)

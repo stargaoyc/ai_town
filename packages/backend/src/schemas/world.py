@@ -49,3 +49,6 @@ class HealthOut(BaseModel):
     must_modules: dict[str, bool]
     optional_modules: dict[str, bool]
     current_world_time: dict[str, Any] | None = None
+    # P0-6：降级原因清单——角色引擎缺失时世界仍在推进（小镇假活），
+    # 调用方需能区分「全绿」与「核心循环缺员」
+    degraded_reasons: list[str] = []

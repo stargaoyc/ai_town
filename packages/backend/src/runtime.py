@@ -233,6 +233,40 @@ def get_backend_port() -> int:
     return _backend_port
 
 
+# === Require 变体（P2-2）：核心路径依赖缺失时显式失败而非静默 None ===
+#
+# get_* 返回 X | None 是模块降级能力的代价；但状态真相源/LLM 等硬依赖
+# 在业务执行期必然已初始化——继续让调用方散布 `assert x is not None`
+# 或静默 continue 只会掩盖装配错误。require_* 供「缺了就该炸」的
+# 调用方使用；可选依赖（scene_loader 等）仍走 get_*。
+
+
+def _require(value: Any, name: str) -> Any:
+    if value is None:
+        raise RuntimeError(f"runtime dependency '{name}' is not initialized; lifespan 未完成或模块降级")
+    return value
+
+
+def require_redis() -> "Redis":
+    result: Redis = _require(_redis, "redis")
+    return result
+
+
+def require_llm() -> "LLMClient":
+    result: LLMClient = _require(_llm, "llm")
+    return result
+
+
+def require_prompts() -> "PromptTemplates":
+    result: PromptTemplates = _require(_prompts, "prompts")
+    return result
+
+
+def require_registry() -> "ActionRegistry":
+    result: ActionRegistry = _require(_registry, "registry")
+    return result
+
+
 # === 业务工具函数（依赖运行时单例）===
 
 
