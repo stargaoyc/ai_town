@@ -227,6 +227,11 @@ class Settings(BaseSettings):
     # OneBot 事件流长度上限（round-3 H3：Streams 必须配 maxlen，否则已处理条目与
     # 死信永久累积；XDEL 只删单条，历史长度仍需上限收敛）
     onebot_stream_maxlen: int = 10_000
+    # 同一会话两条出站消息的最小间隔毫秒（R6-L6）：降低 QQ 风控触发概率。0=禁用
+    onebot_send_min_interval_ms: int = 1000
+    # 心跳过期阈值秒（R6-L6）：超过该时长未收到心跳的连接被主动 close，
+    # 由 OneBot 实现自动重连，避免半开连接长期占据发送候选位
+    onebot_heartbeat_stale_seconds: float = 90.0
 
 
 settings = Settings()  # type: ignore[call-arg]

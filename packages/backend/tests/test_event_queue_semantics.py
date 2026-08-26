@@ -15,10 +15,15 @@ from fastapi import WebSocket
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.onebot import OneBotAdapter
+from src.adapters.onebot import OneBotAdapter, _reply_dedup_key
 from src.config import settings
 from src.llm import LLMClient, PromptTemplates
 from src.messaging.event_queue import DLQ_STREAM, MAX_DELIVERIES, STREAM, EventQueue
+
+# R6-M3：去重键含 self_id 与角色 ID，与 PRIVATE_EVENT 的字段保持一致
+_DEDUP_SELF = "99999"
+_DEDUP_CHARACTER = UUID(int=1)
+_DEDUP_KEY = _reply_dedup_key(_DEDUP_SELF, _DEDUP_CHARACTER, "m1")
 
 
 class FakeStreamRedis:
@@ -354,7 +359,7 @@ async def test_reply_claim_happens_between_generation_and_send(reply_harness: Re
     await h.bot.handle_event(dict(PRIVATE_EVENT), _cast_ws())
 
     assert h.sent_messages == ["generated reply"]
-    assert h.order == ["generate", "set:onebot:msg:m1", "send"]
+    assert h.order == ["generate", f"set:{_DEDUP_KEY}", "send"]
 
 
 async def test_send_failure_releases_reply_slot(reply_harness: ReplyHarness) -> None:
@@ -363,12 +368,12 @@ async def test_send_failure_releases_reply_slot(reply_harness: ReplyHarness) -> 
     h.fail_send = True
 
     await h.bot.handle_event(dict(PRIVATE_EVENT), _cast_ws())
-    assert await h.bot._claim_reply_slot("m1") is True
+    assert await h.bot._claim_reply_slot(_DEDUP_SELF, _DEDUP_CHARACTER, "m1") is True
 
     assert h.sent_messages == []
     # 生成后认领；发送失败即释放；随后重放可再次认领（最后的 set 即重试成功）
-    assert h.order == ["generate", "set:onebot:msg:m1", "del:onebot:msg:m1", "set:onebot:msg:m1"]
-    assert "onebot:msg:m1" in h.redis.keys
+    assert h.order == ["generate", f"set:{_DEDUP_KEY}", f"del:{_DEDUP_KEY}", f"set:{_DEDUP_KEY}"]
+    assert _DEDUP_KEY in h.redis.keys
 
 
 async def test_duplicate_reply_skipped_when_slot_taken(reply_harness: ReplyHarness) -> None:
@@ -399,8 +404,8 @@ async def test_claim_reply_slot_setnx_semantics(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("src.runtime._redis", FakeDedupRedis([]))
     adapter = OneBotAdapter()
 
-    assert await adapter._claim_reply_slot("m1") is True
-    assert await adapter._claim_reply_slot("m1") is False
+    assert await adapter._claim_reply_slot("111", UUID(int=1), "m1") is True
+    assert await adapter._claim_reply_slot("111", UUID(int=1), "m1") is False
 
 
 async def test_release_reply_slot_allows_retry(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -408,11 +413,12 @@ async def test_release_reply_slot_allows_retry(monkeypatch: pytest.MonkeyPatch) 
     ops: list[str] = []
     monkeypatch.setattr("src.runtime._redis", FakeDedupRedis(ops))
     adapter = OneBotAdapter()
+    key = _reply_dedup_key("111", UUID(int=1), "m1")
 
-    assert await adapter._claim_reply_slot("m1") is True
-    await adapter._release_reply_slot("m1")
-    assert await adapter._claim_reply_slot("m1") is True
-    assert ops == ["set:onebot:msg:m1", "del:onebot:msg:m1", "set:onebot:msg:m1"]
+    assert await adapter._claim_reply_slot("111", UUID(int=1), "m1") is True
+    await adapter._release_reply_slot("111", UUID(int=1), "m1")
+    assert await adapter._claim_reply_slot("111", UUID(int=1), "m1") is True
+    assert ops == [f"set:{key}", f"del:{key}", f"set:{key}"]
 
 
 async def test_claim_without_redis_proceeds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -420,7 +426,7 @@ async def test_claim_without_redis_proceeds(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("src.runtime._redis", None)
     adapter = OneBotAdapter()
 
-    assert await adapter._claim_reply_slot("m1") is True
+    assert await adapter._claim_reply_slot("111", UUID(int=1), "m1") is True
 
 
 async def test_greeting_layer_probabilistic_name_hit_deterministic(

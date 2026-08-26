@@ -15,6 +15,8 @@
   a. 群-角色映射（onebot_group_character_map）：不同群绑定不同角色
   b. 默认角色（ONEBOT_DEFAULT_CHARACTER_ID）
 - 群聊 @ 检测：支持 OneBot 11 的 message 段数组 at 段、raw_message 的 [CQ:at] 码、to_me 字段
+- 异步派发（R6-H6）：message 事件经会话任务链（同会话 FIFO、跨会话并发）后台执行，
+  接收循环不被 LLM 回复阻塞；meta/心跳/action 响应保持内联快速路径
 - LLM 客户端通过 `from src.runtime import get_llm, get_prompts, get_redis` 延迟获取，避免循环导入
 - 错误处理：捕获异常并记录日志，不中断连接
 
@@ -39,8 +41,9 @@ import re
 import secrets
 import time
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from prometheus_client import Counter
@@ -51,6 +54,7 @@ if TYPE_CHECKING:
     from redis.asyncio import Redis
 
     from src.llm import LLMClient, PromptTemplates
+    from src.messaging.event_queue import EventQueue
 
 from src.db.session import db
 from src.messaging import MessageService
@@ -76,19 +80,59 @@ _RATE_LIMIT_WINDOW_SECONDS = 60
 # 心跳新鲜度阈值（秒，M17）：约 2 倍常见 OneBot 心跳间隔（30s）。超过该时长
 # 未收到心跳的连接在选择发送目标时排到新鲜连接之后。
 _HEARTBEAT_FRESH_SECONDS = 60.0
+# 心跳过期扫描间隔（秒，R6-L6）：驱逐检查的轮询周期，约半个常见心跳间隔
+_HEARTBEAT_EVICTION_SCAN_INTERVAL = 15.0
+
+# 异步派发容量（R6-H6）：单会话任务链最多排队 16 条，超出的事件丢弃（条目留在
+# 流内由恢复循环重放），防止洪泛群把内存与 LLM 并发打爆
+_DISPATCH_CHAIN_MAX_PER_CHAT = 16
+# 全局同时在途的派发任务上限（R6-H6）：限制并发 LLM 调用总数
+_DISPATCH_GLOBAL_MAX_INFLIGHT = 8
+# stop() 排空各会话任务链的超时（秒，R6-H6）：在途回复仍需经连接发出，
+# 必须在关闭连接前等待；超时后放弃等待由注册表兜底取消
+_DISPATCH_DRAIN_TIMEOUT_SECONDS = 30.0
+# echo 挂起表上限（R6-L6）：实现从不回显响应帧时防止无限增长
+_PENDING_ACTIONS_MAX = 1024
+# 出站时间戳表修剪阈值（R6-L6）：超过后清理一小时未活跃的会话记录
+_OUTBOUND_TS_MAX_ENTRIES = 2048
 
 # QQ 层 action 响应可观测（M12）：此前 send-action 的 retcode 响应被当作未知
 # 事件吞掉，QQ 侧发送失败（风控 / 禁言 / 目标不存在）完全不可见。
+# R6-L6：按 action 名加标签关联单次动作耗时；标签基数有界——echo 值绝不入标签。
 ONEBOT_ACTION_RESPONSE_TOTAL = Counter(
     "ai_town_onebot_action_response_total",
     "OneBot send-action 响应次数",
-    ["outcome"],  # outcome: success/failed
+    ["outcome", "action"],  # outcome: success/failed；action: 动作名 / unknown
+)
+
+# R6-H6：会话任务链满导致事件被丢弃的计数
+ONEBOT_DISPATCH_DROPPED_TOTAL = Counter(
+    "ai_town_onebot_dispatch_dropped_total",
+    "OneBot 消息事件因派发链满被丢弃次数",
+    ["reason"],  # reason: chain_overflow
 )
 
 
-def _reply_dedup_key(message_id: str) -> str:
-    """回复去重键（键格式与原实现保持一致）"""
-    return f"onebot:msg:{message_id}"
+def _reply_dedup_key(self_id: str | None, character_id: UUID, message_id: str) -> str:
+    """回复去重键（R6-M3）：必须含 self_id 与角色 ID
+
+    多实例共写同一 Redis、同群服务不同角色时，裸 message_id 键会让两个
+    后端互相压制对方角色的回复；按 (self_id, character_id) 分桶后各账号
+    各角色的回复互不可见。
+    """
+    return f"onebot:msg:{self_id or ''}:{character_id}:{message_id}"
+
+
+def _dispatch_chat_key(event: dict[str, Any]) -> str:
+    """派发排序键（R6-H6）：与入站限流键同构（chat_type + chat_id）
+
+    同一会话的事件串行执行保证 FIFO；不同会话互不阻塞。
+    """
+    detail_type = event.get("detail_type") or event.get("message_type")
+    group_id = event.get("group_id")
+    user_id = event.get("user_id")
+    kind, cid = ("g", group_id) if detail_type == "group" and group_id is not None else ("u", user_id)
+    return f"{kind}:{cid}"
 
 
 def _parse_action_response(data: dict[str, Any]) -> dict[str, Any] | None:
@@ -479,6 +523,18 @@ class OneBotAdapter:
         self._running = False
         # 断连兜底：启动时重放队列中未确认的消息事件（后台任务）
         self._recovery_task: asyncio.Task[None] | None = None
+        # 心跳过期驱逐扫描（R6-L6）
+        self._eviction_task: asyncio.Task[None] | None = None
+
+        # 异步派发状态（R6-H6）：chat_key -> 链尾任务；chat_key -> 在链上排队/在途数；
+        # 全局并发闸门。链尾任务等待其前驱，故排空时只需收集各会话链尾。
+        self._chat_chains: dict[str, asyncio.Task[None]] = {}
+        self._chat_pending: dict[str, int] = {}
+        self._dispatch_semaphore = asyncio.Semaphore(_DISPATCH_GLOBAL_MAX_INFLIGHT)
+
+        # 出站可观测与节拍（R6-L6）：echo -> (发起时刻, action 名)；chat_key -> 上次发送时刻
+        self._pending_actions: dict[str, tuple[float, str]] = {}
+        self._last_outbound_at: dict[str, float] = {}
 
     async def start(self) -> None:
         """启动适配器（标记运行状态，路由由 FastAPI 自动接管）"""
@@ -495,6 +551,8 @@ class OneBotAdapter:
         # 断连兜底（审查清单 #5）：重放崩溃/重启期间未确认的入站消息。
         # 重放幂等性由消息侧 SETNX 去重保证，不会重复回复。
         self._recovery_task = asyncio.create_task(self._recovery_loop())
+        # 心跳过期驱逐（R6-L6）：半开连接不再发心跳却占据发送候选位
+        self._eviction_task = asyncio.create_task(self._eviction_loop())
 
     async def _recovery_loop(self) -> None:
         """周期性重放队列中未确认的消息事件"""
@@ -528,6 +586,44 @@ class OneBotAdapter:
             except Exception as e:
                 logger.warning("onebot_recovery_failed", error=str(e))
             await asyncio.sleep(15)
+
+    async def _eviction_loop(self) -> None:
+        """周期性驱逐心跳过期的连接（R6-L6）
+
+        只检查有心跳记录的连接：元事件未到的全新连接不在此判定（由发送
+        超时路径兜底）。close 后 OneBot 实现按自身重连策略恢复连接。
+        """
+        while self._running:
+            await asyncio.sleep(_HEARTBEAT_EVICTION_SCAN_INTERVAL)
+            try:
+                await self._evict_stale_connections()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("onebot_stale_eviction_failed", error=str(e))
+
+    async def _evict_stale_connections(self) -> int:
+        """关闭超过心跳过期阈值的连接并清理其登记，返回驱逐数量"""
+        now = time.monotonic()
+        threshold = _get_heartbeat_stale_seconds()
+        async with self._lock:
+            stale = [
+                ws
+                for ws in self._connections
+                if ws.client_state == WebSocketState.CONNECTED and now - self._last_heartbeat.get(ws, now) > threshold
+            ]
+        for ws in stale:
+            logger.warning(
+                "onebot_connection_heartbeat_stale",
+                stale_seconds=round(now - self._last_heartbeat.get(ws, now), 1),
+                threshold_seconds=threshold,
+            )
+            await self._evict_connection(ws, "heartbeat_stale")
+            try:
+                await ws.close(code=1001, reason="heartbeat stale")
+            except Exception as e:
+                logger.debug("onebot_stale_conn_close_failed", error=str(e))
+        return len(stale)
 
     async def _any_ws(self) -> WebSocket | None:
         """取一个活跃 OneBot 连接；近期有心跳的连接优先于陈旧连接（M17）"""
@@ -565,7 +661,7 @@ class OneBotAdapter:
         return [ws for ws in conns if now - self._last_heartbeat.get(ws, now) < _HEARTBEAT_FRESH_SECONDS]
 
     async def stop(self) -> None:
-        """停止适配器，关闭所有 OneBot 连接"""
+        """停止适配器：排空派发链后关闭所有 OneBot 连接"""
         self._running = False
         if self._recovery_task:
             self._recovery_task.cancel()
@@ -573,6 +669,22 @@ class OneBotAdapter:
                 await self._recovery_task
             except asyncio.CancelledError:
                 pass
+        if self._eviction_task:
+            self._eviction_task.cancel()
+            try:
+                await self._eviction_task
+            except asyncio.CancelledError:
+                pass
+
+        # R6-H6：优雅排空各会话任务链——在途回复仍需经连接发出，必须先于关连接等待；
+        # 只收集链尾即可覆盖整条链（每个任务都 await 其前驱）。超时后放弃，由
+        # 后台注册表在 lifespan shutdown 统一取消兜底。
+        tails = [t for t in list(self._chat_chains.values()) if not t.done()]
+        if tails:
+            logger.info("onebot_dispatch_draining", chats=len(tails))
+            await asyncio.wait(tails, timeout=_DISPATCH_DRAIN_TIMEOUT_SECONDS)
+        self._chat_chains.clear()
+        self._chat_pending.clear()
 
         async with self._lock:
             conns = list(self._connections)
@@ -644,55 +756,43 @@ class OneBotAdapter:
                 # M12：send-action 的 retcode 响应不是事件帧。此前落入
                 # unknown_event 分支被吞掉，QQ 层发送失败完全不可观测，
                 # push_share 的 failover 也只能对 ws 级错误生效。
+                # R6-L6：按 echo 关联单次动作时延与成败计数。
                 action_resp = _parse_action_response(event)
                 if action_resp is not None:
-                    ONEBOT_ACTION_RESPONSE_TOTAL.labels(outcome="success" if action_resp["ok"] else "failed").inc()
-                    log = logger.debug if action_resp["ok"] else logger.warning
-                    log(
-                        "onebot_action_response_ok" if action_resp["ok"] else "onebot_action_response_failed",
-                        status=action_resp["status"],
-                        retcode=action_resp["retcode"],
-                        echo=action_resp["echo"],
-                    )
+                    self._record_action_response(action_resp)
                     continue
 
-                # 断连兜底：消息事件先持久化到 Streams（处理成功后 XACK+XDEL 从
-                # 流中移除，见 event_queue 模块 docstring 的 round-3 H3 说明；
-                # 崩溃/重启后由 _recovery_loop 重放，幂等性由 SETNX 去重保证）
-                queue = None
-                entry_id = None
                 if event.get("post_type") == "message":
+                    # R6-H6：消息事件先持久化到 Streams（断连兜底），随后交给
+                    # 会话任务链异步执行，接收循环立即回到下一帧——慢回复不再
+                    # 阻塞同连接的心跳与后续事件。XACK+XDEL 移至派发任务成功后
+                    # （见 _spawn_dispatch）；崩溃/重启后由 _recovery_loop 重放，
+                    # 幂等性由 SETNX 去重保证。
                     from src.runtime import get_redis
 
+                    queue_entry: tuple[EventQueue, str] | None = None
                     redis_client = get_redis()
                     if redis_client is not None:
                         from src.messaging.event_queue import EventQueue
 
                         queue = EventQueue(redis_client)
                         try:
-                            entry_id = await queue.enqueue(event)
+                            queue_entry = (queue, await queue.enqueue(event))
                         except Exception as e:
                             logger.warning("onebot_event_enqueue_failed", error=str(e))
-                            queue = None
-
-                try:
-                    await self.handle_event(event, websocket)
-                except Exception as e:
-                    # 单条事件处理失败不影响后续事件；已入队条目留待重放
-                    logger.error(
-                        "onebot_event_handle_failed",
-                        error=str(e),
-                        exc_info=True,
-                        event_type=event.get("type") or event.get("post_type"),
-                    )
+                    self._spawn_dispatch(event, websocket, queue_entry)
                 else:
-                    if queue is not None and entry_id is not None:
-                        try:
-                            # 必须用 remove()（XACK+XDEL）：该条目未经 XREADGROUP 投递、
-                            # 不在 PEL 里，只 ack 等于没处理，会被恢复循环重投（round-3 H3）
-                            await queue.remove(entry_id)
-                        except Exception as e:
-                            logger.warning("onebot_event_remove_failed", error=str(e))
+                    # 非 message 帧（meta/notice/request）保持内联快速路径
+                    try:
+                        await self.handle_event(event, websocket)
+                    except Exception as e:
+                        # 单条事件处理失败不影响后续事件
+                        logger.error(
+                            "onebot_event_handle_failed",
+                            error=str(e),
+                            exc_info=True,
+                            event_type=event.get("type") or event.get("post_type"),
+                        )
         except WebSocketDisconnect:
             logger.info("onebot_client_disconnected_outer")
         except Exception as e:
@@ -704,6 +804,93 @@ class OneBotAdapter:
                     await websocket.close(code=1000, reason="closing")
             except Exception:
                 pass
+
+    def _spawn_dispatch(
+        self,
+        event: dict[str, Any],
+        websocket: WebSocket,
+        queue_entry: tuple[EventQueue, str] | None,
+    ) -> None:
+        """将消息事件挂到所属会话的 FIFO 任务链上异步执行（R6-H6）
+
+        链满（单会话 >16 条）时丢弃事件：流内条目未确认，由恢复循环重放，
+        不丢语义只延迟。处理成功后 XACK+XDEL 流条目；失败留在原地重投。
+        """
+        from src.core.background import spawn_background
+
+        chat_key = _dispatch_chat_key(event)
+        pending = self._chat_pending.get(chat_key, 0)
+        if pending >= _DISPATCH_CHAIN_MAX_PER_CHAT:
+            ONEBOT_DISPATCH_DROPPED_TOTAL.labels(reason="chain_overflow").inc()
+            logger.warning("onebot_dispatch_chain_overflow", chat_key=chat_key, chain_length=pending)
+            return
+
+        previous = self._chat_chains.get(chat_key)
+
+        async def _runner(prev: asyncio.Task[None] | None) -> None:
+            if prev is not None:
+                try:
+                    await prev
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    # 前驱异常已由注册表记录；链路必须继续消费后续事件
+                    logger.warning("onebot_dispatch_predecessor_failed", chat_key=chat_key, error=str(e))
+            async with self._dispatch_semaphore:
+                try:
+                    await self.handle_event(event, websocket)
+                except Exception as e:
+                    # 处理失败：条目不确认，留待恢复循环重放
+                    logger.error(
+                        "onebot_event_handle_failed",
+                        error=str(e),
+                        exc_info=True,
+                        event_type=event.get("type") or event.get("post_type"),
+                    )
+                    return
+                if queue_entry is not None:
+                    try:
+                        # 必须用 remove()（XACK+XDEL）：该条目未经 XREADGROUP 投递、
+                        # 不在 PEL 里，只 ack 等于没处理，会被恢复循环重投（round-3 H3）
+                        await queue_entry[0].remove(queue_entry[1])
+                    except Exception as e:
+                        logger.warning("onebot_event_remove_failed", error=str(e))
+
+        task = spawn_background(_runner(previous), name=f"onebot-dispatch:{chat_key}")
+        self._chat_chains[chat_key] = task
+        self._chat_pending[chat_key] = pending + 1
+        task.add_done_callback(partial(self._on_dispatch_done, chat_key))
+
+    def _on_dispatch_done(self, chat_key: str, task: asyncio.Task[None]) -> None:
+        """链任务结束回调：仅当它仍是该会话链尾时才摘除，避免误删后继任务"""
+        if self._chat_chains.get(chat_key) is task:
+            self._chat_chains.pop(chat_key, None)
+        remaining = self._chat_pending.get(chat_key, 1) - 1
+        if remaining <= 0:
+            self._chat_pending.pop(chat_key, None)
+        else:
+            self._chat_pending[chat_key] = remaining
+
+    def _record_action_response(self, resp: dict[str, Any]) -> None:
+        """按 echo 关联 action 响应：计数并记录单次动作时延（R6-L6）
+
+        无匹配 echo 的响应（实现剥离 echo / failover 后的迟到响应）以
+        action="unknown" 计数，标签基数保持有界。
+        """
+        echo = resp["echo"]
+        started = self._pending_actions.pop(str(echo), None) if echo else None
+        action_name = started[1] if started is not None else "unknown"
+        outcome = "success" if resp["ok"] else "failed"
+        ONEBOT_ACTION_RESPONSE_TOTAL.labels(outcome=outcome, action=action_name).inc()
+        log = logger.debug if resp["ok"] else logger.warning
+        log(
+            "onebot_action_response_ok" if resp["ok"] else "onebot_action_response_failed",
+            status=resp["status"],
+            retcode=resp["retcode"],
+            echo=echo,
+            action=action_name,
+            latency_ms=round((time.monotonic() - started[0]) * 1000, 1) if started is not None else None,
+        )
 
     async def handle_event(self, event: dict[str, Any], onebot_ws: WebSocket) -> None:
         """分发 OneBot 事件到对应处理器（兼容 OneBot 11 和 v12）
@@ -925,7 +1112,7 @@ class OneBotAdapter:
         # 与私聊两条路径在此汇合，单点认领同时覆盖两者；若在处理开始就 SETNX，
         # 进程在生成与发送之间崩溃会把消息永久锁死（重放被去重挡住而回复未发出）。
         if message_id:
-            claimed = await self._claim_reply_slot(message_id)
+            claimed = await self._claim_reply_slot(self_id, character_id, message_id)
             if not claimed:
                 logger.info(
                     "onebot_duplicate_reply_skipped",
@@ -945,7 +1132,7 @@ class OneBotAdapter:
         except Exception as e:
             # 发送失败必须释放槽位，否则重放被去重挡住、回复永久丢失（round-3 H4）
             if message_id:
-                await self._release_reply_slot(message_id)
+                await self._release_reply_slot(self_id, character_id, message_id)
             logger.error(
                 "onebot_send_reply_failed",
                 user_id=internal_user_id,
@@ -953,11 +1140,12 @@ class OneBotAdapter:
                 exc_info=True,
             )
 
-    async def _claim_reply_slot(self, message_id: str) -> bool:
+    async def _claim_reply_slot(self, self_id: str | None, character_id: UUID, message_id: str) -> bool:
         """认领回复槽位：SETNX 成功者才获得发送资格
 
         时序约束（round-3 H4）：必须在回复文本生成成功、即将发送时才认领，
         崩溃丢失窗口从整个处理流程压缩到发送本身。
+        键作用域（R6-M3）：含 self_id 与角色 ID，多实例/多角色互不压制。
 
         Redis 不可用时视为无去重层（与原行为一致），直接放行。
         """
@@ -966,16 +1154,17 @@ class OneBotAdapter:
         redis_client = get_redis()
         if redis_client is None:
             return True
-        return bool(await redis_client.set(_reply_dedup_key(message_id), "1", ex=_REPLY_DEDUP_TTL_SECONDS, nx=True))
+        key = _reply_dedup_key(self_id, character_id, message_id)
+        return bool(await redis_client.set(key, "1", ex=_REPLY_DEDUP_TTL_SECONDS, nx=True))
 
-    async def _release_reply_slot(self, message_id: str) -> None:
+    async def _release_reply_slot(self, self_id: str | None, character_id: UUID, message_id: str) -> None:
         """释放回复槽位：发送失败后调用，让重放路径可以重试发送（round-3 H4）"""
         from src.runtime import get_redis
 
         redis_client = get_redis()
         if redis_client is None:
             return
-        await redis_client.delete(_reply_dedup_key(message_id))
+        await redis_client.delete(_reply_dedup_key(self_id, character_id, message_id))
 
     async def _check_inbound_rate_limit(self, chat_kind: str, chat_id: str | int | None) -> bool:
         """每会话入站固定窗口限流（R5-M7），返回 False 表示超限应静默丢弃
@@ -1268,10 +1457,18 @@ class OneBotAdapter:
                 "message": message,
             }
 
+        echo = uuid4().hex
         action = {
             "action": action_name,
             "params": params,
+            # R6-L6：响应帧按此 echo 回来时关联计算单次动作时延
+            "echo": echo,
         }
+        self._track_pending_action(echo, action_name)
+
+        # R6-L6：出站节拍——同一会话两次发送之间的最小间隔
+        chat_key = f"g:{group_id}" if is_group else f"u:{user_id}"
+        await self._pace_outbound(chat_key)
 
         # M13/M17：优先原连接，发送失败（已关闭/超时）降级到其余活跃连接。
         # 全部候选失败时向上抛出——回复槽位释放、push_share 的多连接轮询与
@@ -1328,6 +1525,33 @@ class OneBotAdapter:
             onebot_ws.send_text(json.dumps(payload, ensure_ascii=False)),
             timeout=_SEND_TIMEOUT_SECONDS,
         )
+
+    def _track_pending_action(self, echo: str, action_name: str) -> None:
+        """登记 echo -> (发起时刻, action 名)，供响应帧关联时延（R6-L6）"""
+        if len(self._pending_actions) >= _PENDING_ACTIONS_MAX:
+            # 实现从不回显响应时防止无限增长：淘汰最早一半挂起项（早已超时失效）
+            for old in list(self._pending_actions)[: _PENDING_ACTIONS_MAX // 2]:
+                del self._pending_actions[old]
+        self._pending_actions[echo] = (time.monotonic(), action_name)
+
+    async def _pace_outbound(self, chat_key: str) -> None:
+        """出站节拍控制（R6-L6）：同一会话两次发送之间的最小间隔
+
+        进程内时间戳即可满足单实例节拍；多实例各自独立限速——QQ 风控以
+        账号维度为主，跨实例共享节拍需分布式协调，收益不成比例。
+        """
+        interval_ms = _get_send_min_interval_ms()
+        if interval_ms <= 0:
+            return
+        now = time.monotonic()
+        last = self._last_outbound_at.get(chat_key)
+        slot = now if last is None else max(now, last + interval_ms / 1000.0)
+        if len(self._last_outbound_at) >= _OUTBOUND_TS_MAX_ENTRIES:
+            self._last_outbound_at = {k: v for k, v in self._last_outbound_at.items() if v > now - 3600.0}
+        self._last_outbound_at[chat_key] = slot
+        wait = slot - now
+        if wait > 0:
+            await asyncio.sleep(wait)
 
     async def _evict_connection(self, onebot_ws: WebSocket, reason: str) -> None:
         """驱逐发送失败的连接及其心跳/账号记录，避免再次被选中"""
@@ -1427,6 +1651,20 @@ def _get_rate_limit_per_minute() -> int:
     from src.config import settings
 
     return settings.onebot_rate_limit_per_minute
+
+
+def _get_send_min_interval_ms() -> int:
+    """从配置读取同一会话出站最小发送间隔毫秒（0=禁用）"""
+    from src.config import settings
+
+    return settings.onebot_send_min_interval_ms
+
+
+def _get_heartbeat_stale_seconds() -> float:
+    """从配置读取心跳过期阈值秒，超过则主动断开让 OneBot 实现重连"""
+    from src.config import settings
+
+    return settings.onebot_heartbeat_stale_seconds
 
 
 def _resolve_character_id(is_group: bool, group_id: str | int | None) -> UUID | None:
