@@ -96,6 +96,21 @@ class MovementSystem:
                     reason=f"场景 {to_scene} 当前未开放",
                 )
 
+        # 容量准入（P2-7）：满员场景拒绝进入，拥挤度不再只是 Prompt 提示
+        scene = self.scene_loader.get_scene(to_scene)
+        if scene is not None and scene.capacity > 0:
+            state_key = SceneLoader.SCENE_STATE_KEY.format(scene_id=to_scene)
+            count_raw = await self.scene_loader.redis.hget(state_key, "current_count")
+            if count_raw is not None:
+                count_text = count_raw.decode("utf-8") if isinstance(count_raw, bytes | bytearray) else str(count_raw)
+                if int(count_text) >= scene.capacity:
+                    return MovementResult(
+                        success=False,
+                        path=[from_scene, to_scene],
+                        total_minutes=travel_time,
+                        reason=f"场景 {to_scene} 已满（{count_text}/{scene.capacity}）",
+                    )
+
         return MovementResult(
             success=True,
             path=[from_scene, to_scene],

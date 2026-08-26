@@ -21,7 +21,7 @@ World Tick 主循环流程：
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -44,6 +44,23 @@ from src.observability.metrics import (
 from src.observability.tracing import trace_span
 
 logger = get_logger(__name__)
+
+# P2-5 fencing 原子写：仅当 world:state 的 fence 字段仍等于本 leader 的纪元时
+# 才允许写入整份摘要映射。此前 check-then-act 只把双写窗口从「整个停顿时长」
+# 收窄到「单次检查之后」；CAS 把校验与写入合并进单个 Redis 原子操作，
+# 旧 leader 停顿苏醒后的任何写入都会被直接拒绝（返回 0）。
+_FENCED_WRITE_LUA = """
+if redis.call('HGET', KEYS[1], 'fence') ~= ARGV[1] then
+  return 0
+end
+for i = 2, #ARGV, 2 do
+  redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
+end
+return 1
+"""
+
+# Leader 纪元计数器：每次获取领导权原子自增，保证任意时刻全局唯一
+FENCE_EPOCH_KEY = "world:fence:epoch"
 
 
 def collect_changed_events(
@@ -161,6 +178,7 @@ class WorldEngine:
         self.tick_id = 0
         self.is_leader = False
         self._leader_token: str | None = None  # Leader 锁持有者令牌（compare-and-delete 校验用）
+        self._fence_epoch: str | None = None  # 本 leader 的 fencing 纪元（P2-5 原子写凭据）
         self._stop_event = asyncio.Event()
         self._leader_task: asyncio.Task[None] | None = None
         self._tick_task: asyncio.Task[None] | None = None
@@ -275,7 +293,12 @@ class WorldEngine:
                 if acquired:
                     self.is_leader = True
                     self._leader_token = leader_token
-                    logger.info("world_leader_acquired", tick_id=self.tick_id)
+                    # P2-5：领取全局唯一纪元并烙进 world:state，
+                    # 后续所有摘要写入必须携带该纪元通过 CAS 校验
+                    epoch = int(await self.redis.incr(FENCE_EPOCH_KEY))
+                    self._fence_epoch = str(epoch)
+                    await self.redis.hset("world:state", "fence", self._fence_epoch)
+                    logger.info("world_leader_acquired", tick_id=self.tick_id, fence_epoch=epoch)
 
                     # 续租循环
                     while not self._stop_event.is_set() and self.is_leader:
@@ -489,12 +512,24 @@ class WorldEngine:
             "tick_id": str(self.tick_id),
             "world_time": str(time_state.get("world_time", "")),
             "weather": weather,
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         if temperature is not None:
             mapping["temperature"] = str(temperature)
 
-        await self.redis.hset("world:state", mapping=mapping)  # type: ignore[arg-type]
+        # P2-5：CAS 原子写——纪元不匹配（本 leader 已被接管）时写入被拒绝，
+        # 视同失锁，交由 _leader_loop 的续租失败路径完成状态收敛
+        if self._fence_epoch is not None:
+            argv: list[str] = [self._fence_epoch]
+            for field, value in mapping.items():
+                argv.extend([field, value])
+            accepted = int(await self.redis.eval(_FENCED_WRITE_LUA, 1, "world:state", *argv))
+            if not accepted:
+                logger.warning("world_state_write_rejected_stale_fence", tick_id=self.tick_id)
+                self.is_leader = False
+                return
+        else:
+            await self.redis.hset("world:state", mapping=mapping)  # type: ignore[arg-type]
 
         logger.debug("world_state_saved", tick_id=self.tick_id)
 

@@ -114,6 +114,9 @@ class TimeEvolution(WorldEvolution):
             "tick_id": tick_id,
             "day_phase": day_phase,
             "season": season,
+            # P2-8：时钟倍率随时间状态一起落 Redis，日记等按真实时间换算
+            # 窗口的消费方读取同一快照，避免与幂等键口径错位
+            "clock_multiplier": round(step_minutes / settings.world_tick_seconds, 6),
         }
         await self.hset_json(redis, TIME_KEY, new_state)
 
@@ -134,3 +137,20 @@ class TimeEvolution(WorldEvolution):
             "season": season,
             "tick_id": tick_id,
         }
+
+
+def get_clock_multiplier(state: dict[str, Any] | None) -> float:
+    """从时间状态哈希读取时钟倍率（虚拟分钟/真实秒）；缺省按当前配置计算
+
+    P2-8：日记窗口换算必须使用与幂等键同一来源的倍率——配置热改后
+    旧倍率窗口与新倍率键混用会重复或漏生成日记。
+    """
+    if state:
+        raw = state.get("clock_multiplier")
+        try:
+            value = float(raw)  # type: ignore[arg-type]
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return settings.world_tick_minutes / settings.world_tick_seconds
