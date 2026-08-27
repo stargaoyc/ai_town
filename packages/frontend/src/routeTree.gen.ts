@@ -39,6 +39,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ActionsRouteImport } from './routes/actions'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CharactersIndexRouteImport } from './routes/characters.index'
+import { Route as ChatCharacterIdRouteImport } from './routes/chat.$characterId'
 import { Route as CharactersCharacterIdRouteImport } from './routes/characters.$characterId'
 
 const WorldRoute = WorldRouteImport.update({
@@ -191,6 +192,11 @@ const CharactersIndexRoute = CharactersIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CharactersRoute,
 } as any)
+const ChatCharacterIdRoute = ChatCharacterIdRouteImport.update({
+  id: '/chat/$characterId',
+  path: '/chat/$characterId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CharactersCharacterIdRoute = CharactersCharacterIdRouteImport.update({
   id: '/$characterId',
   path: '/$characterId',
@@ -228,6 +234,7 @@ export interface FileRoutesByFullPath {
   '/vector-search': typeof VectorSearchRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
+  '/chat/$characterId': typeof ChatCharacterIdRoute
   '/characters/': typeof CharactersIndexRoute
 }
 export interface FileRoutesByTo {
@@ -260,6 +267,7 @@ export interface FileRoutesByTo {
   '/vector-search': typeof VectorSearchRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
+  '/chat/$characterId': typeof ChatCharacterIdRoute
   '/characters': typeof CharactersIndexRoute
 }
 export interface FileRoutesById {
@@ -294,6 +302,7 @@ export interface FileRoutesById {
   '/vector-search': typeof VectorSearchRoute
   '/world': typeof WorldRoute
   '/characters/$characterId': typeof CharactersCharacterIdRoute
+  '/chat/$characterId': typeof ChatCharacterIdRoute
   '/characters/': typeof CharactersIndexRoute
 }
 export interface FileRouteTypes {
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
     | '/vector-search'
     | '/world'
     | '/characters/$characterId'
+    | '/chat/$characterId'
     | '/characters/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -361,6 +371,7 @@ export interface FileRouteTypes {
     | '/vector-search'
     | '/world'
     | '/characters/$characterId'
+    | '/chat/$characterId'
     | '/characters'
   id:
     | '__root__'
@@ -394,6 +405,7 @@ export interface FileRouteTypes {
     | '/vector-search'
     | '/world'
     | '/characters/$characterId'
+    | '/chat/$characterId'
     | '/characters/'
   fileRoutesById: FileRoutesById
 }
@@ -427,6 +439,7 @@ export interface RootRouteChildren {
   StateChartsRoute: typeof StateChartsRoute
   VectorSearchRoute: typeof VectorSearchRoute
   WorldRoute: typeof WorldRoute
+  ChatCharacterIdRoute: typeof ChatCharacterIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -641,6 +654,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CharactersIndexRouteImport
       parentRoute: typeof CharactersRoute
     }
+    '/chat/$characterId': {
+      id: '/chat/$characterId'
+      path: '/chat/$characterId'
+      fullPath: '/chat/$characterId'
+      preLoaderRoute: typeof ChatCharacterIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/characters/$characterId': {
       id: '/characters/$characterId'
       path: '/$characterId'
@@ -695,6 +715,7 @@ const rootRouteChildren: RootRouteChildren = {
   StateChartsRoute: StateChartsRoute,
   VectorSearchRoute: VectorSearchRoute,
   WorldRoute: WorldRoute,
+  ChatCharacterIdRoute: ChatCharacterIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

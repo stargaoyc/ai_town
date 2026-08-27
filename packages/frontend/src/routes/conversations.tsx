@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Clock, MessageCircle, User, Bot } from "lucide-react";
+import { Clock, MessageCircle, User, Bot, MessageSquarePlus } from "lucide-react";
 import {
   GlassCard,
   PageHeader,
@@ -221,13 +221,21 @@ function ConversationsPage() {
                     </div>
                   </div>
 
-                  {/* 最后消息时间 */}
+                  {/* 最后消息时间 + 进入聊天 */}
                   <div className="flex items-center gap-2 pt-1 border-t border-white/40">
                     <MessageCircle className="w-3.5 h-3.5 text-sakura-400" />
                     <Clock className="w-3.5 h-3.5 text-twilight-300" />
                     <span className="text-xs text-twilight-400">
                       最后消息：{formatRelativeTime(conv.last_message_at)}
                     </span>
+                    <Link
+                      to="/chat/$characterId"
+                      params={{ characterId: conv.character_id }}
+                      className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-gradient-to-r from-sakura-400 to-sakura-500 text-white hover:shadow-md hover:shadow-sakura-400/30 transition-all"
+                    >
+                      <MessageSquarePlus className="w-3.5 h-3.5" />
+                      去聊天
+                    </Link>
                   </div>
                 </GlassCard>
               </motion.div>

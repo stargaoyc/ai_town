@@ -184,6 +184,7 @@ async def get_message_history(
                 "tokens": m.tokens,
                 "cost": float(m.cost) if m.cost else None,
                 "created_at": m.created_at.isoformat(),
+                "share_type": (m.extra_data or {}).get("share_type") if isinstance(m.extra_data, dict) else None,
             }
             for m in messages
         ],

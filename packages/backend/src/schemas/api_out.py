@@ -258,6 +258,7 @@ class MessageOut(BaseModel):
     tokens: int | None = None
     cost: float | None = None
     created_at: str
+    share_type: str | None = None  # 主动分享标记（round-7 H1：前端区分分享消息）
 
 
 class MessagesListOut(BaseModel):

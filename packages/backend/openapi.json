@@ -623,7 +623,7 @@
           "memory-extension"
         ],
         "summary": "Get Person Memory",
-        "description": "获取角色对某用户的记忆",
+        "description": "获取角色对某用户的记忆\n\n归属校验（round-6 review H2）：仅本人或 admin/operator 可查询。",
         "operationId": "get_person_memory_api_v1_characters__character_id__person_memory_get",
         "parameters": [
           {
@@ -677,7 +677,7 @@
           "memory-extension"
         ],
         "summary": "List Person Memories",
-        "description": "获取角色对所有用户的记忆列表（按热度倒序）",
+        "description": "获取角色对所有用户的记忆列表（按热度倒序）\n\n跨用户记忆汇总仅限 admin/operator（round-6 review H2）。",
         "operationId": "list_person_memories_api_v1_characters__character_id__person_memory_list_get",
         "parameters": [
           {
@@ -1576,7 +1576,7 @@
           "characters"
         ],
         "summary": "Get Character Messages",
-        "description": "获取角色的所有消息历史（跨会话）\n\nArgs:\n    character_id: 角色 ID\n    limit: 返回数量上限\n\nReturns:\n    消息列表（按时间正序）",
+        "description": "获取角色的消息历史（跨会话）\n\n归属校验（round-6 review H1）：普通用户仅返回本人与该角色的会话消息，\nadmin/operator 可跨用户聚合。\n\nArgs:\n    character_id: 角色 ID\n    user: 鉴权主体（含 RBAC 角色）\n    limit: 返回数量上限\n\nReturns:\n    消息列表（按时间正序）",
         "operationId": "get_character_messages_api_v1_characters__character_id__messages_get",
         "parameters": [
           {
@@ -3867,6 +3867,17 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "share_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Type"
           }
         },
         "type": "object",

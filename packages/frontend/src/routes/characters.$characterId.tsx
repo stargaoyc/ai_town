@@ -337,6 +337,11 @@ function CharacterDetailPage() {
                         : "bg-white/50 text-twilight-500"
                   }`}
                 >
+                  {msg.share_type && (
+                    <span className="inline-block mr-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-gradient-to-r from-sakura-400 to-twilight-400 text-white align-middle">
+                      分享
+                    </span>
+                  )}
                   {displayContent}
                 </motion.div>
               );

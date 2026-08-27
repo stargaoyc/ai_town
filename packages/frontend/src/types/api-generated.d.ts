@@ -310,6 +310,8 @@ export interface paths {
         /**
          * Get Person Memory
          * @description 获取角色对某用户的记忆
+         *
+         *     归属校验（round-6 review H2）：仅本人或 admin/operator 可查询。
          */
         get: operations["get_person_memory_api_v1_characters__character_id__person_memory_get"];
         put?: never;
@@ -330,6 +332,8 @@ export interface paths {
         /**
          * List Person Memories
          * @description 获取角色对所有用户的记忆列表（按热度倒序）
+         *
+         *     跨用户记忆汇总仅限 admin/operator（round-6 review H2）。
          */
         get: operations["list_person_memories_api_v1_characters__character_id__person_memory_list_get"];
         put?: never;
@@ -791,10 +795,14 @@ export interface paths {
         };
         /**
          * Get Character Messages
-         * @description 获取角色的所有消息历史（跨会话）
+         * @description 获取角色的消息历史（跨会话）
+         *
+         *     归属校验（round-6 review H1）：普通用户仅返回本人与该角色的会话消息，
+         *     admin/operator 可跨用户聚合。
          *
          *     Args:
          *         character_id: 角色 ID
+         *         user: 鉴权主体（含 RBAC 角色）
          *         limit: 返回数量上限
          *
          *     Returns:
@@ -1877,6 +1885,8 @@ export interface components {
             cost?: number | null;
             /** Created At */
             created_at: string;
+            /** Share Type */
+            share_type?: string | null;
         };
         /** MessageStatsOut */
         MessageStatsOut: {
