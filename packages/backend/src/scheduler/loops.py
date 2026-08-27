@@ -87,6 +87,23 @@ async def character_tick_loop() -> None:
             if not character_engine or not redis:
                 continue
 
+            # 预算降级（round-7 P0-2）：warning 阶段主动放慢 Tick 节奏，
+            # 不必等 429 触发——降频即省钱，且为用户对话保留预算余量
+            try:
+                from src.cost_control import get_budget_manager
+
+                budget_status = await get_budget_manager().check_budget()
+                budget_tier = budget_status["tier"]
+            except Exception:
+                budget_tier = "ok"
+            if budget_tier == "exceeded":
+                backoff_multiplier = min(backoff_multiplier * 2, max_backoff)
+                logger.warning("character_tick_budget_degraded", tier=budget_tier, backoff=backoff_multiplier)
+                continue
+            if budget_tier == "warning" and backoff_multiplier < 2:
+                backoff_multiplier = 2
+                logger.warning("character_tick_budget_warning_slowdown", backoff=backoff_multiplier)
+
             # 获取所有活跃角色
             async with db.session() as session:
                 repo = CharacterRepository(session)

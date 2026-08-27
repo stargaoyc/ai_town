@@ -165,6 +165,7 @@ class BudgetManager:
                 "ratio": float,       # 已用比例 0-1
                 "exceeded": bool,     # 是否超预算（used >= budget）
                 "warning": bool,      # 是否达到告警阈值
+                "tier": str,          # "ok" / "warning" / "exceeded"（分级降级，round-7 P0-2）
             }``
         """
         usage = await self.get_today_usage()
@@ -174,6 +175,7 @@ class BudgetManager:
         ratio = used / budget if budget > 0 else 0.0
         exceeded = used >= budget
         warning = ratio >= self.warning_threshold
+        tier = "exceeded" if exceeded else ("warning" if warning else "ok")
         return {
             "remaining": remaining,
             "used": used,
@@ -181,6 +183,7 @@ class BudgetManager:
             "ratio": ratio,
             "exceeded": exceeded,
             "warning": warning,
+            "tier": tier,
         }
 
     async def check_and_record(self, tokens: int, cost: float) -> None:

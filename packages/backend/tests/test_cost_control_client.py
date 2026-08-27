@@ -439,3 +439,56 @@ async def test_multimodal_structured_failure_traces_langfuse_error(monkeypatch: 
     assert _chat_call_total("failed") == failed_before + 1
     state = await redis.hgetall("llm:circuit_breaker")
     assert state["failure_count"] == "1"
+
+
+async def test_chat_with_usage_essential_bypasses_budget_exceeded() -> None:
+    """round-7 P0-2：超预算时用户对话路径（essential=True）放行，小镇不停摆"""
+    redis = FakeRedis()
+    set_budget_manager(cast(Redis, redis), daily_budget_usd=1.0)
+    await redis.hset(_today_key(), mapping={"tokens": "1000", "cost": "1.0", "count": "1"})
+    fake_llm = FakeChatLLM(
+        response=FakeChatResponse(
+            "hi",
+            metadata={"token_usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        )
+    )
+    client = _make_client(fake_llm)
+
+    content, usage = await client.chat_with_usage("hello")
+
+    assert content == "hi"
+    assert usage.total_tokens == 15
+    assert fake_llm.calls == 1
+
+
+async def test_chat_non_essential_blocks_when_budget_exceeded() -> None:
+    """round-7 P0-2：超预算时后台路径（chat, essential=False）仍拒绝"""
+    redis = FakeRedis()
+    set_budget_manager(cast(Redis, redis), daily_budget_usd=1.0)
+    await redis.hset(_today_key(), mapping={"tokens": "1000", "cost": "1.0", "count": "1"})
+    fake_llm = FakeChatLLM(response=FakeChatResponse("hi"))
+    client = _make_client(fake_llm)
+
+    with pytest.raises(BudgetExceeded):
+        await client.chat("hello")
+
+    assert fake_llm.calls == 0
+
+
+async def test_budget_tier_warning_reported() -> None:
+    """round-7 P0-2：check_budget 返回分级 tier 供 Tick 循环降频"""
+    redis = FakeRedis()
+    set_budget_manager(cast(Redis, redis), daily_budget_usd=10.0, warning_threshold=0.8)
+    await redis.hset(_today_key(), mapping={"tokens": "1000", "cost": "8.0", "count": "1"})
+
+    from src.cost_control import get_budget_manager
+
+    status = await get_budget_manager().check_budget()
+
+    assert status["tier"] == "warning"
+    assert status["warning"] is True
+    assert status["exceeded"] is False
+
+    await redis.hset(_today_key(), mapping={"tokens": "1000", "cost": "10.0", "count": "1"})
+    status = await get_budget_manager().check_budget()
+    assert status["tier"] == "exceeded"

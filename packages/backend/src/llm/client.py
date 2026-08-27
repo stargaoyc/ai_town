@@ -332,14 +332,26 @@ class LLMClient:
         Returns:
             模型回复内容
         """
-        content, _ = await self.chat_with_usage(prompt, system_prompt=system_prompt)
+        content, _ = await self.chat_with_usage(prompt, system_prompt=system_prompt, essential=False)
         return content
 
     @trace_span("llm.generate")
-    async def chat_with_usage(self, prompt: str, system_prompt: str | None = None) -> tuple[str, LLMUsage]:
-        """对话并返回真实 token 用量（需要持久化/计费的场景使用本方法）"""
+    async def chat_with_usage(
+        self, prompt: str, system_prompt: str | None = None, essential: bool = True
+    ) -> tuple[str, LLMUsage]:
+        """对话并返回真实 token 用量（需要持久化/计费的场景使用本方法）
+
+        Args:
+            prompt: 输入提示
+            system_prompt: 系统提示（可选）
+            essential: 是否关键路径（用户对话）。True（默认）时超预算仍放行，
+                避免用户回复中断；False（评分/社交等后台路径）时超预算拒绝。
+
+        Returns:
+            (回复内容, LLM 用量)
+        """
         start_perf = time.perf_counter()
-        await self._check_cost_control()
+        await self._check_cost_control(essential=essential)
         try:
             # 当提供 system_prompt 时，使用 [SystemMessage, HumanMessage] 列表调用
             # SystemMessage 中的安全约束优先级最高，LLM 必须遵守
@@ -930,12 +942,20 @@ class LLMClient:
         except RuntimeError:
             return None
 
-    async def _check_cost_control(self) -> None:
+    async def _check_cost_control(self, essential: bool = False) -> None:
         """调用前检查：熔断器 + 日预算（统一挂载点，覆盖 Tick 等全部 LLM 调用路径）
+
+        分级降级（round-7 P0-2）：
+        - exceeded + essential=False（Tick/反思/embedding 等后台路径）→ 抛 BudgetExceeded 拒绝
+        - exceeded + essential=True（用户对话）→ 放行并记录降级日志（对话响应优先于后台批处理）
+        - warning（未超预算）→ 全部放行；Character Tick 循环自行降频（见 loops.py）
+
+        Args:
+            essential: 是否关键路径（用户对话）。True 时超预算仍放行，避免用户回复中断。
 
         Raises:
             CircuitOpen: 熔断器开启，拒绝调用
-            BudgetExceeded: 日预算已超出
+            BudgetExceeded: 日预算已超出且非关键路径
         """
         breaker = get_circuit_breaker()
         if breaker and not await breaker.can_execute():
@@ -951,6 +971,13 @@ class LLMClient:
         if budget_mgr:
             budget_status = await budget_mgr.check_budget()
             if budget_status["exceeded"]:
+                if essential:
+                    logger.warning(
+                        "budget_exceeded_essential_degraded",
+                        used=budget_status["used"],
+                        budget=budget_status["budget"],
+                    )
+                    return
                 logger.warning(
                     "budget_exceeded_blocked",
                     used=budget_status["used"],
