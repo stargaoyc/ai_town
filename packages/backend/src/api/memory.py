@@ -9,12 +9,10 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import text
 from structlog import get_logger
 
 from src.auth import decode_token, get_current_user
 from src.auth.rbac import require_role
-from src.db.repositories import MemoryRepository
 from src.db.session import db
 from src.memory.diary_service import DiaryService
 from src.memory.person_memory_service import PersonMemoryService
@@ -103,14 +101,11 @@ async def generate_diary(
     if not character_name:
         # 从数据库查询角色名
         async with db.session() as session:
-            result = await session.execute(
-                text("SELECT name FROM characters WHERE id = :cid"),
-                {"cid": str(cid)},
-            )
-            row = result.fetchone()
-            if not row:
+            from src.services.memory_service import MemoryService
+
+            character_name = await MemoryService(session).get_character_name(cid) or ""
+            if not character_name:
                 raise HTTPException(status_code=404, detail="Character not found") from None
-            character_name = row[0]
 
     service = _get_diary_service()
     diary = await service.generate_diary(
@@ -170,26 +165,9 @@ async def list_person_memories(
         raise HTTPException(status_code=400, detail="Invalid UUID format") from None
 
     async with db.session() as session:
-        result = await session.execute(
-            text("""
-                SELECT id, character_id, user_id, platform, content,
-                       heat, last_interaction_at, created_at, updated_at
-                FROM person_memories
-                WHERE character_id = :cid
-                ORDER BY heat DESC, last_interaction_at DESC
-                LIMIT :limit
-            """),
-            {"cid": str(cid), "limit": limit},
-        )
-        rows = [dict(r._mapping) for r in result]
+        from src.services.memory_service import MemoryService
 
-    # 序列化
-    for r in rows:
-        for k, v in list(r.items()):
-            if hasattr(v, "isoformat"):
-                r[k] = v.isoformat()
-            elif isinstance(v, UUID):
-                r[k] = str(v)
+        rows = await MemoryService(session).list_person_memories(cid, limit)
     return {"data": rows, "total": len(rows)}
 
 
@@ -213,19 +191,8 @@ async def get_memories(character_id: str, limit: int = 20) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid UUID format") from None
 
     async with db.session() as session:
-        repo = MemoryRepository(session)
-        episodes = await repo.recent(cid, limit)
+        from src.services.memory_service import MemoryService
 
-    return {
-        "data": [
-            {
-                "id": str(e.id),
-                "content": e.content,
-                "timestamp": e.timestamp.isoformat(),
-                "importance": e.importance,
-                "is_reflected": e.is_reflected,
-            }
-            for e in episodes
-        ],
-        "total": len(episodes),
-    }
+        episodes = await MemoryService(session).list_recent_memories(cid, limit)
+
+    return {"data": episodes, "total": len(episodes)}

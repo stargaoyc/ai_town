@@ -1,4 +1,4 @@
-"""CharacterTickEngine._apply_plan_changes 安全语义单元测试（审查二轮 N2）
+"""PlanChangeApplier.apply_changes 安全语义单元测试（审查二轮 N2）
 
 LLM 决策的 planChanges 进入 plans 表的唯一通道，锁定三个安全语义：
 - 跨角色防篡改：update_plan_scoped 必须收到决策所属 character_id
@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from src.core.character.tick import CharacterTickEngine
+from src.core.character.plan_applier import PlanChangeApplier
 from src.db.repositories.plan_repo import PlanRepository
 
 
@@ -36,7 +36,7 @@ class TestApplyPlanChanges:
         plan_id = uuid4()
         owner_id = uuid4()
 
-        await CharacterTickEngine._apply_plan_changes(
+        await PlanChangeApplier.apply_changes(
             _as_repo(fake),
             owner_id,
             [
@@ -58,7 +58,7 @@ class TestApplyPlanChanges:
         fake = FakePlanRepo()
         plan_id = uuid4()
 
-        await CharacterTickEngine._apply_plan_changes(
+        await PlanChangeApplier.apply_changes(
             _as_repo(fake),
             uuid4(),
             [
@@ -86,14 +86,14 @@ class TestApplyPlanChanges:
             123,
         ]
 
-        await CharacterTickEngine._apply_plan_changes(_as_repo(fake), uuid4(), malformed)
+        await PlanChangeApplier.apply_changes(_as_repo(fake), uuid4(), malformed)
 
         assert fake.calls == []
 
     async def test_target_not_found_does_not_raise(self) -> None:
         fake = FakePlanRepo(applied=False)
 
-        await CharacterTickEngine._apply_plan_changes(
+        await PlanChangeApplier.apply_changes(
             _as_repo(fake),
             uuid4(),
             [{"planId": str(uuid4()), "action": "complete"}],
@@ -104,6 +104,6 @@ class TestApplyPlanChanges:
     async def test_empty_changes_is_noop(self) -> None:
         fake = FakePlanRepo()
 
-        await CharacterTickEngine._apply_plan_changes(_as_repo(fake), uuid4(), [])
+        await PlanChangeApplier.apply_changes(_as_repo(fake), uuid4(), [])
 
         assert fake.calls == []

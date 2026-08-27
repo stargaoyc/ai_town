@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
 
 from src.config import settings
-from src.core.character.tick import CharacterTickEngine
+from src.core.character.plan_applier import PlanChangeApplier
 from src.db.models import Character, Plan
 from src.db.repositories.plan_repo import PlanRepository
 
@@ -34,7 +34,7 @@ class TestCreatePlansIT:
 
     async def test_created_plans_scoped_to_character(self, it_session: AsyncSession, plan_character: Character) -> None:
         repo = PlanRepository(it_session)
-        created = await CharacterTickEngine._create_plans(
+        created = await PlanChangeApplier.create_plans(
             repo,
             plan_character.id,
             [
