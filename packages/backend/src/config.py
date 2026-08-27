@@ -176,6 +176,11 @@ class Settings(BaseSettings):
     reflection_pool_size: int = 30  # 单次参与归纳的记忆池上限
     reflection_major_importance: int = 9  # 单条记忆达到该重要性即时触发反思（round-7 F1）
     reflection_major_cooldown_seconds: int = 300  # 重大事件反思的每角色冷却（防 LLM 风暴）
+
+    # 结构化相遇（round-7 G1）：空闲时概率触发与同场景角色闲聊
+    social_encounter_enabled: bool = True
+    social_encounter_probability: float = 0.25  # 每次空闲 Tick 触发闲聊的概率
+    social_encounter_cooldown_seconds: int = 600  # 每角色相遇冷却（避免连续闲聊刷屏）
     meta_reflection_min_total: int = 6  # 累计反思达到该数量后才考虑元反思
     meta_reflection_cooldown_days: int = 7  # 两次元反思的最小间隔
     meta_source_limit: int = 10  # 元反思读取的最近 tier-1 反思条数

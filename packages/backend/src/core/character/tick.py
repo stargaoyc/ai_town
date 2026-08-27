@@ -315,6 +315,11 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
             return
 
+        # round-7 G1：结构化相遇——空闲（wait）时概率触发与同场景角色闲聊，
+        # 提升交互频率而不依赖 LLM 偶然决策。替换 decision 后执行路径不变，
+        # chat_with 的 action_def 从 registry 获取，后续 _handle_character_chat 自动处理。
+        decision = await self._maybe_structured_encounter(character_id, decision, context, lost=lock_lost)
+
         # 4. 执行 Action
         await self._execute_action(character_id, decision, context, lock_lost=lock_lost)
 
@@ -362,6 +367,65 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             "character_tick_end",
             character_id=str(character_id),
             action=decision.action,
+        )
+
+    async def _maybe_structured_encounter(
+        self,
+        character_id: UUID,
+        decision: DecisionResult,
+        context: dict[str, Any],
+        *,
+        lost: asyncio.Event,
+    ) -> DecisionResult:
+        """结构化相遇（round-7 G1）：空闲时概率发起同场景闲聊
+
+        决策为 wait 且同场景存在其他空闲角色时，按 social_encounter_probability
+        概率把决策替换为 chat_with（目标为随机在场者），并写 Redis 冷却键防刷。
+        替代「交互完全依赖 LLM 偶然决策」的被动模式；相遇不触发 ReAct 循环。
+
+        Args:
+            character_id: 角色 ID
+            decision: 当前决策（仅 wait 时可能被替换）
+            context: 感知环境结果（nearby_characters）
+            lost: 看门狗失锁信号（透传，保持写入闸口语义）
+
+        Returns:
+            替换后的决策（未命中时为原决策）
+        """
+        if not settings.social_encounter_enabled or decision.action != "wait":
+            return decision
+        nearby = context.get("nearby_characters") or []
+        idle_targets = [n for n in nearby if not n.get("current_action")]
+        if not idle_targets:
+            return decision
+
+        import random
+
+        if random.random() >= settings.social_encounter_probability:
+            return decision
+
+        cooldown_key = f"char:{character_id}:encounter:cooldown"
+        if await self.redis.get(cooldown_key) is not None:
+            return decision
+
+        target = random.choice(idle_targets)
+        logger.info(
+            "structured_encounter_triggered",
+            character_id=str(character_id),
+            target_id=target["id"],
+            nearby_count=len(idle_targets),
+        )
+        try:
+            await self.redis.set(cooldown_key, "1", ex=settings.social_encounter_cooldown_seconds)
+        except Exception as e:
+            logger.warning("encounter_cooldown_set_failed", error=str(e))
+        return decision.model_copy(
+            update={
+                "action": "chat_with",
+                "reason": f"偶遇{target['name']}，主动打个招呼聊聊天",
+                "params": {"target_character_id": target["id"]},
+                "duration": 30,
+            }
         )
 
     @trace_span("character.decide")
