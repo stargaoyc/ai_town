@@ -36,6 +36,7 @@ from src.db.models import (
 )
 from src.db.repositories import CharacterRepository, MemoryRepository
 from src.db.session import db
+from src.memory.daily_plan_service import DailyPlanService
 from src.memory.diary_service import (
     DiaryService,
     diary_trigger_periods,
@@ -285,6 +286,61 @@ async def diary_scheduler_loop() -> None:
         except Exception as e:
             logger.error("diary_scheduler_loop_error", error=str(e), exc_info=True)
             # 继续循环，不中断
+
+
+async def daily_plan_loop() -> None:
+    """每日计划生成后台循环（round-7 F1b：计划主动化）
+
+    每 DIARY_POLL_INTERVAL_SECONDS 检查世界时间，清晨窗口（06:00-09:00）
+    为所有活跃角色生成当日计划（type=daily）。幂等：DailyPlanService 以
+    「角色 + 世界日」跳过当日已生成者；错过窗口（进程停机跨日）由
+    幂等键兜底，不重复生成。
+    """
+    interval = DIARY_POLL_INTERVAL_SECONDS
+    logger.info("daily_plan_loop_started", interval=interval)
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+
+            redis = runtime.get_redis()
+            if not redis:
+                continue
+            world_state = await redis.hgetall("world:state")
+            world_time_raw = str(world_state.get("world_time", "")) if world_state else ""
+            if not world_time_raw:
+                continue
+            try:
+                parsed = json.loads(world_time_raw)
+                if isinstance(parsed, str):
+                    world_time_raw = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+            try:
+                world_now = datetime.fromisoformat(world_time_raw)
+            except ValueError:
+                logger.warning("daily_plan_invalid_world_time", raw=world_time_raw)
+                continue
+
+            if not 6 <= world_now.hour < 9:
+                continue
+
+            llm = runtime.get_llm()
+            prompts = runtime.get_prompts()
+            if llm is None or prompts is None:
+                continue
+            service = DailyPlanService(session_factory=db.session, llm=llm, prompts=prompts)
+            try:
+                created = await service.generate_for_all_characters(world_now)
+                if created:
+                    logger.info("daily_plan_loop_batch", day=world_now.strftime("%Y-%m-%d"), created=created)
+            except Exception as e:
+                logger.error("daily_plan_loop_batch_failed", error=str(e), exc_info=True)
+        except asyncio.CancelledError:
+            logger.info("daily_plan_loop_cancelled")
+            raise
+        except Exception as e:
+            logger.error("daily_plan_loop_error", error=str(e), exc_info=True)
 
 
 async def reconciliation_loop() -> None:

@@ -174,6 +174,8 @@ class Settings(BaseSettings):
     # 反思机制参数（P1-10：此前硬编码为类常量，调参需改码发版）
     reflection_threshold: int = 20  # 未反思记忆达到该数量触发批次反思
     reflection_pool_size: int = 30  # 单次参与归纳的记忆池上限
+    reflection_major_importance: int = 9  # 单条记忆达到该重要性即时触发反思（round-7 F1）
+    reflection_major_cooldown_seconds: int = 300  # 重大事件反思的每角色冷却（防 LLM 风暴）
     meta_reflection_min_total: int = 6  # 累计反思达到该数量后才考虑元反思
     meta_reflection_cooldown_days: int = 7  # 两次元反思的最小间隔
     meta_source_limit: int = 10  # 元反思读取的最近 tier-1 反思条数

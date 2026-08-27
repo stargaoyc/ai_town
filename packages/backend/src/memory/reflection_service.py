@@ -37,11 +37,39 @@ class ReflectionService:
         mem_repo: MemoryRepository,
         ref_repo: ReflectionRepository,
         prompts: Any | None = None,
+        redis: Any | None = None,
     ):
         self.llm = llm
         self.mem_repo = mem_repo
         self.ref_repo = ref_repo
         self._prompts = prompts
+        self._redis = redis
+
+    async def check_and_reflect_if_major(self, character_id: UUID, importance: int) -> bool:
+        """重大事件即时反思（round-7 F1）
+
+        单条记忆重要性达到阈值且冷却期外时，直接触发一次批次反思——
+        弥补「仅数量触发」的滞后：关系破裂/初遇/重大变故不应等攒够 20 条。
+
+        冷却以 Redis key 实现（多实例共享），默认 300s 每角色，防 LLM 风暴。
+        Returns:
+            是否触发了反思
+        """
+        if importance < settings.reflection_major_importance or self._redis is None:
+            return False
+        cooldown_key = f"char:{character_id}:reflect:major"
+        if await self._redis.get(cooldown_key) is not None:
+            return False
+        reflection = await self._do_reflection(character_id)
+        if reflection is not None:
+            await self._redis.set(cooldown_key, "1", ex=settings.reflection_major_cooldown_seconds)
+            logger.info(
+                "reflection_major_triggered",
+                character_id=str(character_id),
+                importance=importance,
+            )
+            return True
+        return False
 
     async def check_and_reflect(self, character_id: UUID) -> Reflection | None:
         """检查是否需要批次反思，如需要则执行；随后尝试元反思

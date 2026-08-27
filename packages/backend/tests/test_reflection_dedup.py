@@ -157,3 +157,85 @@ class TestThemeDedup:
         assert ref_repo.dedup_queries == 0, "embedding 缺失时跳过去重而非阻塞插入"
         failed = [e for e in logs if e.get("event") == "reflection_embedding_failed"]
         assert len(failed) == 1
+
+
+class FakeRedis:
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self.data.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.data[key] = value
+
+
+class TestMajorEventReflection:
+    """round-7 F1a：重大事件即时反思（重要性阈值 + 冷却）"""
+
+    async def test_below_threshold_does_not_trigger(self) -> None:
+        mem_repo, ref_repo = StubMemRepo(), StubRefRepo(duplicate=False)
+        service = ReflectionService(
+            llm=cast(LLMClient, StubLLM()),
+            mem_repo=cast(MemoryRepository, mem_repo),
+            ref_repo=cast(ReflectionRepository, ref_repo),
+            prompts=StubPrompts(),
+            redis=cast(Any, FakeRedis()),
+        )
+
+        triggered = await service.check_and_reflect_if_major(_character_id(), importance=5)
+
+        assert triggered is False
+        assert ref_repo.added == []
+
+    async def test_at_threshold_triggers_reflection(self) -> None:
+        mem_repo, ref_repo = StubMemRepo(), StubRefRepo(duplicate=False)
+        redis = FakeRedis()
+        service = ReflectionService(
+            llm=cast(LLMClient, StubLLM()),
+            mem_repo=cast(MemoryRepository, mem_repo),
+            ref_repo=cast(ReflectionRepository, ref_repo),
+            prompts=StubPrompts(),
+            redis=cast(Any, redis),
+        )
+        cid = _character_id()
+
+        triggered = await service.check_and_reflect_if_major(cid, importance=10)
+
+        assert triggered is True
+        assert len(ref_repo.added) == 1
+        assert redis.data != {}, "触发后应写入冷却键"
+
+    async def test_cooldown_suppresses_repeat(self) -> None:
+        mem_repo, ref_repo = StubMemRepo(), StubRefRepo(duplicate=False)
+        redis = FakeRedis()
+        service = ReflectionService(
+            llm=cast(LLMClient, StubLLM()),
+            mem_repo=cast(MemoryRepository, mem_repo),
+            ref_repo=cast(ReflectionRepository, ref_repo),
+            prompts=StubPrompts(),
+            redis=cast(Any, redis),
+        )
+        cid = _character_id()
+
+        first = await service.check_and_reflect_if_major(cid, importance=10)
+        second = await service.check_and_reflect_if_major(cid, importance=10)
+
+        assert first is True
+        assert second is False, "冷却期内不得重复触发"
+        assert len(ref_repo.added) == 1
+
+    async def test_no_redis_skips_major_reflection(self) -> None:
+        mem_repo, ref_repo = StubMemRepo(), StubRefRepo(duplicate=False)
+        service = ReflectionService(
+            llm=cast(LLMClient, StubLLM()),
+            mem_repo=cast(MemoryRepository, mem_repo),
+            ref_repo=cast(ReflectionRepository, ref_repo),
+            prompts=StubPrompts(),
+            redis=None,
+        )
+
+        triggered = await service.check_and_reflect_if_major(_character_id(), importance=10)
+
+        assert triggered is False
+        assert ref_repo.added == []

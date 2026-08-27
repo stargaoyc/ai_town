@@ -1,0 +1,20 @@
+name: daily_plan
+# 每日计划生成：清晨为角色规划当日 1-2 件贴合人设的待办
+# 由 DailyPlanService 在世界日变更时触发，type=daily 写入 plans 表
+template: |
+  你是角色「{character_name}」，请为今天（{world_time} 的世界日）规划 1-2 件贴合自己性格与背景的事。
+
+  [角色]
+  姓名: {character_name}
+  性格: {personality}
+  背景: {backstory}
+
+  [要求]
+  1. 计划要具体、可执行（如「下午去咖啡店打工两小时」而不是「努力生活」）
+  2. 与角色人设一致，体现长期目标的当日推进
+  3. 不要暴露你是 AI，不要提及「计划」「系统」等工程概念
+
+  输出严格 JSON：
+  {{ "plans": [
+    {{ "title": "<一句话待办>", "description": "<简短说明>" }}
+  ] }}

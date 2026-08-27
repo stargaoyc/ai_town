@@ -71,6 +71,7 @@ from src.paths import find_project_root
 from src.scheduler import PartitionScheduler
 from src.scheduler.loops import (
     character_tick_loop,
+    daily_plan_loop,
     diary_scheduler_loop,
     hnsw_reindex_loop,
     memory_retention_loop,
@@ -360,6 +361,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error("diary_scheduler_start_failed", error=str(e), exc_info=True)
 
+    # 5.6 启动每日计划生成器（round-7 F1b）
+    daily_plan_task: asyncio.Task[None] | None = None
+    try:
+        daily_plan_task = asyncio.create_task(daily_plan_loop())
+        logger.info("daily_plan_loop_started")
+    except Exception as e:
+        logger.error("daily_plan_loop_start_failed", error=str(e), exc_info=True)
+
     # 5.55 启动 Person Memory 热度衰减循环（后台任务）
     pm_heat_task: asyncio.Task[None] | None = None
     try:
@@ -488,6 +497,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         diary_scheduler_task.cancel()
         try:
             await diary_scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+    # 取消每日计划生成器（round-7 F1b）
+    if daily_plan_task:
+        daily_plan_task.cancel()
+        try:
+            await daily_plan_task
         except asyncio.CancelledError:
             pass
 

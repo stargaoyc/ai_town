@@ -1290,9 +1290,9 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             mem_repo = MemoryRepository(session)
             ref_repo = ReflectionRepository(session)
 
-            # 创建服务实例
+            # 创建服务实例（reflection 带 redis 供重大事件冷却，round-7 F1）
             episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
-            reflection_service = ReflectionService(self.llm, mem_repo, ref_repo, prompts=self.prompts)
+            reflection_service = ReflectionService(self.llm, mem_repo, ref_repo, prompts=self.prompts, redis=self.redis)
 
             # P1-7：社交类基础分从 7 降到 5——此前撞上「importance>=7 永久保留」
             # 策略导致全部社交记忆不可清理；强情绪仍可经下方关键词修正回升，
@@ -1323,7 +1323,8 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                 related_characters=related_ids,
             )
 
-            # 检查反思
+            # 检查反思（数量阈值 + 重大事件即时触发，round-7 F1）
+            await reflection_service.check_and_reflect_if_major(character_id, importance)
             await reflection_service.check_and_reflect(character_id)
 
         logger.debug(
