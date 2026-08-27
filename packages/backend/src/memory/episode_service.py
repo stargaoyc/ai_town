@@ -22,6 +22,7 @@ from src.db.models import MemoryEpisode
 from src.db.repositories import MemoryRepository
 from src.llm import LLMClient
 from src.llm.prompts import PromptTemplates
+from src.observability.metrics import LLM_SCORE_TOTAL, MEMORY_DEDUP_TOTAL, MEMORY_WRITE_TOTAL
 
 logger = get_logger(__name__)
 
@@ -91,6 +92,7 @@ class EpisodeService:
             match = re.search(r"\b(\d+)\b", response.strip())
             if match:
                 score = int(match.group(1))
+                LLM_SCORE_TOTAL.labels(status="success").inc()
                 return max(1, min(10, score))
             logger.warning(
                 "llm_importance_parse_failed",
@@ -99,6 +101,7 @@ class EpisodeService:
             )
             return fallback_importance
         except Exception as e:
+            LLM_SCORE_TOTAL.labels(status="failed").inc()
             logger.warning(
                 "llm_importance_scoring_failed",
                 error=str(e),
@@ -150,6 +153,7 @@ class EpisodeService:
         """
         normalized_content = " ".join(content.split())
         if await self.repo.exists_recent_duplicate(character_id, normalized_content):
+            MEMORY_DEDUP_TOTAL.labels(kind="exact").inc()
             logger.info(
                 "memory_duplicate_skipped",
                 character_id=str(character_id),
@@ -191,6 +195,7 @@ class EpisodeService:
         )
 
         saved = await self.repo.add(episode)
+        MEMORY_WRITE_TOTAL.labels(source_type=source_type).inc()
         logger.info(
             "memory_episode_created",
             character_id=str(character_id),

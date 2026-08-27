@@ -16,6 +16,7 @@ from src.config import settings
 from src.db.models import Reflection, ReflectionSource
 from src.db.repositories import MemoryRepository, ReflectionRepository
 from src.llm import LLMClient
+from src.observability.metrics import MEMORY_REFLECTION_RATE
 
 logger = get_logger(__name__)
 
@@ -49,6 +50,7 @@ class ReflectionService:
             本次产生的最后一条 Reflection（可能是 tier=1 或 tier=2），否则 None
         """
         count = await self.mem_repo.count_unreflected(character_id)
+        MEMORY_REFLECTION_RATE.set(float(count))
         if count < self.REFLECTION_THRESHOLD:
             return None
 

@@ -205,6 +205,37 @@ ALERTS_RECEIVED_TOTAL = Counter(
     ["alertname"],
 )
 
+# === 认知有效性指标（round-7 P0-1：记忆/反思/去重/治理）===
+MEMORY_RETRIEVE_LATENCY = Histogram(
+    "ai_town_memory_retrieve_latency_seconds",
+    "记忆检索延迟（RetrievalService.search）",
+    buckets=[0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 1.0],
+)
+MEMORY_REFLECTION_RATE = Gauge(
+    "ai_town_memory_unreflected_backlog",
+    "未反思记忆积压数（每次反思检查时更新；趋近 REFLECTION_THRESHOLD 提示需扩容反思池）",
+)
+MEMORY_WRITE_TOTAL = Counter(
+    "ai_town_memory_write_total",
+    "记忆写入次数",
+    ["source_type"],  # action / conversation / reflection / gossip / tool
+)
+MEMORY_DEDUP_TOTAL = Counter(
+    "ai_town_memory_dedup_total",
+    "记忆去重命中次数",
+    ["kind"],  # exact / paraphrase
+)
+MEMORY_RETENTION_TOTAL = Counter(
+    "ai_town_memory_retention_total",
+    "记忆治理次数",
+    ["kind"],  # compressed / archived / deleted
+)
+LLM_SCORE_TOTAL = Counter(
+    "ai_town_llm_score_total",
+    "LLM 记忆评分调用次数",
+    ["status"],  # success / failed
+)
+
 
 class PrometheusMiddleware:
     """纯 ASGI 中间件：记录 HTTP 请求耗时、状态码、路径

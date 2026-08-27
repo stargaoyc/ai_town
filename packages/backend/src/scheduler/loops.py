@@ -910,6 +910,10 @@ async def run_memory_retention_cycle(
         mid_deleted = list((await session.execute(mid_stmt)).scalars())
         deleted_rows = len(low_deleted) + len(mid_deleted)
 
+    from src.observability.metrics import MEMORY_RETENTION_TOTAL
+
+    MEMORY_RETENTION_TOTAL.labels(kind="compressed").inc(archived_groups)
+    MEMORY_RETENTION_TOTAL.labels(kind="deleted").inc(deleted_rows)
     logger.info(
         "memory_retention_completed",
         archived_groups=archived_groups,

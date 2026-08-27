@@ -3,6 +3,7 @@
 使用 MemoryRepository.search_hybrid() 实现语义 + 重要性 + 时间衰减排序
 """
 
+import time
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from structlog import get_logger
 
 from src.db.repositories import MemoryRepository
 from src.llm import LLMClient
+from src.observability.metrics import MEMORY_RETRIEVE_LATENCY
 
 logger = get_logger(__name__)
 
@@ -42,10 +44,11 @@ class RetrievalService:
         Returns:
             记忆列表（dict: id, content, final_score）
         """
-        # 生成查询向量
+        start_perf = time.perf_counter()
         query_vec = await self.llm.embed(query)
-
-        return await self.search_with_vec(character_id, query_vec, top_k)
+        results = await self.search_with_vec(character_id, query_vec, top_k)
+        MEMORY_RETRIEVE_LATENCY.observe(time.perf_counter() - start_perf)
+        return results
 
     async def search_with_vec(
         self,

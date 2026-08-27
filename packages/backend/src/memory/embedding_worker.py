@@ -143,6 +143,9 @@ class EmbeddingWorker:
                         if is_dup:
                             await repo.mark_duplicate(episode.id, episode.character_id)
                             dedup_count += 1
+                            from src.observability.metrics import MEMORY_DEDUP_TOTAL
+
+                            MEMORY_DEDUP_TOTAL.labels(kind="paraphrase").inc()
                             continue
                     await repo.update_embedding(
                         episode_id=episode.id,

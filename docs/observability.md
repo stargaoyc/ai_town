@@ -298,7 +298,7 @@ Grafana 数据源配置：
 | 指标                           | 类型     | 说明                                  |
 | ------------------------------ | -------- | ------------------------------------- |
 | `ai_town_memory_retrieve_latency_seconds` | Histogram | 记忆检索延迟（RetrievalService.search） |
-| `ai_town_memory_reflection_rate` | Gauge   | 已反思记忆占比（未反思数 / 记忆总数）  |
+| `ai_town_memory_unreflected_backlog` | Gauge   | 未反思记忆积压数（趋近反思阈值提示扩容） |
 | `ai_town_memory_write_total`   | Counter   | 记忆写入（label: source_type）         |
 | `ai_town_memory_dedup_total`   | Counter   | 写入去重命中（label: kind=exact/paraphrase） |
 | `ai_town_memory_retention_total` | Counter | 记忆治理（label: kind=compressed/archived/deleted） |
