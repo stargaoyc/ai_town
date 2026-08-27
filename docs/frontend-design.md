@@ -315,6 +315,8 @@ export function CharacterCard({ character }: { character: Character }) {
 
 ## 四、目录结构
 
+> 实际结构（round-7 审查对账：与早期规划差异——路由为扁平 TSX 文件、组件层仅保留少量全局组件、无 storybook/e2e 目录；OpenAPI 客户端为 `lib/api.ts` + `lib/api-types.ts` + `types/api-generated.d.ts`，未落 `api/` 目录）。
+
 ```text
 packages/frontend/
 ├── index.html
@@ -325,47 +327,37 @@ packages/frontend/
 ├── tailwind.config.ts
 ├── tsconfig.json
 ├── src/
-│   ├── main.tsx                # 入口
-│   ├── App.tsx                 # 根组件 + RouterProvider
-│   ├── routes/                 # TanStack Router 文件路由
-│   │   ├── __root.tsx
-│   │   ├── dashboard/
-│   │   ├── town/
-│   │   ├── characters/
-│   │   ├── modules/
-│   │   ├── conversations/
-│   │   ├── observability/
-│   │   └── settings/
+│   ├── main.tsx                # 入口（QueryClient + RouterProvider）
+│   ├── routeTree.gen.ts        # TanStack Router 生成路由树
+│   ├── routes/                 # TanStack Router 文件路由（扁平 TSX）
+│   │   ├── __root.tsx          # 根布局（登录守卫 + Dashboard Socket 挂载）
+│   │   ├── login.tsx / index.tsx（仪表盘）
+│   │   ├── characters.tsx / characters.$characterId.tsx / import.tsx / compare.tsx
+│   │   ├── map.tsx / world.tsx / events.tsx / actions.tsx / state-charts.tsx
+│   │   ├── memories.tsx / vector-search.tsx / reflections.tsx / diaries.tsx / person-memory.tsx
+│   │   ├── plans.tsx / relationships.tsx / snapshots.tsx / notifications.tsx
+│   │   ├── conversations.tsx / qq-monitor.tsx / shares.tsx / export.tsx
+│   │   ├── monitoring.tsx / metrics.tsx / cost.tsx / admin.tsx / settings.tsx
+│   │   └── character-card.tsx（角色卡预览）
 │   ├── components/
-│   │   ├── ui/                 # shadcn/ui 基础组件
-│   │   ├── glass-card.tsx      # 玻璃拟态卡片
-│   │   ├── layout/             # 布局 (Sidebar, Header, Background)
-│   │   ├── characters/         # 角色卡牌、状态条
-│   │   ├── modules/
-│   │   └── shared/
-│   ├── stores/                 # Zustand
-│   │   ├── app-store.ts
-│   │   ├── character-store.ts
-│   │   ├── module-store.ts
-│   │   └── websocket-store.ts
-│   ├── api/                    # OpenAPI 生成的客户端
-│   │   ├── client.ts
-│   │   ├── types.ts
-│   │   └── hooks/
+│   │   ├── ui/                 # 基础组件（feedback / layout / primitives / index）
+│   │   ├── AnimeBackground.tsx # 动态渐变背景
+│   │   └── ErrorBoundary.tsx
+│   ├── stores/                 # Zustand（客户端状态）
+│   │   ├── auth.ts
+│   │   └── toast.ts
 │   ├── hooks/
-│   │   ├── use-websocket.ts
-│   │   └── use-toast.ts
+│   │   ├── useChatSocket.ts    # 角色对话 WebSocket
+│   │   └── useDashboardSocket.ts  # Dashboard 实时订阅
 │   ├── lib/
-│   │   ├── utils.ts
-│   │   └── constants.ts
-│   ├── styles/
-│   │   └── globals.css         # Tailwind v4 + 主题变量
-│   └── types/
-├── public/
-├── tests/
-│   ├── unit/                   # Vitest
-│   └── e2e/                    # Playwright
-└── storybook/                  # 组件故事书
+│   │   ├── api.ts              # API 客户端（request + 方法）
+│   │   ├── api-types.ts        # API 契约类型（引用 api-generated）
+│   │   ├── queries.ts          # TanStack Query hooks
+│   │   └── format.ts
+│   ├── types/
+│   │   └── api-generated.d.ts  # openapi-typescript 生成
+│   └── index.css               # Tailwind v4 + 主题变量
+└── public/
 ```
 
 ---

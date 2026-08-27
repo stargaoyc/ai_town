@@ -258,33 +258,51 @@ Grafana 数据源配置：
 
 ### 6.1 指标清单
 
-| 指标名                     | 类型      | 说明              | 告警阈值          |
-| -------------------------- | --------- | ----------------- | ----------------- |
-| `character_tick_duration`  | Histogram | 角色 Tick 耗时    | p95 > 5s          |
-| `llm_call_duration`        | Histogram | LLM 调用延迟      | p95 > 10s         |
-| `llm_token_usage`          | Counter   | Token 消耗        | 日环比 > 50%      |
-| `llm_cost_total`           | Counter   | LLM 成本累计      | 日成本 > 预算 80% |
-| `tool_error_rate`          | Gauge     | 本地工具错误率    | > 5%              |
-| `tool_latency`             | Histogram | 本地工具延迟      | p95 > 1s          |
-| `action_execution_failed`  | Counter   | Action 执行失败   | > 10/h            |
-| `llm_daily_budget_usd`     | Gauge     | 日预算上限（镜像 `LLM_DAILY_BUDGET_USD`，启动时设置） | 与 `llm_cost_total_usd` 组合计算消耗比 |
-| `memory_retrieve_latency`  | Histogram | 记忆检索延迟      | p95 > 200ms       |
-| `db_tx_duration`           | Histogram | DB 事务耗时       | p95 > 500ms       |
-| `db_connection_pool_usage` | Gauge     | 连接池占用率      | > 80%             |
-| `module_unhealthy`         | Gauge     | 不健康模块数      | > 0               |
-| `active_characters`        | Gauge     | 活跃角色数        | —                 |
-| `message_response_time`    | Histogram | 消息回复延迟      | p95 > 15s         |
-| `redis_ops_per_sec`        | Gauge     | Redis QPS         | —                 |
-| `loki_ingest_rate`         | Gauge     | Loki 日志摄入速率 | —                 |
+> 以下清单为 `src/observability/metrics.py` **实际定义**的指标（round-7 审查对账：`tool_error_rate`/`tool_latency`/`db_tx_duration`/`db_connection_pool_usage`/`module_unhealthy`/`redis_ops_per_sec`/`loki_ingest_rate` 等文档曾声称但未定义，已从清单移除；`memory_retrieve_latency` 与 `memory_reflection_rate` 由 round-7 P0-1 补齐后列于 §6.2）。
 
-### 6.2 自定义业务指标
+| 指标名（Prometheus 全名）      | 类型      | 说明              | 告警阈值          |
+| ------------------------------ | --------- | ----------------- | ----------------- |
+| `ai_town_world_tick_duration_seconds` | Histogram | World Tick 耗时 | p95 > 5s |
+| `ai_town_world_tick_total`     | Counter   | World Tick 次数   | —                 |
+| `ai_town_world_tick_errors_total` | Counter | World Tick 错误   | > 0/h            |
+| `ai_town_character_tick_duration_seconds` | Histogram | 角色 Tick 耗时 | p95 > 5s |
+| `ai_town_character_tick_total` | Counter   | 角色 Tick 次数（label: character_id） | — |
+| `ai_town_character_tick_errors_total` | Counter | 角色 Tick 错误 | > 10/h |
+| `ai_town_action_execution_total` | Counter  | Action 执行（label: action_id, status） | 失败 > 10/h |
+| `ai_town_action_execution_duration_seconds` | Histogram | Action 执行耗时 | p95 > 5s |
+| `ai_town_llm_call_total`        | Counter   | LLM 调用（label: model, status） | — |
+| `ai_town_llm_call_duration_seconds` | Histogram | LLM 调用延迟   | p95 > 10s |
+| `ai_town_llm_tokens_total`      | Counter   | Token 消耗（label: model, type） | 日环比 > 50% |
+| `ai_town_llm_cost_total_usd`    | Counter   | LLM 成本累计      | 日成本 > 预算 80% |
+| `ai_town_llm_daily_budget_usd`  | Gauge     | 日预算上限（镜像 `LLM_DAILY_BUDGET_USD`） | 与 `llm_cost_total_usd` 组合计算消耗比 |
+| `ai_town_message_processed_total` | Counter | 消息处理（label: platform, status） | — |
+| `ai_town_message_processing_duration_seconds` | Histogram | 消息回复延迟 | p95 > 15s |
+| `ai_town_db_query_duration_seconds` | Histogram | DB 查询耗时（AsyncPG 自动埋点） | p95 > 500ms |
+| `ai_town_media_generation_total` | Counter  | 媒体生成（label: tool, outcome） | — |
+| `ai_town_tool_call_total`       | Counter   | 本地工具调用（label: tool, outcome=success/failed/timeout） | timeout > 5/h |
+| `ai_town_embedding_episodes_total` | Counter | Embedding 处理（label: status=success/failed/deduped） | — |
+| `ai_town_embedding_batch_duration_seconds` | Histogram | Embedding 批处理耗时 | — |
+| `ai_town_embedding_probe_total` | Counter   | Embedding 维度探针（label: status） | dimension_mismatch > 0 |
+| `ai_town_reconcile_drift_total` | Counter   | Redis/PG 对账漂移（label: kind） | > 0 |
+| `ai_town_reconcile_repair_total` | Counter  | 对账自动修复（label: direction） | — |
+| `ai_town_redis_stream_messages` | Gauge     | Redis Streams 队列深度（label: stream） | 积压 > 阈值 |
+| `ai_town_active_characters`     | Gauge     | 活跃角色数        | —                 |
+| `ai_town_redis_connected`       | Gauge     | Redis 连接（1/0）  | = 0              |
+| `ai_town_world_tick_id`         | Gauge     | 当前 World Tick ID | —                 |
+| `ai_town_http_request_duration_seconds` | Histogram | HTTP 请求耗时（label: method, path, status） | p95 > 2s |
+| `ai_town_http_request_total`    | Counter   | HTTP 请求次数     | 5xx 率 > 5%       |
+| `ai_town_alerts_received_total` | Counter   | Alertmanager 告警回流（label: alertname） | — |
 
-| 指标                           | 说明                                  |
-| ------------------------------ | ------------------------------------- |
-| `character_energy_avg`         | 角色平均精力（健康度参考）            |
-| `action_category_distribution` | Action 分类分布（生活/工作/社交占比） |
-| `relation_strength_avg`        | 平均关系强度                          |
-| `memory_reflection_rate`       | 已反思记忆占比                        |
+### 6.2 认知有效性业务指标（round-7 P0-1 补齐）
+
+| 指标                           | 类型     | 说明                                  |
+| ------------------------------ | -------- | ------------------------------------- |
+| `ai_town_memory_retrieve_latency_seconds` | Histogram | 记忆检索延迟（RetrievalService.search） |
+| `ai_town_memory_reflection_rate` | Gauge   | 已反思记忆占比（未反思数 / 记忆总数）  |
+| `ai_town_memory_write_total`   | Counter   | 记忆写入（label: source_type）         |
+| `ai_town_memory_dedup_total`   | Counter   | 写入去重命中（label: kind=exact/paraphrase） |
+| `ai_town_memory_retention_total` | Counter | 记忆治理（label: kind=compressed/archived/deleted） |
+| `ai_town_llm_score_total`      | Counter   | LLM 记忆评分调用（label: status）      |
 
 ---
 
@@ -306,11 +324,14 @@ Grafana 数据源配置：
 
 ### 7.2 告警通道
 
-| 通道       | 适用         |
-| ---------- | ------------ |
-| 飞书机器人 | 默认告警通道 |
-| 邮件       | 严重告警     |
-| PagerDuty  | 生产事故升级 |
+> 实际实现（`docker/observability/alertmanager.yml`，round-7 对账）：默认 receiver 为**后端 webhook**（`/api/v1/system/alerts/webhook`，经 Alertmanager 报警→后端日志 + `ai_town_alerts_received_total` 指标双通道回流）。飞书/邮件/PagerDuty 为**规划中未落地**（配置文件仅注释示例）。
+
+| 通道       | 状态         | 适用         |
+| ---------- | ------------ | ------------ |
+| 后端 webhook | ✅ 已落地（默认） | 告警回流日志与指标 |
+| 飞书机器人 | ⏳ 规划中     | 默认告警通道 |
+| 邮件       | ⏳ 规划中     | 严重告警     |
+| PagerDuty  | ⏳ 规划中     | 生产事故升级 |
 
 ---
 

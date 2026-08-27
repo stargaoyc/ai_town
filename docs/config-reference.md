@@ -107,8 +107,8 @@ ONEBOT_GROUP_CHARACTER_MAP={"群号A":"角色UUID-A","群号B":"角色UUID-B"}
 
 | 变量              | 必填 | 默认 | 说明               |
 | ----------------- | ---- | ---- | ------------------ |
-| `LARK_APP_ID`     | 否   | —    | 飞书应用 ID        |
-| `LARK_APP_SECRET` | 否   | —    | 飞书应用密钥       |
+| `LARK_APP_ID`     | 否   | —    | 飞书应用 ID（**未使用**，Lark 渠道未落地，仅枚举预留） |
+| `LARK_APP_SECRET` | 否   | —    | 飞书应用密钥（**未使用**，同上） |
 | `WEB_WS_PATH`     | 否   | /ws  | Web WebSocket 路径 |
 
 ### 1.8 鉴权

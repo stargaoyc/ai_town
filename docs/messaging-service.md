@@ -31,7 +31,7 @@
 | 平台 | 协议 | 实现方式 | 接入端点 | 适配器文件 |
 |------|------|----------|----------|------------|
 | **QQ** | OneBot v11 / v12 | 反向 WebSocket（NapCat / Lagrange 等实现主动连接本服务） | `/ws/onebot/v12` | `src/adapters/onebot.py` |
-| **飞书** | Lark OpenAPI | `lark-python` SDK（计划接入） | - | `src/adapters/lark.py` |
+| **飞书（规划中）** | Lark OpenAPI | `lark-python` SDK（**未落地**，无适配器文件；`platform` 枚举预留 `lark` 值） | - | - |
 | **Web** | WebSocket | FastAPI WebSocket 端点 | `/ws/chat/{character_id}` | `src/messaging/websocket.py` |
 | **API** | HTTP | 第三方集成（计划接入） | - | - |
 
