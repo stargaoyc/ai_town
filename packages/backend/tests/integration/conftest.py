@@ -48,23 +48,6 @@ _REDIS_URL = os.environ.get("IT_REDIS_URL") or (
 )
 
 
-def _services_reachable() -> bool:
-    """真实握手探测：PG 执行 SELECT 1、Redis 执行 PING
-
-    仅做 TCP 端口检查会把「端口开着但服务坏了」误判为可用，
-    导致集成测试以 error 而非 skip 收场（审查二轮 N1）。
-    """
-    try:
-        asyncio.run(_pg_handshake())
-    except Exception:
-        return False
-    try:
-        asyncio.run(_redis_ping())
-    except Exception:
-        return False
-    return True
-
-
 async def _pg_handshake() -> None:
     conn = await asyncpg.connect(
         host=_PG_HOST,
@@ -86,6 +69,54 @@ async def _redis_ping() -> None:
         await r.ping()
     finally:
         await r.aclose()
+
+
+async def _probe_services_async() -> bool:
+    """异步探测：PG SELECT 1 + Redis PING"""
+    try:
+        await _pg_handshake()
+    except Exception:
+        return False
+    try:
+        await _redis_ping()
+    except Exception:
+        return False
+    return True
+
+
+_reachable_cache: bool | None = None
+
+
+def _services_reachable() -> bool:
+    """探测服务可达性（支持在 running event loop 内调用）
+
+    round-7 修复：原实现无条件 asyncio.run()，被 pytest-asyncio 的 async
+    fixture（it_redis）在 running loop 内调用时抛 RuntimeError 被误吞，
+    导致依赖 Redis 的集成测试（locks/reconcile）从未真正运行。
+    running loop 内改为独立线程跑新 loop，并缓存结果避免重复探测。
+    """
+    global _reachable_cache
+    if _reachable_cache is not None:
+        return _reachable_cache
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        _reachable_cache = asyncio.run(_probe_services_async())
+        return _reachable_cache
+
+    import threading
+
+    result: list[bool] = []
+
+    def _probe_thread() -> None:
+        result.append(asyncio.run(_probe_services_async()))
+
+    t = threading.Thread(target=_probe_thread, daemon=True)
+    t.start()
+    t.join(timeout=15)
+    _reachable_cache = bool(result and result[0])
+    return _reachable_cache
 
 
 def _skip_if_unreachable() -> None:

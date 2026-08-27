@@ -230,6 +230,12 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
 
             drift = collect_drift(pg_state, raw_hash)
             if not drift:
+                # 无漂移也要推进基线：rec_ver 语义是「上次对账时 PG version」，
+                # 否则 pg_advanced 仲裁缺少起点，第一轮后的 PG 写入永远无法
+                # 被判定为「前进」（round-7：集成测试首次运行暴露，此前该路径
+                # 因 conftest 探测缺陷从未真正执行）
+                if rec_ver_raw is None:
+                    await redis.set(ver_key, pg_state.version)
                 continue
 
             # 版本感知仲裁：PG 在上次对账后发生过写入 → PG 更可信，
