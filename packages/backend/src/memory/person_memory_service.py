@@ -187,9 +187,24 @@ class PersonMemoryService:
                         user_id=user_id,
                         platform=platform,
                         content=fact,
+                        embedding=await self._embed_fact(fact),
                     )
                 )
             await session.commit()
+
+    async def _embed_fact(self, fact: str) -> list[float] | None:
+        """对单条事实生成语义向量（审查 记忆-05）
+
+        失败返回 None（不阻断写入），检索侧对 NULL 向量回退二元组重叠。
+        """
+        try:
+            llm = self._llm or get_llm()
+            if llm is None:
+                return None
+            return await llm.embed(fact)
+        except Exception as e:
+            logger.warning("person_memory_entry_embed_failed", error=str(e))
+            return None
 
     async def _upsert_memory(
         self,
@@ -259,7 +274,7 @@ class PersonMemoryService:
 
         async with self.session_factory() as session:
             stmt = (
-                select(PersonMemoryEntry.content)
+                select(PersonMemoryEntry.content, PersonMemoryEntry.embedding)
                 .where(
                     PersonMemoryEntry.character_id == character_id,
                     PersonMemoryEntry.user_id == user_id,
@@ -268,22 +283,33 @@ class PersonMemoryService:
                 .order_by(PersonMemoryEntry.created_at.desc())
                 .limit(50)
             )
-            candidates = [row[0] for row in (await session.execute(stmt)).all()]
+            rows = [(row[0], row[1]) for row in (await session.execute(stmt)).all()]
 
+        # 语义召回（审查 记忆-05）：有 query_hint 且候选含向量时按与当前消息的
+        # 余弦相似度排序取前 8；无向量/embedding 失败时回退字符二元组重叠。
         recent: list[str]
         if query_hint and query_hint.strip():
-            hint_bigrams = _char_bigrams(query_hint)
-            if hint_bigrams:
-                scored = sorted(
-                    ((len(hint_bigrams & _char_bigrams(c)) / max(len(hint_bigrams), 1), c) for c in candidates),
-                    key=lambda pair: pair[0],
-                    reverse=True,
-                )
-                recent = [c for score, c in scored[:8] if score > 0]
+            vec = await self._embed_fact(query_hint)
+            if vec is not None:
+                scored = []
+                for content, emb in rows:
+                    if emb is None:
+                        continue
+                    # 候选池已限定 50 条，应用层余弦计算开销可忽略
+                    try:
+                        sim = self._cosine(vec, emb)
+                    except Exception:
+                        sim = 0.0
+                    scored.append((sim, content))
+                if scored:
+                    scored.sort(key=lambda pair: pair[0], reverse=True)
+                    recent = [c for sim, c in scored[:8]]
+                else:
+                    recent = self._bigram_select(rows, query_hint)
             else:
-                recent = candidates[:8]
+                recent = self._bigram_select(rows, query_hint)
         else:
-            recent = candidates[:8]
+            recent = [c for c, _ in rows[:8]]
 
         parts = []
         if profile:
@@ -291,6 +317,34 @@ class PersonMemoryService:
         if recent:
             parts.append("最近了解到的：\n" + "\n".join(f"- {fact}" for fact in recent))
         return "\n".join(parts) if parts else "（初次与该用户交流）"
+
+    @staticmethod
+    def _bigram_select(
+        rows: list[tuple[str, Any]], query_hint: str
+    ) -> list[str]:
+        """字符二元组重叠回退选择（无语义，仅供向量缺失时兜底）"""
+        candidates = [c for c, _ in rows]
+        hint_bigrams = _char_bigrams(query_hint)
+        if not hint_bigrams:
+            return candidates[:8]
+        scored = sorted(
+            ((len(hint_bigrams & _char_bigrams(c)) / max(len(hint_bigrams), 1), c) for c in candidates),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        return [c for score, c in scored[:8] if score > 0]
+
+    @staticmethod
+    def _cosine(a: list[float], b: list[float]) -> float:
+        """两个向量的余弦相似度（候选池内轻量计算）"""
+        import math
+
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
+        na = math.sqrt(sum(x * x for x in a))
+        nb = math.sqrt(sum(x * x for x in b))
+        if na == 0 or nb == 0:
+            return 0.0
+        return dot / (na * nb)
 
     async def get_top_users_context(self, character_id: UUID, limit: int = 3) -> str:
         """按热度取最「记得」的用户摘要，供小镇决策注入
