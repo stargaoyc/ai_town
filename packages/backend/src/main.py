@@ -18,7 +18,6 @@ API 路由：
 - /api/v1/admin - 管理接口（强制 Tick、快照回放等）
 """
 
-import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -44,6 +43,9 @@ from src.api.world import router as world_router
 from src.auth.middleware import AuthMiddleware
 from src.config import settings
 from src.core import WorldEngine
+
+# 后台任务统一经 BackgroundTaskRegistry 管理（spawn 注册 + shutdown 统一取消）
+from src.core.background import spawn_background
 from src.cost_control.budget_manager import set_budget_manager
 from src.cost_control.circuit_breaker import set_circuit_breaker
 from src.db.repositories import (
@@ -219,11 +221,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("state_rehydration_failed", error=str(e), exc_info=True)
         # 不中断启动，引擎可从空状态重建
 
-    # 1.5 EMBEDDING_DIM 与物理列一致性校验（R4-H7）：错配即 fail-fast，
-    # 否则潜伏到首次向量写入才以运行时报错暴露
+    # 1.5 EMBEDDING_DIM 与物理列一致性（R4-H7 纵深防御 + 自动对齐）
+    # 先幂等同步：维度对齐是配置驱动的数据维护（换模型改 env 后重启即生效，
+    # 无需新增迁移）；再校验：sync 修复失败/漏跑时 fail-fast 拦截启动，
+    # 避免错配潜伏到首次向量写入才以运行时报错暴露
+    from src.db.embedding_dim_sync import sync_embedding_dim
     from src.db.session import db as _db
     from src.security.startup_checks import check_embedding_dim
 
+    await sync_embedding_dim(_db.session)
     await check_embedding_dim(_db.session)
 
     # 2. 初始化 LLM 客户端
@@ -283,8 +289,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error("action_registry_initialization_failed", error=str(e), exc_info=True)
         raise
 
-    # 3.5 启动 Embedding Worker（异步向量化后台任务）
-    embedding_task: asyncio.Task[None] | None = None
+    # 3.5 启动 Embedding Worker（异步向量化后台任务，经 BackgroundTaskRegistry 管理）
     try:
         embedding_worker = EmbeddingWorker(
             session_factory=db.session,
@@ -292,7 +297,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             batch_size=20,
             poll_interval=5.0,
         )
-        embedding_task = asyncio.create_task(embedding_worker.run())
+        spawn_background(embedding_worker.run(), name="embedding_worker")
         runtime.set_embedding_worker(embedding_worker)
         logger.info("embedding_worker_started", batch_size=20, poll_interval=5.0)
     except Exception as e:
@@ -326,7 +331,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise
 
     # 5. 启动 Character Tick Engine（如果模块可用）
-    character_tick_task: asyncio.Task[None] | None = None
     if CHARACTER_ENGINE_AVAILABLE and CharacterTickEngine is not None:
         try:
             character_engine = CharacterTickEngine(
@@ -336,7 +340,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 prompts=prompts,
             )
             # 启动后台任务：定期对所有活跃角色执行 Tick
-            character_tick_task = asyncio.create_task(character_tick_loop())
+            spawn_background(character_tick_loop(), name="character_tick_loop")
             runtime.set_character_engine(character_engine)
             logger.info("character_engine_started")
         except Exception as e:
@@ -354,68 +358,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     # 5.5 启动日记自动生成调度器（后台任务）
-    diary_scheduler_task: asyncio.Task[None] | None = None
-    try:
-        diary_scheduler_task = asyncio.create_task(diary_scheduler_loop())
-        logger.info("diary_scheduler_started")
-    except Exception as e:
-        logger.error("diary_scheduler_start_failed", error=str(e), exc_info=True)
+    spawn_background(diary_scheduler_loop(), name="diary_scheduler_loop")
+    logger.info("diary_scheduler_started")
 
     # 5.6 启动每日计划生成器（round-7 F1b）
-    daily_plan_task: asyncio.Task[None] | None = None
-    try:
-        daily_plan_task = asyncio.create_task(daily_plan_loop())
-        logger.info("daily_plan_loop_started")
-    except Exception as e:
-        logger.error("daily_plan_loop_start_failed", error=str(e), exc_info=True)
+    spawn_background(daily_plan_loop(), name="daily_plan_loop")
+    logger.info("daily_plan_loop_started")
 
     # 5.55 启动 Person Memory 热度衰减循环（后台任务）
-    pm_heat_task: asyncio.Task[None] | None = None
-    try:
-        pm_heat_task = asyncio.create_task(person_memory_heat_decay_loop())
-        logger.info("person_memory_heat_decay_started")
-    except Exception as e:
-        logger.error("person_memory_heat_decay_start_failed", error=str(e), exc_info=True)
+    spawn_background(person_memory_heat_decay_loop(), name="person_memory_heat_decay_loop")
+    logger.info("person_memory_heat_decay_started")
 
     # 5.58 启动记忆生命周期治理循环（后台任务）
-    retention_task: asyncio.Task[None] | None = None
-    try:
-        retention_task = asyncio.create_task(memory_retention_loop())
-        logger.info("memory_retention_started")
-    except Exception as e:
-        logger.error("memory_retention_start_failed", error=str(e), exc_info=True)
+    spawn_background(memory_retention_loop(), name="memory_retention_loop")
+    logger.info("memory_retention_started")
 
     # 5.59 启动 Person Memory 主档压缩循环（后台任务）
-    pm_compact_task: asyncio.Task[None] | None = None
-    try:
-        pm_compact_task = asyncio.create_task(person_memory_compaction_loop())
-        logger.info("person_memory_compaction_started")
-    except Exception as e:
-        logger.error("person_memory_compaction_start_failed", error=str(e), exc_info=True)
+    spawn_background(person_memory_compaction_loop(), name="person_memory_compaction_loop")
+    logger.info("person_memory_compaction_started")
 
     # 5.6 启动 Redis vs PG 状态对账循环（后台任务）
-    reconcile_task: asyncio.Task[None] | None = None
-    try:
-        reconcile_task = asyncio.create_task(reconciliation_loop())
-        logger.info("reconciliation_loop_started")
-    except Exception as e:
-        logger.error("reconciliation_loop_start_failed", error=str(e), exc_info=True)
+    spawn_background(reconciliation_loop(), name="reconciliation_loop")
+    logger.info("reconciliation_loop_started")
 
     # 5.65 启动 Redis 周期探活循环（连接状态 gauge + Streams 队列深度）
-    redis_health_task: asyncio.Task[None] | None = None
-    try:
-        redis_health_task = asyncio.create_task(redis_health_loop())
-        logger.info("redis_health_loop_started")
-    except Exception as e:
-        logger.error("redis_health_loop_start_failed", error=str(e), exc_info=True)
+    spawn_background(redis_health_loop(), name="redis_health_loop")
+    logger.info("redis_health_loop_started")
 
     # 5.66 启动 HNSW 索引周期重建（P1-1：DELETE 后索引项不被 VACUUM 回收）
-    hnsw_reindex_task: asyncio.Task[None] | None = None
-    try:
-        hnsw_reindex_task = asyncio.create_task(hnsw_reindex_loop())
-        logger.info("hnsw_reindex_loop_started")
-    except Exception as e:
-        logger.error("hnsw_reindex_loop_start_failed", error=str(e), exc_info=True)
+    spawn_background(hnsw_reindex_loop(), name="hnsw_reindex_loop")
+    logger.info("hnsw_reindex_loop_started")
 
     # 5.6 启动时同步活跃角色数指标（避免重启后指标面板显示 0）
     try:
@@ -473,88 +445,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await partition_scheduler.stop()
         logger.info("partition_scheduler_stopped")
 
-    # 停止 Embedding Worker
+    # 停止 Embedding Worker（组件级优雅停止；任务取消已由
+    # shutdown_background_tasks() 统一处理，见上）
     if embedding_worker:
         await embedding_worker.stop()
         logger.info("embedding_worker_stopped")
-    if embedding_task:
-        embedding_task.cancel()
-        try:
-            await embedding_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消 Character Tick 循环
-    if character_tick_task:
-        character_tick_task.cancel()
-        try:
-            await character_tick_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消日记自动生成调度器
-    if diary_scheduler_task:
-        diary_scheduler_task.cancel()
-        try:
-            await diary_scheduler_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消每日计划生成器（round-7 F1b）
-    if daily_plan_task:
-        daily_plan_task.cancel()
-        try:
-            await daily_plan_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消记忆生命周期治理循环
-    if retention_task:
-        retention_task.cancel()
-        try:
-            await retention_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消 Person Memory 热度衰减循环
-    if pm_heat_task:
-        pm_heat_task.cancel()
-        try:
-            await pm_heat_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消对账循环
-    if reconcile_task:
-        reconcile_task.cancel()
-        try:
-            await reconcile_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消 Redis 探活循环
-    if redis_health_task:
-        redis_health_task.cancel()
-        try:
-            await redis_health_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消 HNSW 重建循环
-    if hnsw_reindex_task:
-        hnsw_reindex_task.cancel()
-        try:
-            await hnsw_reindex_task
-        except asyncio.CancelledError:
-            pass
-
-    # 取消 Person Memory 主档压缩循环
-    if pm_compact_task:
-        pm_compact_task.cancel()
-        try:
-            await pm_compact_task
-        except asyncio.CancelledError:
-            pass
 
     # 停止 World Engine
     if world_engine:

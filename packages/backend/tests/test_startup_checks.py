@@ -61,31 +61,35 @@ class _ProbeLLM:
 
 
 @pytest.mark.asyncio
-async def test_check_embedding_dim_passes_when_both_columns_match() -> None:
+async def test_check_embedding_dim_passes_when_both_columns_match(monkeypatch: pytest.MonkeyPatch) -> None:
     """双列均为 halfvec(2048) 时通过且不抛异常"""
+    monkeypatch.setattr(settings, "embedding_dim", 2048, raising=False)
     factory = _make_session_factory(["halfvec(2048)", "halfvec(2048)"])
     await check_embedding_dim(factory)
 
 
 @pytest.mark.asyncio
-async def test_check_embedding_dim_fails_naming_mismatched_table() -> None:
+async def test_check_embedding_dim_fails_naming_mismatched_table(monkeypatch: pytest.MonkeyPatch) -> None:
     """reflections 维度错配时报错指名 reflections 表"""
+    monkeypatch.setattr(settings, "embedding_dim", 2048, raising=False)
     factory = _make_session_factory(["halfvec(2048)", "halfvec(1024)"])
     with pytest.raises(RuntimeError, match="reflections"):
         await check_embedding_dim(factory)
 
 
 @pytest.mark.asyncio
-async def test_check_embedding_dim_fails_on_memory_episodes_mismatch() -> None:
+async def test_check_embedding_dim_fails_on_memory_episodes_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """memory_episodes 维度错配时报错指名 memory_episodes 表"""
+    monkeypatch.setattr(settings, "embedding_dim", 2048, raising=False)
     factory = _make_session_factory(["vector(3072)", "halfvec(2048)"])
     with pytest.raises(RuntimeError, match="memory_episodes"):
         await check_embedding_dim(factory)
 
 
 @pytest.mark.asyncio
-async def test_check_embedding_dim_skips_missing_columns() -> None:
+async def test_check_embedding_dim_skips_missing_columns(monkeypatch: pytest.MonkeyPatch) -> None:
     """两列均不存在（全新库未迁移）时不抛异常"""
+    monkeypatch.setattr(settings, "embedding_dim", 2048, raising=False)
     factory = _make_session_factory([None, None])
     await check_embedding_dim(factory)
 
