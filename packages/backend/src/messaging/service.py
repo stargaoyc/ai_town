@@ -603,6 +603,23 @@ class MessageService:
         else:
             reflections_text, diary_text = _COGNITION_EMPTY_TEXT, _COGNITION_EMPTY_TEXT
 
+        # 近期经历注入（对齐 Tick 决策感知）：角色回复时知道"自己最近在小镇里
+        # 经历过什么"——语义检索相关记忆 + 传闻 + 世界动态 + 当前计划。
+        # 与 chat_inject_cognition 解耦：近期经历是角色自我认知的基础事实，
+        # 默认注入（用户对话常问「你最近在做什么」，缺失会导致答非所问）。
+        (
+            recent_experiences_text,
+            recent_gossip_text,
+            world_events_text,
+            current_plans_text,
+        ) = await self._load_recent_context(
+            character.id,
+            character_name=character.name,
+            location=state.location or "未知",
+            mood=state.mood or "平静",
+            user_message=user_message,
+        )
+
         # 群聊共享上下文（R4-M14）：群消息按发送者建独立会话，其他成员的消息
         # 此前完全不进上下文，多方对话答非所问；此处注入群内近期发言
         if group_context:
@@ -629,6 +646,10 @@ class MessageService:
             "person_memory": person_memory_text,
             "reflections": reflections_text,
             "diary": diary_text,
+            "recent_experiences": recent_experiences_text,
+            "recent_gossip": recent_gossip_text,
+            "world_events": world_events_text,
+            "current_plans": current_plans_text,
         }
 
     async def _load_cognition_texts(self, character_id: UUID) -> tuple[str, str]:
@@ -682,6 +703,131 @@ class MessageService:
             )
 
         return reflections_text, diary_text
+
+    async def _load_recent_context(
+        self,
+        character_id: UUID,
+        *,
+        character_name: str,
+        location: str,
+        mood: str,
+        user_message: str | None,
+    ) -> tuple[str, str, str, str]:
+        """加载角色近期经历上下文（对齐 Tick 决策感知）
+
+        返回 (recent_experiences, recent_gossip, world_events, current_plans)
+        ——四段文本已渲染为模板可直接嵌入的字符串。任一来源失败仅降级为占位，
+        不阻断对话主流程（与 _load_cognition_texts 同型护栏）。
+        """
+        experiences_text = "（暂无近期经历）"
+        gossip_text = _COGNITION_EMPTY_TEXT
+        world_events_text = _COGNITION_EMPTY_TEXT
+        plans_text = _COGNITION_EMPTY_TEXT
+
+        from src.db.session import db
+
+        # 1. 近期经历：语义检索相关记忆（对齐 perception 动态查询：角色+位置+
+        #    情绪+当前消息线索）。检索失败降级为时间倒序最近 12 条。
+        try:
+            async with db.session() as session:
+                mem_repo = MemoryRepository(session)
+                memories: list[Any] = []
+                query_hint = (user_message or "").strip()[:80]
+                try:
+                    # 语义检索优先：以「角色当前处境 + 用户当前话题」为查询线索
+                    query = f"{character_name}最近在{location}的经历，{mood}，{query_hint}，相关往事与最近发生的事"
+                    query_vec = await self.llm.embed(query)
+                    memories = await mem_repo.search_hybrid(character_id=character_id, query_vec=query_vec, top_k=12)
+                except Exception as e:
+                    logger.warning(
+                        "chat_recent_memory_semantic_failed_continue",
+                        character_id=str(character_id),
+                        error=str(e),
+                    )
+                    # 降级：时间倒序最近经历（无向量也能注入基础事实）
+                    episodes = await mem_repo.recent(character_id, limit=12)
+                    memories = [
+                        {
+                            "content": e.content,
+                            "importance": e.importance,
+                            "timestamp": e.timestamp,
+                        }
+                        for e in episodes
+                    ]
+
+                if memories:
+                    lines = []
+                    for mem in memories[:12]:
+                        content = str(mem.get("content", ""))
+                        if not content:
+                            continue
+                        lines.append(f"- {content[:_COGNITION_ITEM_MAX_CHARS]}")
+                    if lines:
+                        experiences_text = "\n".join(lines)
+        except Exception as e:
+            logger.warning(
+                "chat_recent_context_load_failed_continue",
+                character_id=str(character_id),
+                error=str(e),
+            )
+
+        # 2-4. 传闻 / 世界动态 / 当前计划：合并单会话查询，失败各自降级
+        from src.db.repositories import PlanRepository, WorldEventRepository
+
+        async with db.session() as session:
+            try:
+                gossips = await MemoryRepository(session).fetch_recent_gossip(character_id, hours=24, limit=2)
+                if gossips:
+                    gossip_text = "\n".join(f"- {g}" for g in gossips)
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "chat_gossip_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+            try:
+                world = await self._read_world_state()
+                current_tick = int(str(world.get("tick_id", "0")) or 0)
+                if current_tick > 0:
+                    notable = await WorldEventRepository(session).get_recent_notable(current_tick)
+                    if notable:
+                        world_events_text = "\n".join(f"- {e.event_type}: {str(e.payload)[:120]}" for e in notable)
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "chat_world_events_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+            try:
+                plans = await PlanRepository(session).get_active_plans(character_id)
+                if plans:
+                    plans_text = "\n".join(f"- {p.title}" for p in plans[:5])
+            except Exception as e:
+                await session.rollback()
+                logger.warning(
+                    "chat_plans_load_failed_continue",
+                    character_id=str(character_id),
+                    error=str(e),
+                )
+
+        return experiences_text, gossip_text, world_events_text, plans_text
+
+    async def _read_world_state(self) -> dict[str, Any]:
+        """读取 Redis 世界状态（失败返回空 dict，不阻断）"""
+        if not self.redis:
+            return {}
+        try:
+            raw = await self.redis.hgetall("world:state")
+            if not raw:
+                return {}
+            return {str(k): v.decode() if isinstance(v, bytes) else v for k, v in raw.items()}
+        except Exception as e:
+            logger.warning("chat_world_state_read_failed_continue", error=str(e))
+            return {}
 
     async def _generate_reply(
         self,

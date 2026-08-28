@@ -146,6 +146,18 @@ class LLMClient:
 
     # === Embedding ===
 
+    @staticmethod
+    def _fit_dim(vec: list[float]) -> list[float]:
+        """将向量截断到 settings.embedding_dim（模型输出可能超出 pgvector 上限）
+
+        方案 A：模型输出维度 > EMBEDDING_DIM 时截断适配——Qwen3-Embedding-8B
+        输出 4096 维，但 pgvector halfvec 的 HNSW 索引上限 4000 维。
+        只截不升：模型输出小于配置维度时原样返回（探针据此仍能发现降维漂移）。
+        """
+        if len(vec) > settings.embedding_dim:
+            return vec[: settings.embedding_dim]
+        return vec
+
     async def embed(self, text: str) -> list[float]:
         """生成文本嵌入向量
 
@@ -190,6 +202,7 @@ class LLMClient:
             est_cost = estimate_cost(est_tokens, 0, model=settings.model_embedding)
             self._record_embedding_metrics(elapsed, est_tokens, est_cost)
             await self._record_cost_control_success(est_tokens, est_cost)
+            embedding = self._fit_dim(embedding)
             logger.debug("embedding_created", dim=len(embedding))
             return embedding
         except Exception:
@@ -245,6 +258,7 @@ class LLMClient:
             est_cost = estimate_cost(est_tokens, 0, model=settings.model_embedding)
             self._record_embedding_metrics(elapsed, est_tokens, est_cost)
             await self._record_cost_control_success(est_tokens, est_cost)
+            embeddings = [self._fit_dim(e) for e in embeddings]
             logger.debug("embedding_batch_created", count=len(texts), dim=len(embeddings[0]))
             return embeddings
         except Exception:
@@ -306,6 +320,7 @@ class LLMClient:
             est_cost = estimate_cost(est_tokens, 0, model=settings.model_embedding)
             self._record_embedding_metrics(elapsed, est_tokens, est_cost)
             await self._record_cost_control_success(est_tokens, est_cost)
+            embedding = self._fit_dim(embedding)
             logger.debug(
                 "multimodal_embedding_created",
                 dim=len(embedding),

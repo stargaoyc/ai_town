@@ -141,9 +141,14 @@ async def test_toggle_off_uses_placeholder_without_db_calls(monkeypatch: pytest.
     conversation, character, state = _make_context_inputs()
     context = await svc._build_context(conversation=conversation, character=character, state=state, history=[])
 
-    assert ref_calls == [] and diary_calls == [] and fake_db.opened == 0
+    assert ref_calls == [] and diary_calls == []  # 认知注入仍受开关控制，关闭时不触发 DB
+    assert fake_db.opened >= 2  # 近期经历注入独立于开关，默认开启 DB 查询
     assert context["reflections"] == "暂无"
     assert context["diary"] == "暂无"
+    assert context["recent_experiences"] == "（暂无近期经历）"
+    assert context["recent_gossip"] == "暂无"
+    assert context["world_events"] == "暂无"
+    assert context["current_plans"] == "暂无"
 
     system_prompt = prompts.render_system("chat", **context)
     assert system_prompt.count("暂无") >= 2
@@ -170,7 +175,7 @@ async def test_toggle_on_injects_truncated_reflections_and_diary(monkeypatch: py
     assert context["diary"] == "日" * 300
     assert ref_calls == [3]
     assert diary_calls == ["day"]
-    assert fake_db.opened == 1
+    assert fake_db.opened >= 2  # 认知注入 1 次 + 近期经历注入若干次
 
     system_prompt = prompts.render_system("chat", **context)
     assert "- 反思一" in system_prompt and ("日" * 300) in system_prompt
