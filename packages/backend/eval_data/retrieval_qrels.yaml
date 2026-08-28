@@ -1,0 +1,36 @@
+# 记忆检索质量评估标注集（Retrieval QRELS）
+#
+# 用途：离线评估 scripts/eval_retrieval.py 的检索质量基线
+#   Recall@k / Precision@k / MRR / Hit@k / NDCG@k
+#
+# 标注约定：
+# - 每条 query 对应一个 character_id（search_hybrid 按角色分区检索）
+# - relevant_ids 为该 query 语义上「应当召回」的记忆 episode ID（事实真相源）
+# - 标注依据：query 是对某段记忆的自然语言询问，经人工/LLM 语义对拍生成
+#
+# 注意：relevant_ids 必须在 memory_episodes 表中真实存在且 materialized=true，
+# 否则该条评估会被脚本跳过并告警（防标注漂移）。
+
+meta:
+  top_k: 10
+  description: "记忆检索基线标注集（示例）"
+
+queries:
+  - character_id: "019f4c52-eeea-731e-bf9e-27d4ef72d04a"
+    query: "昨晚和谁在聊什么，怎么到那么晚还不睡"
+    relevant_ids:
+      - "01a045b1-0930-7c44-a805-94eb7ef22e9d"
+      - "01a045af-2b0c-7044-aa65-78cdfefaed09"
+      - "01a045af-613a-7a29-8da7-6229ab52c252"
+
+  - character_id: "019f4c52-ef04-724f-a6e2-ffb4105b51ad"
+    query: "小春深夜跟我聊了什么，我听到关于奏的什么消息"
+    relevant_ids:
+      - "01a045b1-1954-7508-a9a6-ef58a0b53db8"
+      - "01a045af-48a6-7351-873a-904c2789bc80"
+      - "01a045b0-7b74-7905-8fba-52b79b2acf32"
+
+  - character_id: "019f4c52-ef04-724f-a6e2-ffb4105b51ad"
+    query: "结衣奈在夜里做了什么，谁在家休息"
+    relevant_ids:
+      - "01a045b0-7b65-7469-a9c4-c28a0531043b"
