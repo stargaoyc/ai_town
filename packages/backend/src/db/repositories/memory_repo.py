@@ -77,6 +77,31 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def search_shared_with(
+        self,
+        character_id: UUID,
+        other_id: UUID,
+        limit: int = 8,
+    ) -> list[MemoryEpisode]:
+        """检索与另一角色共同经历的记忆（related_characters 含对方）
+
+        结构化相遇升级（"关系记忆注入"）：chat_with 对话上下文注入双方历史
+        共同经历，实现「还记得上次…」。GIN 索引 idx_mem_related 覆盖
+        related_characters 的 @> 查询（仅本角色分区内，无跨分区扫描）。
+        按时间倒序取最近共同经历。
+        """
+        stmt = (
+            select(MemoryEpisode)
+            .where(
+                MemoryEpisode.character_id == character_id,
+                MemoryEpisode.related_characters.contains([other_id]),
+            )
+            .order_by(MemoryEpisode.timestamp.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     async def get_by_character_and_time_range(
         self,
         character_id: UUID,

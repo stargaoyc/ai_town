@@ -4,18 +4,13 @@
 - 世界当前状态查询
 - 单 Tick 世界事件查询
 - Tick 区间世界事件查询（事件时间线）
+
+业务编排见 src/services/world_service.py（P-2：内联编排下沉 Service）。
 """
 
-import json
-
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
-from structlog import get_logger
 
-from src.db.models import WorldEvent
-from src.db.repositories import CharacterRepository, WorldEventRepository
 from src.db.session import db
-from src.runtime import get_redis, get_world_engine
 from src.schemas.world import (
     WorldEventEntryOut,
     WorldEventOut,
@@ -23,8 +18,6 @@ from src.schemas.world import (
     WorldEventsRangeOut,
     WorldStateOut,
 )
-
-logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["world"])
 
@@ -36,39 +29,13 @@ async def get_world_state() -> WorldStateOut:
     Returns:
         世界当前状态（与前端 WorldState 接口对齐）
     """
-    redis = get_redis()
-    if not redis:
+    from src.services.world_service import WorldService
+
+    async with db.session() as session:
+        state = await WorldService(session).get_world_state()
+    if state is None:
         raise HTTPException(status_code=503, detail="Redis not connected")
-
-    state = await redis.hgetall("world:state")
-    tick_id = int(state.get("tick_id", 0)) if state.get("tick_id") else 0
-    world_time_raw = str(state.get("world_time", ""))
-    # 兼容历史数据：world_time 可能被 JSON 序列化过两次
-    try:
-        world_time = json.loads(world_time_raw)
-        if not isinstance(world_time, str):
-            world_time = world_time_raw
-    except (json.JSONDecodeError, TypeError):
-        world_time = world_time_raw
-    weather = str(state.get("weather", "sunny"))
-    temperature = state.get("temperature")
-
-    # 查询活跃角色数
-    active_characters = 0
-    try:
-        async with db.session() as session:
-            repo = CharacterRepository(session)
-            active_characters = len(await repo.get_active_characters())
-    except Exception as e:
-        logger.warning("world_state_active_characters_failed", error=str(e))
-
-    return WorldStateOut(
-        tick_id=tick_id,
-        world_time=world_time,
-        weather=weather,
-        temperature=int(temperature) if temperature is not None else None,
-        active_characters=active_characters,
-    )
+    return WorldStateOut(**state)
 
 
 @router.get("/world/events/{tick_id}", response_model=WorldEventsOut)
@@ -82,22 +49,16 @@ async def get_world_events(tick_id: int) -> WorldEventsOut:
         该 Tick 的所有世界事件（差分记录）
     """
     async with db.session() as session:
-        repo = WorldEventRepository(session)
-        events = await repo.get_by_tick(tick_id)
+        from src.services.world_service import WorldService
 
-    if not events:
+        events = await WorldService(session).get_world_events(tick_id)
+
+    if events is None:
         raise HTTPException(status_code=404, detail="No events found for this tick")
 
     return WorldEventsOut(
         tick_id=tick_id,
-        events=[
-            WorldEventOut(
-                event_type=e.event_type,
-                payload=e.payload,
-                created_at=e.created_at.isoformat(),
-            )
-            for e in events
-        ],
+        events=[WorldEventOut(**e) for e in events],
     )
 
 
@@ -119,37 +80,17 @@ async def get_world_events_range(
     Returns:
         世界事件列表（按 tick_id, created_at 排序）
     """
-    world_engine = get_world_engine()
-    if end_tick == 0 and world_engine:
-        end_tick = world_engine.tick_id
-
     async with db.session() as session:
-        stmt = (
-            select(WorldEvent)
-            .where(
-                WorldEvent.tick_id >= start_tick,
-                WorldEvent.tick_id <= end_tick,
-            )
-            .order_by(WorldEvent.tick_id, WorldEvent.created_at)
-            .limit(limit)
-        )
-        if event_type:
-            stmt = stmt.where(WorldEvent.event_type == event_type)
+        from src.services.world_service import WorldService
 
-        result = await session.execute(stmt)
-        events = list(result.scalars())
+        events = await WorldService(session).get_world_events_range(
+            start_tick=start_tick,
+            end_tick=end_tick,
+            event_type=event_type,
+            limit=limit,
+        )
 
     return WorldEventsRangeOut(
-        data=[
-            WorldEventEntryOut(
-                id=str(e.id),
-                tick_id=e.tick_id,
-                event_type=e.event_type,
-                event_key=e.event_key,
-                payload=e.payload,
-                created_at=e.created_at.isoformat() if e.created_at else None,
-            )
-            for e in events
-        ],
+        data=[WorldEventEntryOut(**e) for e in events],
         total=len(events),
     )

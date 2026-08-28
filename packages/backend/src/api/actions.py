@@ -3,6 +3,8 @@
 包含：
 - Action 列表查询
 - 单个 Action 详情查询
+
+业务编排见 src/services/action_service.py（P-2：内联编排下沉 Service）。
 """
 
 from typing import Any
@@ -11,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.runtime import get_registry
 from src.schemas.api_out import ActionDefOut, ActionDefsListOut
+from src.services.action_service import ActionService
 
 router = APIRouter(prefix="/api/v1", tags=["actions"])
 
@@ -26,21 +29,8 @@ async def list_actions() -> dict[str, Any]:
     if not registry:
         raise HTTPException(status_code=503, detail="Action registry not initialized")
 
-    actions = registry.list_all()
-    return {
-        "data": [
-            {
-                "id": a.id,
-                "name": a.name,
-                "description": a.description,
-                "category": a.category.value if hasattr(a.category, "value") else str(a.category),
-                "duration_minutes": a.duration_minutes,
-                "energy_cost": a.energy_cost,
-            }
-            for a in actions
-        ],
-        "total": len(actions),
-    }
+    actions = ActionService(registry).list_actions()
+    return {"data": actions, "total": len(actions)}
 
 
 @router.get("/actions/{action_id}", response_model=ActionDefOut)
@@ -57,22 +47,7 @@ async def get_action(action_id: str) -> dict[str, Any]:
     if not registry:
         raise HTTPException(status_code=503, detail="Action registry not initialized")
 
-    action = registry.get(action_id)
+    action = ActionService(registry).get_action(action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
-
-    return {
-        "id": action.id,
-        "name": action.name,
-        "description": action.description,
-        "category": action.category.value if hasattr(action.category, "value") else str(action.category),
-        "scene": action.scene,
-        "duration_minutes": action.duration_minutes,
-        "allow_dynamic_duration": action.allow_dynamic_duration,
-        "energy_cost": action.energy_cost,
-        "satiety_cost": action.satiety_cost,
-        "social_cost": action.social_cost,
-        "money_cost": action.money_cost,
-        "money_gain": action.money_gain,
-        "phone_battery_cost": action.phone_battery_cost,
-    }
+    return action

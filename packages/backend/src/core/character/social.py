@@ -209,6 +209,20 @@ class SocialMixin:
         state = context["state"]
         world = context["world"]
 
+        # 检索双方共同经历（关系记忆注入）：related_characters 含对方即「共同经历」，
+        # 按时间倒序取最近 3 条，注入对话 prompt 让角色「还记得上次…」
+        shared_memories: list[str] = []
+        try:
+            async with db.session() as mem_session:
+                mem_repo = MemoryRepository(mem_session)
+                rows = await mem_repo.search_shared_with(character_id, target_id, limit=3)
+                shared_memories = [r.content[:60] for r in rows if r.content]
+        except Exception as e:
+            logger.debug("chat_shared_memory_query_failed_continue", error=str(e))
+        shared_memory_block = (
+            "你们之间的共同经历：\n" + "\n".join(f"- {m}" for m in shared_memories) if shared_memories else ""
+        )
+
         # 逐轮生成；任一句生成/解析失败即整场失败，调用方降级为 wait（保持既有语义）
         rounds = min(settings.chat_with_max_rounds, _CHAT_MAX_ROUNDS)
         transcript_lines: list[str] = []
@@ -224,6 +238,7 @@ class SocialMixin:
                         state=state,
                         world=world,
                         transcript="\n".join(transcript_lines),
+                        shared_memory_block=shared_memory_block,
                     )
                     if line is None:
                         logger.error(
@@ -379,6 +394,7 @@ class SocialMixin:
         state: dict[str, Any],
         world: dict[str, Any],
         transcript: str,
+        shared_memory_block: str = "",
     ) -> str | None:
         """生成多轮对话中的单句台词；解析失败返回 None，渲染/LLM 异常向上抛"""
         if transcript:
@@ -402,6 +418,7 @@ class SocialMixin:
             strength=int(rel_strength),
             topic_hint=topic_hint,
             transcript_block=transcript_block,
+            shared_memory_block=shared_memory_block,
         )
         raw = await self.llm.chat(prompt, model="chat", system_prompt=self.prompts.render("safety"))
         return _parse_chat_line(raw)
