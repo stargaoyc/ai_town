@@ -94,8 +94,8 @@ def check_cors_origins() -> None:
 
 
 # 需要与 EMBEDDING_DIM 对齐的向量列：memory_episodes 自迁移 0005、
-# reflections 自迁移 0015 均为 halfvec(2048)；漏掉任一列都会把错配
-# 潜伏到该列首次向量写入/检索才暴露
+# reflections 自迁移 0015 建列，0021 起维度由 settings.embedding_dim 驱动；
+# 漏掉任一列都会把错配潜伏到该列首次向量写入/检索才暴露
 _VECTOR_COLUMNS: tuple[tuple[str, str], ...] = (
     ("memory_episodes", "embedding"),
     ("reflections", "embedding"),
@@ -105,8 +105,9 @@ _VECTOR_COLUMNS: tuple[tuple[str, str], ...] = (
 async def check_embedding_dim(session_factory: Callable[[], AbstractAsyncContextManager[Any]]) -> None:
     """启动时校验 EMBEDDING_DIM 声明与全部向量列物理维度一致（R4-H7 纵深防御）
 
-    ORM 已钉死 HALFVEC(2048) 与迁移链对齐；本检查拦截「改了 env 没配套迁移」
-    的错配——否则问题会潜伏到首次向量写入/检索才以运行时报错暴露。
+    ORM 模型与迁移链由 settings.embedding_dim（.env EMBEDDING_DIM）驱动，
+    单一真相源；本检查拦截「改了 env 没配套迁移」的错配——否则问题会潜伏到
+    首次向量写入/检索才以运行时报错暴露。
     halfvec 的维度记录在列 typmod 上（information_schema 对其返回 NULL），
     必须经 pg_attribute + format_type 读取。
     """
@@ -133,7 +134,8 @@ async def check_embedding_dim(session_factory: Callable[[], AbstractAsyncContext
     if mismatches:
         raise RuntimeError(
             f"EMBEDDING_DIM={settings.embedding_dim} 与物理列不一致：{'；'.join(mismatches)}——"
-            "请将 .env 的 EMBEDDING_DIM 改回 2048 或执行配套迁移，二者必须一致"
+            f"请将 .env 的 EMBEDDING_DIM 设为物理列维度或执行配套迁移（0021_embedding_dim_sync）"
+            "对齐到目标维度，二者必须一致"
         )
     logger.info("embedding_dim_check_passed", dim=settings.embedding_dim, columns=len(_VECTOR_COLUMNS))
 

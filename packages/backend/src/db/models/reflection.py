@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
+from src.config import settings
 from src.db.base import Base
 
 
@@ -52,7 +53,7 @@ class Reflection(Base):
     # 0016 迁移补建（R4-M1：文档声称存在但从未创建）
     __table_args__ = (Index("idx_refl_char_time", "character_id", created_at.desc()),)
     embedding: Mapped[list[float] | None] = mapped_column(
-        HALFVEC(2048),
+        HALFVEC(settings.embedding_dim),
         nullable=True,
         comment="语义向量（保存时即时生成；失败留 NULL，检索回退 recency 的文档化退化）",
     )
