@@ -70,6 +70,31 @@ DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后
 # 原始输出记 warning 日志供排查
 REPLY_EXTRACTION_FALLBACK = "（未能完全理解，换个说法试试）"
 
+# 出站回复过滤（审查 安全-05）：LLM 输出→用户的单向路径此前零过滤。
+# 角色可能泄露内部标识（UUID/字段名）或残留工程痕迹，统一在此剥离。
+_OUTBOUND_LEAK_PATTERNS: tuple[tuple[str, str], ...] = (
+    # UUID 形态（character_id / memory id 等内部标识）
+    ("uuid", r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"),
+    # 内部字段名泄露（user_id / character_id / action_id / tick_id）
+    ("field_name", r"\b(user_id|character_id|action_id|tick_id|conversation_id|episode_id)\b"),
+    # JSON 字段残留（"response": "xxx" 等未被解析干净的 blob）
+    ("json_key", r'["\u201c](?:response|emotion|action)["\u201d]\s*[:：]'),
+)
+
+
+def _filter_outbound_reply(text: str) -> str:
+    """剥离出站回复中的内部标识与工程痕迹（审查 安全-05）
+
+    逐条匹配泄露模式并以中性占位替换。仅做剥离不做重写——
+    保持语义完整性的前提下移除不可读的工程痕迹。
+    """
+    import re
+
+    cleaned = text
+    for desc, pattern in _OUTBOUND_LEAK_PATTERNS:
+        cleaned = re.sub(pattern, f"[{desc}]", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
 # 群聊智能回复各分支的回复概率（互斥分支非叠加，最终回复率为各触发路径的组合上界）
 GROUP_REPLY_PROBABILITY_CAP = 0.7  # 疑问句启发式回复概率
 GROUP_REPLY_EMOTION_PROBABILITY = 0.5  # 情绪句启发式回复概率
@@ -881,6 +906,8 @@ class MessageService:
             # chat.yaml 要求 LLM 输出 JSON：{"response", "emotion", "action"}
             # 这里容错解析：优先提取 JSON 中的 response 字段；解析失败则直接使用原文
             reply_text = self._extract_chat_response(response)
+            # 出站过滤：剥离内部标识泄露（安全-05）
+            reply_text = _filter_outbound_reply(reply_text)
 
             # 持久化真实 token 用量（A-7：预算/持久化/指标单轨，杜绝估算值）
             return reply_text, usage.total_tokens, usage.cost, None

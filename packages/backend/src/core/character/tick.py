@@ -633,11 +633,20 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
 
         # ReAct 模式：如果有前序工具调用结果，加入 Prompt 让 LLM 基于结果推理
         if tool_observations:
+            from src.security.prompt_guard import PromptGuard
+
+            guard = PromptGuard()
             obs_lines = []
             for i, obs in enumerate(tool_observations, 1):
                 success_tag = "成功" if obs.get("success") else "失败"
                 # 失败观察可能只有 error（如缺 tool_name 的合成观察），回退展示原因
                 result_str = str(obs.get("result") or obs.get("error") or "")[:800]
+                # 二阶注入防护（审查 安全-04）：工具输出可能携带恶意指令文本，
+                # 直接拼入观察会注入后续决策 prompt。检测到注入模式时以中性占位
+                # 替代，不让工具输出改变 LLM 决策意图。
+                safe_result, _pattern = guard.check_injection(result_str)
+                if not safe_result:
+                    result_str = "[检测到潜在注入内容，已屏蔽]"
                 obs_lines.append(
                     f"<observation>{i}. 调用 {obs['tool_name']}({obs.get('tool_args', {})}) "
                     f"[{success_tag}]\n   结果: {result_str}</observation>"

@@ -225,8 +225,9 @@ class TestSearchHybrid:
         target = [r for r in rows if r["content"] == "三个月前的重要事件"]
         assert target, "老记忆必须仍可召回"
         final = float(target[0]["final_score"])
-        # sim≈1 时 base≈1.05；300 天因子 ≈0.250034 -> final ≈0.2625
-        assert 0.25 <= final <= 0.28
+        # sim≈1、imp=9 时 base = 0.6 + 9×0.25 = 2.85；300 天因子 ≈0.250034
+        # -> final ≈ 0.7125。断言「不低于基准的 25%」语义（与权重无关的衰减下限）
+        assert 0.70 <= final <= 0.73
 
     async def test_fresh_memory_full_score_no_penalty(
         self, it_session: AsyncSession, memory_character: Character

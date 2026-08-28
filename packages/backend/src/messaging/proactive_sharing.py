@@ -39,6 +39,7 @@ from src.db.repositories import (
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
+from src.messaging.service import _filter_outbound_reply
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -386,7 +387,7 @@ class ProactiveSharingService:
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
                 return None
-            return content[:500]  # 截断超长内容
+            return _filter_outbound_reply(content[:500])  # 截断超长内容 + 出站过滤
         except Exception as e:
             logger.error(
                 "share_content_generation_failed",
@@ -429,7 +430,7 @@ class ProactiveSharingService:
             content = content.strip().strip('"').strip("'")
             if len(content) < 5:
                 return None
-            return content[:500]
+            return _filter_outbound_reply(content[:500])
         except Exception as e:
             logger.error(
                 "routine_content_generation_failed",

@@ -70,6 +70,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "llm_params": {"item_id": "商品 ID", "quantity": "购买数量（默认 1）"},
         "required_params": ["item_id"],
         "injected_params": {"current_money": "money", "current_inventory": "inventory"},
+        "param_specs": {"quantity": {"type": int, "min": 1, "max": 99}},
         "state_mutating": True,
     },
     "shop.sell_item": {
@@ -78,6 +79,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "llm_params": {"item_id": "商品 ID", "quantity": "出售数量（默认 1）"},
         "required_params": ["item_id"],
         "injected_params": {"current_money": "money", "current_inventory": "inventory"},
+        "param_specs": {"quantity": {"type": int, "min": 1, "max": 99}},
         "state_mutating": True,
     },
     "shop.get_shop_categories": {
@@ -95,6 +97,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "llm_params": {"query": "查询关键词（空格分隔）", "category": "可选类别过滤", "limit": "返回数量（默认 5）"},
         "required_params": ["query"],
         "injected_params": {},
+        "param_specs": {"limit": {"type": int, "min": 1, "max": 20}},
         "state_mutating": False,
     },
     "knowledge.list_categories": {
@@ -134,6 +137,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "llm_params": {"target_id": "目标角色 ID", "conflict_type": "冲突类型"},
         "required_params": ["target_id", "conflict_type"],
         "injected_params": {"current_relation_strength": "_relation_strength_with_target"},
+        "param_specs": {"conflict_type": {"enum": ["argument", "misunderstanding", "betrayal"]}},
         "state_mutating": True,
     },
     # ---------- 世界查询工具（world，只读）----------
@@ -184,6 +188,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "llm_params": {"keyword": "搜索关键词", "limit": "返回数量，默认 5"},
         "required_params": ["keyword"],
         "injected_params": {"character_id": "_character_id"},
+        "param_specs": {"limit": {"type": int, "min": 1, "max": 20}},
         "state_mutating": False,
     },
     # ---------- 创意生成工具（media）----------
@@ -207,6 +212,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "required_params": ["prompt"],
         "injected_params": {"character_id": "_character_id"},
+        "param_specs": {"frames": {"type": int, "min": 1, "max": 600}},
         "state_mutating": False,
     },
 }
@@ -354,6 +360,10 @@ class ToolRegistry:
         if missing:
             return {"success": False, "error": f"缺少必填参数: {', '.join(missing)}", "result": None}
 
+        invalid = _validate_param_types(meta, args)
+        if invalid:
+            return {"success": False, "error": f"参数校验失败: {'; '.join(invalid)}", "result": None}
+
         # 合并 LLM 参数与注入参数
         final_args = dict(args)
         injected = self._resolve_injected_params(meta["injected_params"], context)
@@ -458,6 +468,10 @@ class ToolRegistry:
         if missing:
             return {"success": False, "error": f"缺少必填参数: {', '.join(missing)}", "result": None}
 
+        invalid = _validate_param_types(meta, args)
+        if invalid:
+            return {"success": False, "error": f"参数校验失败: {'; '.join(invalid)}", "result": None}
+
         # 合并 LLM 参数
         final_args = dict(args)
 
@@ -493,6 +507,38 @@ def _missing_required_params(meta: dict[str, Any], args: dict[str, Any]) -> list
         if value is None or (isinstance(value, str) and not value.strip()):
             missing.append(name)
     return missing
+
+
+def _validate_param_types(meta: dict[str, Any], args: dict[str, Any]) -> list[str]:
+    """校验 LLM 提供的参数类型/范围/枚举（审查 LLM-04）
+
+    读取可选的 param_specs 元数据：{"param": {"type": int|float|str,
+    "min"/"max": 数值边界, "enum": 合法取值列表}}。未声明 spec 的参数不做
+    校验（向后兼容）。返回违规描述列表（空列表 = 通过）。幻觉出的
+    quantity=-5 或 conflict_type="foo" 在此被拦截，避免带病进入工具函数。
+    """
+    errors: list[str] = []
+    specs = meta.get("param_specs", {})
+    for name, spec in specs.items():
+        if name not in args or args[name] is None:
+            continue
+        value = args[name]
+        param_type = spec.get("type")
+        if param_type is not None and not isinstance(value, param_type):
+            errors.append(f"{name}: 期望 {param_type.__name__} 类型，实为 {type(value).__name__}")
+            continue
+        if param_type is int and isinstance(value, bool):
+            # bool 是 int 子类，quantity=True 不应被当作 1
+            errors.append(f"{name}: 期望整数，实为布尔值")
+            continue
+        if isinstance(value, int) and not isinstance(value, bool):
+            if "min" in spec and value < spec["min"]:
+                errors.append(f"{name}: 不能小于 {spec['min']}（实为 {value}）")
+            if "max" in spec and value > spec["max"]:
+                errors.append(f"{name}: 不能大于 {spec['max']}（实为 {value}）")
+        if "enum" in spec and value not in spec["enum"]:
+            errors.append(f"{name}: 非法取值 {value!r}（可选 {spec['enum']}）")
+    return errors
 
 
 def list_all_tool_names() -> list[str]:

@@ -41,8 +41,11 @@ logger = get_logger()
 # 不变量静默破坏。sim_score/importance/timestamp 为外层 SELECT 的列名，
 # 两处查询的候选 CTE 均以同名输出这些列，故可安全共享。
 # GREATEST(0, ·) 钳制时钟回拨（round-3 L1）。
+# importance 权重 0.25（审查 记忆-03）：原 0.05 时 importance 1-10 仅贡献
+# 0.45 分差而 sim 单项贡献 0.6，重要性对排序近乎无效；0.25 使 importance
+# 10 分差 2.25，与语义相似度形成有效平衡（配合 offline 评测管线校准）。
 _HYBRID_SCORE_SQL = (
-    "(sim_score * 0.6 + importance * 0.05)"
+    "(sim_score * 0.6 + importance * 0.25)"
     " * (0.25 + 0.75 * exp(- GREATEST(0,"
     " EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0))"
 )
