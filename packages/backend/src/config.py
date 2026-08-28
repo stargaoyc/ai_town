@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 24
     api_key: str | None = None
+    # 静态 API Key 绑定的 RBAC 角色（审查 §6 安全-02）：静态 Key 是部署期
+    # 密钥，默认 admin 供运维使用；发放给只读监控或受限调用方时应显式下调
+    # 为 operator/viewer。取值见 src/auth/rbac.py 的 ROLE_* 常量。
+    api_key_role: str = "admin"
     admin_username: str = "admin"
     admin_password: str = "admin123"
     # Alertmanager webhook 回流鉴权 token（R4-M2）：未配置时告警端点返回 403，

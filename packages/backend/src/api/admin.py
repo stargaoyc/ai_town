@@ -492,7 +492,7 @@ async def delete_character(
     logger.info(
         "admin_character_deleted",
         character_id=str(character_id),
-        operator=user.get("username"),
+        operator=user.get("user_id"),
     )
 
     return {

@@ -23,6 +23,7 @@ from src.api.characters import router as characters_router
 from src.api.memory import AdminOrOperator
 from src.api.memory import router as memory_router
 from src.auth import create_token
+from src.auth.rbac import principal_with_role
 from src.config import settings
 from src.db.session import db as db_singleton
 
@@ -160,27 +161,29 @@ def _request_with_headers(headers: dict[str, str]) -> Request:
     )
 
 
-PRINCIPAL_DEPS = [characters_module.principal_with_role, memory_module.principal_with_role]
+PRINCIPAL_DEPS = [principal_with_role]
 
 
-@pytest.mark.parametrize("principal_dep", PRINCIPAL_DEPS, ids=["characters", "memory"])
+@pytest.mark.parametrize("principal_dep", PRINCIPAL_DEPS, ids=["rbac"])
 async def test_principal_with_role_extracts_jwt_role(principal_dep: Any) -> None:
     token = create_token("user-a", claims={"role": "operator"})
     principal = await principal_dep(_request_with_headers({"authorization": f"Bearer {token}"}))
     assert principal == {"user_id": "user-a", "auth_method": "jwt", "role": "operator"}
 
 
-@pytest.mark.parametrize("principal_dep", PRINCIPAL_DEPS, ids=["characters", "memory"])
-async def test_principal_with_role_api_key_has_no_privileged_role(
+@pytest.mark.parametrize("principal_dep", PRINCIPAL_DEPS, ids=["rbac"])
+async def test_principal_with_role_api_key_role_from_settings(
     principal_dep: Any,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    # 静态 Key 角色显式可配（审查 §6 安全-02）：默认 admin，可下调至 operator/viewer
     monkeypatch.setattr(settings, "api_key", "test-static-key")
+    monkeypatch.setattr(settings, "api_key_role", "operator")
     principal = await principal_dep(_request_with_headers({"x-api-key": "test-static-key"}))
-    assert principal == {"user_id": "static", "auth_method": "api_key", "role": "viewer"}
+    assert principal == {"user_id": "static", "auth_method": "api_key", "role": "operator"}
 
 
-@pytest.mark.parametrize("principal_dep", PRINCIPAL_DEPS, ids=["characters", "memory"])
+@pytest.mark.parametrize("principal_dep", PRINCIPAL_DEPS, ids=["rbac"])
 async def test_principal_with_role_rejects_missing_credentials(principal_dep: Any) -> None:
     with pytest.raises(HTTPException) as exc_info:
         await principal_dep(_request_with_headers({}))
@@ -245,12 +248,12 @@ def _find_route(path: str) -> APIRoute:
 
 def test_messages_route_requires_principal_with_role() -> None:
     route = _find_route("/api/v1/characters/{character_id}/messages")
-    assert any(d.call is characters_module.principal_with_role for d in route.dependant.dependencies)
+    assert any(d.call is principal_with_role for d in route.dependant.dependencies)
 
 
 def test_person_memory_route_requires_principal_with_role() -> None:
     route = _find_route("/api/v1/characters/{character_id}/person-memory")
-    assert any(d.call is memory_module.principal_with_role for d in route.dependant.dependencies)
+    assert any(d.call is principal_with_role for d in route.dependant.dependencies)
 
 
 def test_person_memory_list_route_guarded_by_admin_or_operator() -> None:

@@ -34,13 +34,21 @@ def test_generate_key_unique_each_call(manager: APIKeyManager) -> None:
     assert len(keys) == 5
 
 
-def test_generate_key_stores_user_id_and_scopes(manager: APIKeyManager) -> None:
-    key = manager.generate_key("user1", scopes=["read", "write"])
+def test_generate_key_stores_user_id_and_role(manager: APIKeyManager) -> None:
+    key = manager.generate_key("user1", role="operator")
     info = manager.validate_key(key)
     assert info is not None
     assert info["user_id"] == "user1"
-    assert info["scopes"] == ["read", "write"]
+    assert info["role"] == "operator"
     assert "created_at" in info
+
+
+def test_generate_key_defaults_to_viewer(manager: APIKeyManager) -> None:
+    # 最小权限默认：未显式指定角色时按 viewer（rbac.ROLE_VIEWER）
+    key = manager.generate_key("user1")
+    info = manager.validate_key(key)
+    assert info is not None
+    assert info["role"] == "viewer"
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ from structlog import get_logger
 
 from src.auth.api_keys import api_key_manager
 from src.auth.jwt_handler import decode_token
+from src.auth.roles import ROLE_VIEWER
 from src.config import settings
 
 logger = get_logger(__name__)
@@ -49,7 +50,7 @@ async def auth_dependency(request: Request) -> dict[str, Any]:
         request: FastAPI Request 对象
 
     Returns:
-        用户信息 dict: {"user_id": str, "auth_method": "jwt"|"api_key"}
+        用户信息 dict: {"user_id": str, "auth_method": "jwt"|"api_key", "role": str}
 
     Raises:
         HTTPException: 401 当无有效凭证
@@ -64,7 +65,11 @@ async def auth_dependency(request: Request) -> dict[str, Any]:
                 try:
                     payload = decode_token(token)
                     user_id = payload.get("sub") or ""
-                    return {"user_id": str(user_id), "auth_method": "jwt"}
+                    return {
+                        "user_id": str(user_id),
+                        "auth_method": "jwt",
+                        "role": str(payload.get("role", ROLE_VIEWER)),
+                    }
                 except HTTPException:
                     # JWT 无效，降级尝试 API Key
                     pass
@@ -77,6 +82,7 @@ async def auth_dependency(request: Request) -> dict[str, Any]:
             return {
                 "user_id": str(user_info["user_id"]),
                 "auth_method": "api_key",
+                "role": str(user_info["role"]),
             }
 
     # 无有效凭证
@@ -96,14 +102,18 @@ def _validate_api_key(key: str) -> dict[str, Any] | None:
         key: API Key 字符串
 
     Returns:
-        user info dict（含 user_id）或 None
+        user info dict（含 user_id 与 role）或 None
     """
     # 1. 静态配置的 API Key（settings.api_key）
     # 使用 compare_digest 防止时序攻击
     if settings.api_key and secrets.compare_digest(key, settings.api_key):
         return {
             "user_id": "static",
-            "scopes": [],
+            # 角色显式可配（审查 §6 安全-02）：此前写死 scopes=[] 却无人读取，
+            # 既不生效也误导——读者会以为静态 Key 已被限制为无权限。
+            # 静态 Key 是部署期密钥，默认 admin（运维用途），可下调至
+            # operator/viewer 以发放给只读监控或受限调用方。
+            "role": settings.api_key_role,
             "created_at": None,
         }
 

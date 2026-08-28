@@ -9,6 +9,9 @@
 - 内存存储（dict），进程重启后丢失，Phase 4 迁移至数据库
 - 单进程 asyncio 模型下无需加锁
 - 单例模式：模块级 manager 实例供全局使用
+- 权限用 **role** 表达，与 JWT 的 role claim 同源（rbac.ROLE_*）。
+  此前用 scopes 列表，但全库零处读取——「声明了权限却无人校验」比
+  「不声明」更危险，读者会误以为 Key 已被限制（审查 §6 安全-01）。
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from structlog import get_logger
+
+from src.auth.roles import ROLE_VIEWER
 
 logger = get_logger(__name__)
 
@@ -31,12 +36,12 @@ class APIKeyManager:
     def __init__(self) -> None:
         self._keys: dict[str, dict[str, Any]] = {}
 
-    def generate_key(self, user_id: str, scopes: list[str] | None = None) -> str:
+    def generate_key(self, user_id: str, role: str = ROLE_VIEWER) -> str:
         """生成新的 API Key
 
         Args:
             user_id: 关联的用户标识
-            scopes: 权限范围列表（可选）
+            role: 绑定的 RBAC 角色（默认 viewer，最小权限）
 
         Returns:
             `sk-` 前缀的 API Key 字符串
@@ -47,10 +52,10 @@ class APIKeyManager:
 
         self._keys[key] = {
             "user_id": user_id,
-            "scopes": scopes or [],
+            "role": role,
             "created_at": datetime.now(UTC),
         }
-        logger.info("api_key_generated", user_id=user_id, scopes=scopes)
+        logger.info("api_key_generated", user_id=user_id, role=role)
         return key
 
     def validate_key(self, key: str) -> dict[str, Any] | None:
@@ -60,7 +65,7 @@ class APIKeyManager:
             key: API Key 字符串
 
         Returns:
-            key 关联的 info dict（含 user_id/scopes/created_at），无效返回 None
+            key 关联的 info dict（含 user_id/role/created_at），无效返回 None
         """
         info = self._keys.get(key)
         if info is None:

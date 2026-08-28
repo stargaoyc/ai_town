@@ -8,14 +8,14 @@
 """
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import desc, select
 from structlog import get_logger
 
-from src.auth import decode_token, get_current_user
+from src.auth.rbac import PrincipalWithRole, is_privileged
 from src.db.models import Character, CharacterState, CharacterStateHistory
 from src.db.repositories import (
     ActionRepository,
@@ -44,22 +44,6 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["characters"])
 
-# 聚合类端点的跨用户读权限角色（round-6 review H1）
-_PRIVILEGED_ROLES = frozenset({"admin", "operator"})
-
-
-async def principal_with_role(request: Request) -> dict[str, Any]:
-    """鉴权并返回带角色的主体：JWT 取 token 的 role claim；API Key 无 RBAC 角色，按最小权限处理"""
-    user = await get_current_user(request)
-    role = "viewer"
-    if user["auth_method"] == "jwt":
-        payload = decode_token(request.headers.get("authorization", "")[7:])
-        role = str(payload.get("role", "viewer"))
-    return {"user_id": user["user_id"], "auth_method": user["auth_method"], "role": role}
-
-
-# 依赖类型别名（规避 B008：不在函数默认参数中调用 Depends）
-PrincipalWithRole = Annotated[dict[str, Any], Depends(principal_with_role)]
 
 # WorldEngine 写入 world:state 的时间字段名是 "world_time"（非 "time"），
 # 字段名不一致会导致 hour 恒回退默认值、开放时段判断失真（P0-2）
@@ -659,7 +643,7 @@ async def get_character_messages(
     Returns:
         消息列表（按时间正序）
     """
-    privileged = user["role"] in _PRIVILEGED_ROLES
+    privileged = is_privileged(user)
     auth_user_id = user["user_id"]
 
     async with db.session() as session:
