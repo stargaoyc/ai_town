@@ -37,6 +37,7 @@ from src.db.repositories import (
     MessageRepository,
 )
 from src.llm import LLMClient, PromptTemplates
+from src.llm.client import bind_cost_scope, clear_cost_scope
 from src.observability.langfuse_tracing import bind_chat_context, clear_chat_context
 from src.observability.tracing import trace_span
 from src.security.prompt_guard import PromptGuard
@@ -439,6 +440,9 @@ class MessageService:
         # 会话上下文仅覆盖主生成段：Langfuse 靠 session_id 把同一会话的
         # trace 归组，缺失时对话在 UI 中无法按用户回溯（R5-L16）
         bind_chat_context(session_id=str(conversation.id), user_id=user_id)
+        # 预算归属绑定到用户：QQ 是公开入口，单用户高频对话不应挤占全局预算
+        # 拖垮整个小镇（审查 §4.8.2 成本-02）
+        bind_cost_scope(character_id=str(character_id), user_id=user_id)
         try:
             reply_text, tokens, cost, error = await self._generate_reply(
                 character=character,
@@ -447,6 +451,7 @@ class MessageService:
                 user_message=content,
             )
         finally:
+            clear_cost_scope()
             clear_chat_context()
 
         # 6. 写入角色回复

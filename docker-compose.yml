@@ -145,7 +145,10 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     depends_on:
-      - backend
+      # 等 backend 报告 healthy 再起：nginx 反代到未就绪的 upstream 会直接 502，
+      # 而 backend 启动要先跑 alembic 迁移（entrypoint），纯 started 条件必然抢跑
+      backend:
+        condition: service_healthy
     ports:
       # R4-H5：回环绑定与其余服务一致——frontend 是唯一公网入口面，
       # 生产经反代/网关暴露时由网关转发到该回环端口

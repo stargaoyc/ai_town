@@ -230,6 +230,13 @@ MEMORY_RETENTION_TOTAL = Counter(
     "记忆治理次数",
     ["kind"],  # compressed / archived / deleted
 )
+# 显著性门禁拦截量（审查 §9.1.1-③）：与 ai_town_memory_write_total 对比即可得出
+# 实际减量比例，用于验证门禁是否把生成速率压到 retention 吞吐可覆盖的区间
+MEMORY_WRITE_GATED_TOTAL = Counter(
+    "ai_town_memory_write_gated_total",
+    "记忆写入被显著性门禁拦截的次数",
+    ["action_id"],
+)
 LLM_SCORE_TOTAL = Counter(
     "ai_town_llm_score_total",
     "LLM 记忆评分调用次数",

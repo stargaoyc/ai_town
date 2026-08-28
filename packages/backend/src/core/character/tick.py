@@ -51,6 +51,7 @@ from src.db.repositories import (
 )
 from src.db.session import db
 from src.llm import LLMClient, PromptTemplates
+from src.llm.client import bind_cost_scope, clear_cost_scope
 from src.memory import EpisodeService, ReflectionService
 from src.modules.town.schema import SceneType
 from src.observability.langfuse_tracing import end_tick_trace, start_tick_trace, trace_character_tick
@@ -59,6 +60,7 @@ from src.observability.metrics import (
     ACTION_EXECUTION_TOTAL,
     CHARACTER_TICK_DURATION,
     CHARACTER_TICK_TOTAL,
+    MEMORY_WRITE_GATED_TOTAL,
 )
 from src.observability.tracing import trace_span
 from src.runtime import get_duration_calculator, get_movement_system, get_scene_loader, get_schedule_system
@@ -228,6 +230,9 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         lock_key = f"{self.LOCK_PREFIX}{character_id}"
         lock_token = uuid4().hex
 
+        # 绑定预算归属：本次 Tick 内全部 LLM 调用计入该角色配额（审查 §4.8.2 成本-02）
+        bind_cost_scope(character_id=str(character_id))
+
         # 尝试获取锁（写入唯一 token，释放时 compare-and-delete 防止误删他人锁）
         acquired = await self.redis.set(lock_key, lock_token, ex=self.LOCK_TTL, nx=True)
         if not acquired:
@@ -252,6 +257,7 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             # 熔断器开启时 LLM 调用必然失败，重试无意义，跳过本角色本周期
             logger.warning("character_tick_skipped_circuit_open", character_id=str(character_id))
         finally:
+            clear_cost_scope()
             renew_stop.set()
             with suppress(asyncio.CancelledError):
                 await watchdog
@@ -324,10 +330,20 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         await self._execute_action(character_id, decision, context, lock_lost=lock_lost)
 
         # 5. 记忆沉淀
+        # H10 闸口（R8-H10b）：_execute_action 在「PG 已提交、Redis 镜像写入前」
+        # 中止时会直接 return，若此处不做自查，其后的记忆与传闻仍会写 PG——
+        # 与 tick.py 中 _execute_action docstring 承诺的「失锁后不再发生任何
+        # PG/Redis 状态写入」相违背，构成跨实例 double-tick（审查 §4.1.3 / §8.1）
+        if lock_lost.is_set():
+            logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
+            return
         await self._memorize(character_id, decision, context)
 
         # 5.5 群体动力学·传闻传播（好友的显著经历 -> 第二手记忆）
         try:
+            if lock_lost.is_set():
+                logger.warning("character_tick_aborted_lock_lost", character_id=str(character_id))
+                return
             await self._propagate_gossip(character_id)
         except Exception as e:
             # 传闻失败不影响 Tick 主流程
@@ -1244,6 +1260,10 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             # 不再被动等待最长一个全量对账周期）
             await self._write_redis_state_with_repair(self.redis, character_id, new_state)
 
+            # 记忆沉淀与显著性门禁需要读取「执行后」状态；context["state"] 是执行前快照，
+            # 不回写会导致移动类记忆记录成旧位置（审查 §4.2.6 附带发现）
+            context["post_state"] = new_state
+
             # 位置变化时经 SceneLoader 单一入口记账（成员名单 + 在场计数缓存）
             old_location = context["state"].get("location")
             new_location = new_state.get("location")
@@ -1329,6 +1349,37 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             return f"{character_name}在{location}{action}。起因是：{reason}"
         return f"{character_name}在{location}{action}。"
 
+    @staticmethod
+    def _should_persist_memory(decision: DecisionResult, context: dict[str, Any], importance: int) -> bool:
+        """记忆写入显著性门禁（审查 §5.3 / §9.1.1-③）
+
+        每 Tick 无条件写 1 条记忆在 24 角色 × 30s 节拍下约合 6.9 万条/日，
+        而 retention 的 LLM 压缩吞吐无法线性扩张，缺口达两个数量级。
+        与其事后清理，不如在源头只保留有信息量的经历。
+
+        放行条件（满足其一即写入）：
+        - 重要度达标（默认 >=4）：有实质内容的动作
+        - 存在同场景他人：社交是小镇的核心价值，即使动作本身低信息量也保留
+        - 发生位置迁移：状态迁移是显式信号，且是后续轨迹回溯的依据
+
+        Args:
+            decision: 决策结果
+            context: 感知环境结果（含执行前 state 与执行后 post_state）
+            importance: 已计算的重要度
+
+        Returns:
+            是否应当写入 MemoryEpisode
+        """
+        if not settings.memory_write_gate_enabled:
+            return True
+        if importance >= settings.memory_write_min_importance:
+            return True
+        if context.get("nearby_characters"):
+            return True
+        old_location = context["state"].get("location")
+        new_location = (context.get("post_state") or {}).get("location")
+        return bool(new_location and old_location != new_location)
+
     @trace_span("memory.write")
     async def _memorize(self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]) -> None:
         """记忆沉淀
@@ -1344,7 +1395,39 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             context: 感知环境结果
         """
         character = context["character"]
-        state = context["state"]
+        # 记忆应记录「执行后」的状态——此前取执行前快照，导致移动类记忆
+        # 记成出发点而非目的地（审查 §4.2.6 附带发现）
+        state = context.get("post_state") or context["state"]
+
+        # P1-7：社交类基础分从 7 降到 5——此前撞上「importance>=7 永久保留」
+        # 策略导致全部社交记忆不可清理；强情绪仍可经下方关键词修正回升，
+        # LLM 评分开启时由其给出更精准的分值；基础分值外置为配置（R6-L16c）
+        base_importance = settings.action_base_importance.get(decision.action, 5)
+        # 如果理由中包含情绪关键词，提升重要性
+        # 情绪关键词列表保持为模块常量（数据而非魔法数），提升值与上限外置为配置。
+        # 只收真实情绪词：此前含「重要」「特别」，而 LLM 给出的理由几乎必然出现
+        # 这类元判断词，导致加成恒等触发、分级失效（审查 §5.3）
+        _EMOTION_KEYWORDS = ["开心", "兴奋", "生气", "难过", "惊讶"]
+        reason_lower = (decision.reason or "").lower()
+        if any(kw in reason_lower for kw in _EMOTION_KEYWORDS):
+            # 上限只做「压」不做「拉」：本就高分（如 explore=8）的动作不被拖低
+            boosted = min(
+                settings.memory_emotion_boost_max_total,
+                base_importance + settings.action_emotion_importance_boost,
+            )
+            base_importance = max(base_importance, boosted)
+        importance = max(1, min(10, base_importance))
+
+        # 显著性门禁：重要度在会话外先行计算，未命中即不开启事务（审查 §5.3）
+        if not self._should_persist_memory(decision, context, importance):
+            MEMORY_WRITE_GATED_TOTAL.labels(action_id=decision.action).inc()
+            logger.debug(
+                "memory_write_gated",
+                character_id=str(character_id),
+                action=decision.action,
+                importance=importance,
+            )
+            return
 
         memory_content = self._build_memory_content(character.name, state, decision)
 
@@ -1356,18 +1439,6 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             # 创建服务实例（reflection 带 redis 供重大事件冷却，round-7 F1）
             episode_service = EpisodeService(self.llm, mem_repo, prompts=self.prompts)
             reflection_service = ReflectionService(self.llm, mem_repo, ref_repo, prompts=self.prompts, redis=self.redis)
-
-            # P1-7：社交类基础分从 7 降到 5——此前撞上「importance>=7 永久保留」
-            # 策略导致全部社交记忆不可清理；强情绪仍可经下方关键词修正回升，
-            # LLM 评分开启时由其给出更精准的分值；基础分值外置为配置（R6-L16c）
-            base_importance = settings.action_base_importance.get(decision.action, 5)
-            # 如果理由中包含情绪关键词，提升重要性
-            # 情绪关键词列表保持为模块常量（数据而非魔法数），提升值外置为配置
-            _EMOTION_KEYWORDS = ["开心", "兴奋", "生气", "难过", "惊讶", "重要", "特别"]
-            reason_lower = (decision.reason or "").lower()
-            if any(kw in reason_lower for kw in _EMOTION_KEYWORDS):
-                base_importance = min(10, base_importance + settings.action_emotion_importance_boost)
-            importance = max(1, min(10, base_importance))
 
             # 群体动力学·共同经历：同场景在场者写入 related_characters，
             # 激活预留字段供「共同经历查询/传闻溯源」使用

@@ -26,6 +26,8 @@ from typing import Any
 from redis.asyncio import Redis
 from structlog import get_logger
 
+from src.config import settings
+
 logger = get_logger(__name__)
 
 # Redis key 模板与字段
@@ -53,6 +55,102 @@ local new_cost = redis.call('HINCRBYFLOAT', key, 'cost', cost)
 local new_count = redis.call('HINCRBY', key, 'count', 1)
 redis.call('EXPIRE', key, ttl)
 return {0, new_tokens, new_cost, new_count}
+"""
+
+# === 预留 / 结算 / 释放（审查 §4.8.2 成本-01 + 成本-02）===
+#
+# LLM 调用的费用只有调用结束后才知道，因此「调用前检查 + 调用后记账」两步
+# 天然无法原子：并发下 N 个调用可同时通过检查，实际支出可达 N × 单次成本。
+# 正确做法是「预留-结算」：调用前把预估费用计入 reserved（在途额度），
+# 使 已用 + 在途 <= 预算 成为硬不变量；调用结束按实际费用结算，
+# 失败则释放预留——不释放会让在途额度永久侵蚀预算。
+
+# ARGV=[预估费用, 全局预算, 分域预算(<=0 表示不做分域限制), ttl]
+# KEYS[2] 在无分域时传入 KEYS[1]，配合 sbudget<=0 被跳过，保证键声明合法
+_LUA_RESERVE = """
+local gkey = KEYS[1]
+local skey = KEYS[2]
+local cost = tonumber(ARGV[1])
+local gbudget = tonumber(ARGV[2])
+local sbudget = tonumber(ARGV[3])
+local ttl = tonumber(ARGV[4])
+
+local function inuse(key)
+  local c = tonumber(redis.call('HGET', key, 'cost') or '0')
+  local r = tonumber(redis.call('HGET', key, 'reserved') or '0')
+  return c, r
+end
+
+local gc, gr = inuse(gkey)
+if gc + gr + cost > gbudget then
+  return {1, gc, gr, 'global'}
+end
+if sbudget > 0 then
+  local sc, sr = inuse(skey)
+  if sc + sr + cost > sbudget then
+    return {1, sc, sr, 'scope'}
+  end
+end
+
+redis.call('HINCRBYFLOAT', gkey, 'reserved', cost)
+redis.call('EXPIRE', gkey, ttl)
+if sbudget > 0 then
+  redis.call('HINCRBYFLOAT', skey, 'reserved', cost)
+  redis.call('EXPIRE', skey, ttl)
+end
+return {0, gc, gr + cost, 'ok'}
+"""
+
+# ARGV=[预估费用, 实际费用, tokens, 分域预算(<=0 跳过), ttl]
+_LUA_SETTLE = """
+local gkey = KEYS[1]
+local skey = KEYS[2]
+local estimated = tonumber(ARGV[1])
+local actual = tonumber(ARGV[2])
+local tokens = tonumber(ARGV[3])
+local sbudget = tonumber(ARGV[4])
+local ttl = tonumber(ARGV[5])
+
+redis.call('HINCRBYFLOAT', gkey, 'reserved', -estimated)
+local gc = redis.call('HINCRBYFLOAT', gkey, 'cost', actual)
+redis.call('HINCRBY', gkey, 'tokens', tokens)
+redis.call('HINCRBY', gkey, 'count', 1)
+redis.call('EXPIRE', gkey, ttl)
+if sbudget > 0 then
+  redis.call('HINCRBYFLOAT', skey, 'reserved', -estimated)
+  redis.call('HINCRBYFLOAT', skey, 'cost', actual)
+  redis.call('HINCRBY', skey, 'tokens', tokens)
+  redis.call('HINCRBY', skey, 'count', 1)
+  redis.call('EXPIRE', skey, ttl)
+end
+return {0, tonumber(gc)}
+"""
+
+# 释放预留并钳制下限为 0：重复释放或浮点漂移都不允许把 reserved 压成负数
+_LUA_RELEASE = """
+local gkey = KEYS[1]
+local skey = KEYS[2]
+local estimated = tonumber(ARGV[1])
+local sbudget = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+
+local function release(key)
+  local r = tonumber(redis.call('HGET', key, 'reserved') or '0')
+  if r <= 0 then
+    r = 0
+  else
+    r = r - estimated
+    if r < 0 then r = 0 end
+  end
+  redis.call('HSET', key, 'reserved', tostring(r))
+  redis.call('EXPIRE', key, ttl)
+  return r
+end
+
+local gr = release(gkey)
+local sr = 0
+if sbudget > 0 then sr = release(skey) end
+return {0, gr, sr}
 """
 
 
@@ -106,17 +204,18 @@ class BudgetManager:
         """获取当日累计使用量
 
         Returns:
-            ``{"tokens": int, "cost": float, "count": int}``，
-            key 不存在时各字段为 0。
+            ``{"tokens": int, "cost": float, "count": int, "reserved": float}``，
+            key 不存在时各字段为 0。reserved 为在途预留额度（未结算部分）。
         """
         key = self._today_key()
         raw = await self.redis.hgetall(key)
         if not raw:
-            return {"tokens": 0, "cost": 0.0, "count": 0}
+            return {"tokens": 0, "cost": 0.0, "count": 0, "reserved": 0.0}
         return {
             "tokens": int(raw.get("tokens", 0)),
             "cost": float(raw.get("cost", 0.0)),
             "count": int(raw.get("count", 0)),
+            "reserved": float(raw.get("reserved", 0.0)),
         }
 
     async def record_usage(self, tokens: int, cost: float) -> dict[str, Any]:
@@ -169,7 +268,9 @@ class BudgetManager:
             }``
         """
         usage = await self.get_today_usage()
-        used = usage["cost"]
+        # 在途预留额度必须计入已用：否则并发调用看到的是结算前的旧值，
+        # 预留机制的意义正是让「已用 + 在途」一起参与判定（审查 §4.8.2）
+        used = usage["cost"] + usage["reserved"]
         budget = self.daily_budget_usd
         remaining = budget - used
         ratio = used / budget if budget > 0 else 0.0
@@ -184,6 +285,8 @@ class BudgetManager:
             "exceeded": exceeded,
             "warning": warning,
             "tier": tier,
+            "settled": usage["cost"],
+            "reserved": usage["reserved"],
         }
 
     async def check_and_record(self, tokens: int, cost: float) -> None:
@@ -233,6 +336,139 @@ class BudgetManager:
                 budget=self.daily_budget_usd,
                 remaining=self.daily_budget_usd - cost_total,
             )
+
+    # === 预留 / 结算 / 释放 ===
+
+    @staticmethod
+    def _scope_key(scope: str, identifier: str) -> str:
+        """分域计费键：llm:cost:{date}:{scope}:{identifier}"""
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        return f"llm:cost:{today}:{scope}:{identifier}"
+
+    @staticmethod
+    def _scope_budget(scope: str) -> float:
+        """分域预算上限；<=0 表示该维度不限制"""
+        if scope == "char":
+            return float(settings.llm_daily_budget_per_character_usd)
+        if scope == "user":
+            return float(settings.llm_daily_budget_per_user_usd)
+        return 0.0
+
+    async def reserve(
+        self,
+        estimated_cost: float,
+        scope: str | None = None,
+        identifier: str | None = None,
+    ) -> float:
+        """原子预留额度（审查 §4.8.2 成本-01 / 成本-02）
+
+        把预估费用计入 reserved，使「已用 + 在途 <= 预算」成为硬不变量。
+        分域维度（角色/用户）在同一脚本内一并校验，避免两个维度各自原子、
+        合起来仍可击穿的窗口。
+
+        Args:
+            estimated_cost: 预估费用 USD
+            scope: 分域类型，"char"（角色）/ "user"（用户）；None 表示仅校验全局
+            identifier: 分域标识（角色 ID / 用户 ID）
+
+        Returns:
+            实际预留的金额（等于 estimated_cost）
+
+        Raises:
+            BudgetExceeded: 全局或分域额度不足
+        """
+        gkey = self._today_key()
+        sbudget = self._scope_budget(scope) if scope else 0.0
+        skey = self._scope_key(scope, identifier or "") if (scope and sbudget > 0) else gkey
+        result = await self.redis.eval(
+            _LUA_RESERVE,
+            2,
+            gkey,
+            skey,
+            str(float(estimated_cost)),
+            str(float(self.daily_budget_usd)),
+            str(float(sbudget)),
+            _KEY_TTL_SECONDS,
+        )
+        flag = int(result[0])
+        if flag == 1:
+            used = float(result[1]) + float(result[2])
+            kind = str(result[3])
+            budget = self.daily_budget_usd if kind == "global" else sbudget
+            logger.warning(
+                "budget_reserve_rejected",
+                scope=scope or "global",
+                identifier=identifier,
+                kind=kind,
+                used=used,
+                budget=budget,
+            )
+            raise BudgetExceeded(used=used, budget=budget, remaining=budget - used)
+        return estimated_cost
+
+    async def settle(
+        self,
+        estimated_cost: float,
+        actual_cost: float,
+        tokens: int,
+        scope: str | None = None,
+        identifier: str | None = None,
+    ) -> dict[str, Any]:
+        """结算一次调用：释放预留额度并计入实际费用
+
+        Args:
+            estimated_cost: 预留时使用的预估费用
+            actual_cost: 实际费用 USD
+            tokens: 实际消耗 token 数
+            scope: 分域类型（与 reserve 保持一致）
+            identifier: 分域标识
+
+        Returns:
+            更新后的全局 usage
+        """
+        gkey = self._today_key()
+        sbudget = self._scope_budget(scope) if scope else 0.0
+        skey = self._scope_key(scope, identifier or "") if (scope and sbudget > 0) else gkey
+        await self.redis.eval(
+            _LUA_SETTLE,
+            2,
+            gkey,
+            skey,
+            str(float(estimated_cost)),
+            str(float(actual_cost)),
+            int(tokens),
+            str(float(sbudget)),
+            _KEY_TTL_SECONDS,
+        )
+        return await self.get_today_usage()
+
+    async def release(
+        self,
+        estimated_cost: float,
+        scope: str | None = None,
+        identifier: str | None = None,
+    ) -> None:
+        """释放预留额度（调用失败路径）
+
+        不释放会让在途额度永久侵蚀可用预算——连续失败即耗尽预算，
+        即使实际分文未花。
+        """
+        gkey = self._today_key()
+        sbudget = self._scope_budget(scope) if scope else 0.0
+        skey = self._scope_key(scope, identifier or "") if (scope and sbudget > 0) else gkey
+        try:
+            await self.redis.eval(
+                _LUA_RELEASE,
+                2,
+                gkey,
+                skey,
+                str(float(estimated_cost)),
+                str(float(sbudget)),
+                _KEY_TTL_SECONDS,
+            )
+        except Exception as e:
+            # 释放失败不能掩盖原始调用异常，仅记录供对账
+            logger.warning("budget_reserve_release_failed", error=str(e))
 
 
 # === 模块级单例 ===

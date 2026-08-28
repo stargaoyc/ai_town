@@ -56,6 +56,11 @@ _PRIORITIZE_KEY = "reconcile:prioritize"
 # 持有者崩溃时最多阻塞下一轮 Tick 5 秒
 _REPAIR_LOCK_TTL = 5
 
+# 基线版本键 TTL（审查 §4.1.3）：此前 redis.set 不带 TTL，键只在删除角色时清理，
+# 角色频繁增删会持续泄漏。取 7 天——远长于 600s 对账周期，重启后基线仍在；
+# 键缺失时回退为「PG 版本即基线」，语义安全。
+_VER_KEY_TTL = 7 * 24 * 3600
+
 
 async def request_character_repair(redis: Redis, character_id: Any) -> None:
     """把角色加入优先修复队列（tick 写 Redis 失败时调用，P1-2）
@@ -220,7 +225,7 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
 
             if not exists:
                 await restore_character_to_redis(redis, pg_state)
-                await redis.set(ver_key, pg_state.version)
+                await redis.set(ver_key, pg_state.version, ex=_VER_KEY_TTL)
                 stats["missing_keys"] += 1
                 stats["repairs"] += 1
                 RECONCILE_DRIFT_TOTAL.labels(kind="missing_key").inc()
@@ -235,7 +240,7 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 # 被判定为「前进」（round-7：集成测试首次运行暴露，此前该路径
                 # 因 conftest 探测缺陷从未真正执行）
                 if rec_ver_raw is None:
-                    await redis.set(ver_key, pg_state.version)
+                    await redis.set(ver_key, pg_state.version, ex=_VER_KEY_TTL)
                 continue
 
             # 版本感知仲裁：PG 在上次对账后发生过写入 → PG 更可信，
@@ -316,7 +321,7 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
 
             # 基线取修复后的版本：redis_to_pg 方向的 +1 是对账自己制造的，
             # 若仍记旧值，下轮会把这次前进误判为 Tick 写入而翻转修复方向（M9）
-            await redis.set(ver_key, baseline_version)
+            await redis.set(ver_key, baseline_version, ex=_VER_KEY_TTL)
             stats["value_drift"] += 1
             stats["repairs"] += 1
             RECONCILE_DRIFT_TOTAL.labels(kind="value_drift").inc()

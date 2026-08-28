@@ -13,6 +13,7 @@
 import asyncio
 import json
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -40,6 +41,46 @@ logger = get_logger(__name__)
 # 上限需可按部署调优而非硬编码；默认值维持历史行为（120×5s≈10 分钟）
 _VIDEO_POLL_INTERVAL = settings.media_video_poll_interval
 _VIDEO_MAX_POLLS = settings.media_video_max_polls
+
+# === 预算预留-结算的调用上下文（审查 §4.8.2 成本-01 / 成本-02）===
+# 分域配额需要知道「这次调用算在谁头上」：角色 Tick 记在角色上，
+# 用户对话记在用户上。ContextVar 跨 await 传播且任务间隔离，
+# 与 langfuse_tracing 的会话上下文同一套机制。
+_cost_scope_character: ContextVar[str | None] = ContextVar("cost_scope_character", default=None)
+_cost_scope_user: ContextVar[str | None] = ContextVar("cost_scope_user", default=None)
+# 本次调用已预留的额度；0 表示未预留（essential 路径或预算管理器缺失）
+_cost_reserved: ContextVar[float] = ContextVar("cost_reserved", default=0.0)
+
+
+def bind_cost_scope(*, character_id: str | None = None, user_id: str | None = None) -> None:
+    """绑定预算归属：此后同任务内的 LLM 调用计入该角色/用户配额
+
+    Args:
+        character_id: 角色 ID（Tick / 反思 / 记忆等后台路径）
+        user_id: 用户 ID（对话路径）。与 character_id 同时给出时以 user 优先，
+            因为用户触发的对话应由用户配额兜底，避免挤占角色的日常开销。
+    """
+    _cost_scope_character.set(character_id)
+    _cost_scope_user.set(user_id)
+
+
+def clear_cost_scope() -> None:
+    """解除预算归属绑定（与 bind_cost_scope 配对）"""
+    _cost_scope_character.set(None)
+    _cost_scope_user.set(None)
+    _cost_reserved.set(0.0)
+
+
+def _current_cost_scope() -> tuple[str | None, str | None]:
+    """返回当前调用的分域归属 ``(scope, identifier)``；无归属时为 (None, None)"""
+    user_id = _cost_scope_user.get()
+    if user_id:
+        return "user", user_id
+    character_id = _cost_scope_character.get()
+    if character_id:
+        return "char", character_id
+    return None, None
+
 
 # 全库唯一的费用计算入口（见 estimate_cost / get_model_price），
 # 禁止调用方各自硬编码单价。
@@ -112,9 +153,17 @@ class LLMClient:
 
     def __init__(self) -> None:
         # OpenAI SDK（用于 embedding、图像生成、视频生成）
+        #
+        # 超时与重试必须显式传入：OpenAI SDK 默认 timeout=600s、max_retries=2，
+        # 最坏可挂 30 分钟。而 embed() 在角色 Tick 的感知阶段被同步调用
+        # （perception.py），此时角色持有 Tick 锁（持续续租）并占用并发信号量槽位，
+        # 一次挂起即会让该角色"假死"半小时、且其他实例无法接管（锁未过期）。
+        # 与 LangChain ChatOpenAI 侧（fallback.py:119）保持同一配置，消除双栈差异。
         self.openai = AsyncOpenAI(
             api_key=settings.openai_api_key,
             base_url=settings.openai_base_url,
+            timeout=float(settings.llm_timeout),
+            max_retries=settings.llm_max_retries,
         )
 
         # Embedding 专用客户端（独立 API Key + URL，如 OpenRouter）
@@ -123,6 +172,8 @@ class LLMClient:
             self._embedding_client = AsyncOpenAI(
                 api_key=settings.embedding_model_key,
                 base_url=settings.embedding_model_url,
+                timeout=float(settings.llm_timeout),
+                max_retries=settings.llm_max_retries,
             )
         else:
             self._embedding_client = self.openai
@@ -983,39 +1034,72 @@ class LLMClient:
             raise CircuitOpen(state.value, failure_count, last_failure_time)
 
         budget_mgr = self._get_budget_manager()
-        if budget_mgr:
+        if not budget_mgr:
+            return
+
+        scope, identifier = _current_cost_scope()
+
+        # essential（用户对话）不预留：对话响应优先于成本控制，
+        # 但费用照常结算进全局与用户维度，事后仍受预算约束。
+        if essential:
             budget_status = await budget_mgr.check_budget()
             if budget_status["exceeded"]:
-                if essential:
-                    logger.warning(
-                        "budget_exceeded_essential_degraded",
-                        used=budget_status["used"],
-                        budget=budget_status["budget"],
-                    )
-                    return
                 logger.warning(
-                    "budget_exceeded_blocked",
+                    "budget_exceeded_essential_degraded",
                     used=budget_status["used"],
                     budget=budget_status["budget"],
                 )
-                raise BudgetExceeded(
-                    used=budget_status["used"],
-                    budget=budget_status["budget"],
-                    remaining=budget_status["remaining"],
-                )
+            return
+
+        # 预留-结算：在途额度参与判定，使「已用 + 在途 <= 预算」成为硬不变量。
+        # 此前是 check_budget() 读 + record_usage() 写的两步非原子组合，
+        # 并发下 N 个调用可同时通过检查（审查 §4.8.2 成本-01）。
+        try:
+            reserved = await budget_mgr.reserve(settings.llm_reserve_estimate_usd, scope=scope, identifier=identifier)
+        except BudgetExceeded as e:
+            logger.warning(
+                "budget_exceeded_blocked",
+                used=e.used,
+                budget=e.budget,
+                scope=scope,
+                identifier=identifier,
+            )
+            raise
+        _cost_reserved.set(reserved)
 
     async def _record_cost_control_success(self, tokens: int, cost: float) -> None:
         breaker = get_circuit_breaker()
         if breaker:
             await breaker.record_success()
         budget_mgr = self._get_budget_manager()
-        if budget_mgr and tokens > 0:
-            await budget_mgr.record_usage(tokens, cost)
+        if not budget_mgr:
+            return
+
+        reserved = _cost_reserved.get()
+        if reserved > 0:
+            _cost_reserved.set(0.0)
+            scope, identifier = _current_cost_scope()
+            await budget_mgr.settle(reserved, cost, tokens, scope=scope, identifier=identifier)
+            return
+        # essential 路径（未预留）与实际消耗为 0 的调用走原有记账
+        if tokens > 0:
+            scope, identifier = _current_cost_scope()
+            await budget_mgr.settle(0.0, cost, tokens, scope=scope, identifier=identifier)
 
     async def _record_cost_control_failure(self) -> None:
         breaker = get_circuit_breaker()
         if breaker:
             await breaker.record_failure()
+
+        # 调用失败必须归还预留额度： reserved 只在成功结算时才被释放，
+        # 若失败路径不释放，连续失败会把预算全部占满而实际分文未花。
+        reserved = _cost_reserved.get()
+        if reserved > 0:
+            _cost_reserved.set(0.0)
+            budget_mgr = self._get_budget_manager()
+            if budget_mgr:
+                scope, identifier = _current_cost_scope()
+                await budget_mgr.release(reserved, scope=scope, identifier=identifier)
 
     # === 内部工具 ===
 

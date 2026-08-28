@@ -57,7 +57,9 @@ repos:
     hooks:
       - id: check-yaml
         name: check-yaml
-        entry: python -c "import sys, yaml; [yaml.safe_load(open(f, encoding='utf-8')) for f in sys.argv[1:]]"
+        # 走项目环境而非裸 python：后者依赖 PATH 上恰好装了 pyyaml，
+        # 换机器/换默认 python 会以 ModuleNotFoundError 误报失败
+        entry: uv run --project packages/backend python -c "import sys, yaml; [yaml.safe_load(open(f, encoding='utf-8')) for f in sys.argv[1:]]"
         language: system
         files: \.(yaml|yml)$
         exclude: ^packages/frontend/.*$
@@ -67,6 +69,7 @@ repos:
     hooks:
       - id: check-merge-conflict
         name: check-merge-conflict
-        entry: python -c "import sys; exit(1 if any(l.startswith('<<<<<<<') or l.startswith('>>>>>>>') for f in sys.argv[1:] for l in open(f,encoding='utf-8',errors='ignore')) else 0)"
+        # 同样走项目环境：只依赖标准库，与 check-yaml 保持一致以免环境分裂
+        entry: uv run --project packages/backend python -c "import sys; exit(1 if any(l.startswith('<<<<<<<') or l.startswith('>>>>>>>') for f in sys.argv[1:] for l in open(f,encoding='utf-8',errors='ignore')) else 0)"
         language: system
         pass_filenames: true

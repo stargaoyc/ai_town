@@ -21,7 +21,12 @@ from redis.asyncio import Redis
 
 from src.config import settings
 from src.cost_control import BudgetExceeded, CircuitOpen, set_circuit_breaker
-from src.cost_control.budget_manager import set_budget_manager
+from src.cost_control.budget_manager import (
+    _LUA_RELEASE,
+    _LUA_RESERVE,
+    _LUA_SETTLE,
+    set_budget_manager,
+)
 from src.llm.client import LLMClient
 
 
@@ -37,7 +42,12 @@ def _reset_cost_control_singletons() -> Iterator[None]:
 
 
 class FakeRedis:
-    """支持成本控制所需操作的假 Redis（hgetall/hset/pipeline）"""
+    """支持成本控制所需操作的假 Redis（hgetall/hset/pipeline/eval）
+
+    eval 不执行 Lua，而是按脚本常量分派到等价的 Python 实现——
+    预算的预留/结算/释放依赖 Lua 的原子性，测试替身只需还原其语义，
+    真实原子性由 Redis 本身保证（审查 §4.8.2）。
+    """
 
     def __init__(self) -> None:
         self.data: dict[str, dict[str, str]] = {}
@@ -50,6 +60,71 @@ class FakeRedis:
 
     def pipeline(self) -> "FakePipeline":
         return FakePipeline(self)
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> list[Any]:
+        keys = list(args[:numkeys])
+        argv = list(args[numkeys:])
+        if script == _LUA_RESERVE:
+            return self._lua_reserve(keys, argv)
+        if script == _LUA_SETTLE:
+            return self._lua_settle(keys, argv)
+        if script == _LUA_RELEASE:
+            return self._lua_release(keys, argv)
+        raise NotImplementedError("FakeRedis.eval: 未支持的脚本")
+
+    def _inuse(self, key: str) -> tuple[float, float]:
+        store = self.data.get(key, {})
+        return float(store.get("cost", "0")), float(store.get("reserved", "0"))
+
+    def _bump(self, key: str, field: str, delta: float) -> float:
+        store = self.data.setdefault(key, {})
+        new = float(store.get(field, "0")) + delta
+        store[field] = str(int(new)) if field in ("tokens", "count") else str(new)
+        return new
+
+    def _lua_reserve(self, keys: list[Any], argv: list[Any]) -> list[Any]:
+        gkey, skey = str(keys[0]), str(keys[1])
+        cost, gbudget, sbudget = float(argv[0]), float(argv[1]), float(argv[2])
+        gc, gr = self._inuse(gkey)
+        if gc + gr + cost > gbudget:
+            return [1, gc, gr, "global"]
+        if sbudget > 0:
+            sc, sr = self._inuse(skey)
+            if sc + sr + cost > sbudget:
+                return [1, sc, sr, "scope"]
+        self._bump(gkey, "reserved", cost)
+        if sbudget > 0:
+            self._bump(skey, "reserved", cost)
+        return [0, gc, gr + cost, "ok"]
+
+    def _lua_settle(self, keys: list[Any], argv: list[Any]) -> list[Any]:
+        gkey, skey = str(keys[0]), str(keys[1])
+        estimated, actual, tokens = float(argv[0]), float(argv[1]), int(float(argv[2]))
+        sbudget = float(argv[3])
+        self._bump(gkey, "reserved", -estimated)
+        gc = self._bump(gkey, "cost", actual)
+        self._bump(gkey, "tokens", tokens)
+        self._bump(gkey, "count", 1)
+        if sbudget > 0:
+            self._bump(skey, "reserved", -estimated)
+            self._bump(skey, "cost", actual)
+            self._bump(skey, "tokens", tokens)
+            self._bump(skey, "count", 1)
+        return [0, gc]
+
+    def _lua_release(self, keys: list[Any], argv: list[Any]) -> list[Any]:
+        gkey, skey = str(keys[0]), str(keys[1])
+        estimated, sbudget = float(argv[0]), float(argv[1])
+
+        def _rel(key: str) -> float:
+            cur = float(self.data.get(key, {}).get("reserved", "0"))
+            new = 0.0 if cur <= 0 else max(0.0, cur - estimated)
+            self.data.setdefault(key, {})["reserved"] = str(new)
+            return new
+
+        gr = _rel(gkey)
+        sr = _rel(skey) if sbudget > 0 else 0.0
+        return [0, gr, sr]
 
 
 class FakePipeline:

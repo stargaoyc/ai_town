@@ -123,6 +123,17 @@ class Settings(BaseSettings):
     llm_circuit_breaker_threshold: int = 5
     llm_circuit_breaker_recovery_timeout: int = 60
 
+    # 分域配额（审查 §4.8.2 成本-02）：此前只有全局+UTC 日一个维度，
+    # QQ 是公开入口，单用户高频对话即可耗尽全局预算导致整个小镇停摆。
+    # 每个角色 / 每个用户单独设上限，把影响面收敛到单一对象。
+    # <=0 表示不做该维度的限制。
+    llm_daily_budget_per_character_usd: float = 1.0
+    llm_daily_budget_per_user_usd: float = 0.5
+    # 预留-结算（成本-01）：LLM 费用调用后才知道，故调用前先按此值预留额度
+    # （在途额度计入预算占用），调用结束按实际费用结算、失败则释放。
+    # 取保守估计：略高于单次调用的真实上四分位即可，过大则压制并发吞吐。
+    llm_reserve_estimate_usd: float = 0.02
+
     # Memory LLM Scoring
     memory_llm_scoring_enabled: bool = False
 
@@ -130,13 +141,22 @@ class Settings(BaseSettings):
     # 必须应用层定期清理低价值老记忆，否则每角色年增百万行 + GB 级向量）
     memory_retention_enabled: bool = True
     memory_retention_low_importance_days: int = 90  # importance<=3 保留天数
-    memory_retention_mid_importance_days: int = 180  # importance 4-6 保留天数；importance>=7 永久保留
+    memory_retention_mid_importance_days: int = 180  # importance 4-6 保留天数
+    # 永久保留阈值（审查 §4.2.6：此前硬编码 7，且情绪加成会把 5 分动作抬到 7，
+    # 使大量普通记忆意外进入永不过期集合，外置以便按实测分布调参）
+    memory_retention_permanent_importance: int = 7
+    # 治理周期（秒）。此前在 loops.py 中硬编码为 24*3600，无法按负载调参；
+    # 配合下方批次上限共同决定清理吞吐，须 ≥ 生成速率（见 memory_write_gate 注释）
+    memory_retention_interval_seconds: int = 3600
 
     # 记忆压缩归档（retention 删除前先按角色×月份 LLM 压缩成归档行，
     # 压缩失败则整组跳过留待下周期——绝不未压缩先删除）
     memory_compression_enabled: bool = True
     memory_compression_min_batch: int = 5  # 单组少于该条数不压缩（摘要收益低于成本）
-    memory_compression_batch_limit: int = 300  # 单周期最多处理的候选条数
+    # 单周期最多处理的候选条数。审查 §5.3：原值 300 相对约 6.9 万条/日的生成速率
+    # 存在两个数量级缺口；门禁开启后生成量降到约 1/10，配合周期缩短至 1h 可覆盖。
+    # 压缩调用 LLM，提升此值会线性增加成本，须结合 llm_daily_budget_usd 评估。
+    memory_compression_batch_limit: int = 5000
 
     # 改写式记忆去重（向量化时与同角色近窗口记忆余弦比对，
     # pg_trgm 对中文无效已实测证伪，向量比对是可靠信号——复审 N7）
@@ -145,28 +165,45 @@ class Settings(BaseSettings):
     memory_dedup_window_hours: int = 24
 
     # 记忆基础重要度（R6-L16c）：按 Action 类型定级，作为记忆写入的初始 importance，
-    # 直接参与「importance>=7 永久保留」的 retention 分级，故作为可调参数外置
+    # 直接参与 retention 分级，故作为可调参数外置。
+    #
+    # 键必须与 actions/registry.py 中注册的 action id **完全一致**（审查 §5.3 发现）：
+    # 此前键为通用类别名（rest/drink/go_out/work/chat/shop/...），而 decision.action
+    # 取的是具体 id（relax/eat_at_home/chat_with/work_parttime_cafe/...），
+    # 14 个 action 中仅 wait/sleep/eat/move/study 5 个能命中，其余全部落到默认值 5，
+    # 导致分级形同虚设。改动此字典时须同步核对 action id 清单。
     action_base_importance: dict[str, int] = {
         "wait": 2,
-        "rest": 3,
+        "charge_phone": 2,
         "sleep": 3,
+        "relax": 3,
+        "use_phone": 3,
         "eat": 4,
-        "drink": 4,
+        "eat_at_home": 4,
+        "read_book": 4,
         "move": 4,
-        "go_out": 5,
-        "work": 6,
-        "study": 6,
-        "practice": 6,
-        "social": 5,
-        "chat": 5,
-        "play": 6,
-        "shop": 5,
-        "buy": 5,
-        "explore": 7,
-        "adventure": 8,
+        "study": 5,
+        "chat_with": 6,
+        "group_activity": 6,
+        "work_parttime_cafe": 6,
+        "work_parttime_store": 6,
     }
     # 记忆重要度情绪加成：理由含情绪关键词时在该值基础上提升的分数（0 关闭）
     action_emotion_importance_boost: int = 2
+    # 加成后的重要度上限（审查 §5.3）：默认低于下方的永久保留阈值，
+    # 使情绪加成无法把高频动作「意外钉入」永不过期集合——社交类基础分 6，
+    # 若允许 +2 到 8 则所有带情绪词的社交记忆永久不可回收，是记忆膨胀的主因。
+    # 需要让强情绪经历永久留存时，把此值提到 >= 永久保留阈值即可。
+    memory_emotion_boost_max_total: int = 6
+
+    # 记忆写入显著性门禁（审查 §5.3 / §9.1.1-③：源头减量优先于提升清理吞吐）
+    #
+    # 默认配置下每 Tick 写 1 条记忆 = 24 角色 × 2880 条/日 ≈ 6.9 万条/日，
+    # 而 retention 单周期压缩上限仅为其零头，缺口达两个数量级。压缩本身调用 LLM，
+    # 清理吞吐无法线性扩张，必须在源头拦截低信息量记忆。
+    # 门禁规则：满足「重要度达标 / 存在同场景社交情境 / 发生位置迁移」之一才落库。
+    memory_write_gate_enabled: bool = True
+    memory_write_min_importance: int = 4  # 低于该重要度需命中社交或位置迁移例外才写入
 
     # Plan 层级体系：当日计划滚动过期（创建超过 TTL 的 active daily 置 expired）
     daily_plan_ttl_hours: int = 24

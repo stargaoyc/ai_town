@@ -687,7 +687,7 @@ async def expire_daily_plans(session_factory: Any | None = None) -> int:
 async def memory_retention_loop() -> None:
     """记忆生命周期治理后台循环（审查 §七-P1）
 
-    每 24 小时执行一次：
+    每 MEMORY_RETENTION_INTERVAL_SECONDS 秒执行一次（默认 3600）：
     1. 记忆两阶段治理：压缩归档 + 分级删除（importance>=7 永久保留）
     2. 世界历史清理：超期 world_events 删除、world_snapshots 仅保留最近 N 份
     3. 消息表清理：超期 messages 删除（三轮审查 M1：messages 无界增长）
@@ -695,10 +695,14 @@ async def memory_retention_loop() -> None:
 
     memory_episodes 为 HASH 分区表，无法像 RANGE 分区那样按时间 drop，
     膨胀治理只能在应用层定期处理。可通过 MEMORY_RETENTION_ENABLED=false 关闭。
+
+    周期此前硬编码为 24*3600（审查 §5.3）：在约 6.9 万条/日的生成速率下，
+    单周期 300 条的处理上限形成两个数量级缺口。现改为配置驱动，
+    与 MEMORY_COMPRESSION_BATCH_LIMIT 共同决定清理吞吐。
     """
     from src.config import settings as _settings
 
-    interval = 24 * 3600
+    interval = _settings.memory_retention_interval_seconds
     logger.info("memory_retention_loop_started", interval=interval, enabled=_settings.memory_retention_enabled)
 
     while True:
@@ -957,13 +961,13 @@ async def run_memory_retention_cycle(
             if compression_active
             else true()
         )
+        # 复用 Repository 的分级条件，避免与压缩候选筛选漂移（审查 §4.2.6）
+        low_tier, mid_tier = MemoryRepository.retention_tier_conditions(low_cutoff, mid_cutoff)
         low_stmt = (
             delete(MemoryEpisode)
             .where(
                 scope,
-                MemoryEpisode.importance <= 3,
-                MemoryEpisode.timestamp < low_cutoff,
-                MemoryEpisode.source_type != "archive",
+                low_tier,
             )
             .returning(MemoryEpisode.id)
         )
@@ -973,10 +977,7 @@ async def run_memory_retention_cycle(
             delete(MemoryEpisode)
             .where(
                 scope,
-                MemoryEpisode.importance >= 4,
-                MemoryEpisode.importance <= 6,
-                MemoryEpisode.timestamp < mid_cutoff,
-                MemoryEpisode.source_type != "archive",
+                mid_tier,
             )
             .returning(MemoryEpisode.id)
         )

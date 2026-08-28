@@ -116,4 +116,15 @@ class MemoryEpisode(Base):
             "timestamp",
             postgresql_where="importance <= 6",
         ),
+        # HNSW 向量索引（0002 迁移用原生 SQL 建在父表，自动传播到 16 个 HASH 子分区）
+        # 声明在此处供 autogenerate 比对：缺声明会让 alembic 认为索引多余而生成 DROP，
+        # 且 Base.metadata 与物理库不一致时无法用 metadata 校验结构。
+        # 算子类是 halfvec_cosine_ops——与迁移保持一致，不能用默认的向量 L2 算子。
+        Index(
+            "idx_mem_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "halfvec_cosine_ops"},
+            postgresql_with={"m": 16, "ef_construction": 128},
+        ),
     )

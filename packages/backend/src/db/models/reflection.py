@@ -51,7 +51,18 @@ class Reflection(Base):
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
     # 0016 迁移补建（R4-M1：文档声称存在但从未创建）
-    __table_args__ = (Index("idx_refl_char_time", "character_id", created_at.desc()),)
+    # idx_reflections_embedding：0015 迁移用原生 SQL 创建，声明在此供 autogenerate 比对，
+    # 缺声明会让 alembic 生成误删；算子类须与迁移一致（halfvec_cosine_ops）
+    __table_args__ = (
+        Index("idx_refl_char_time", "character_id", created_at.desc()),
+        Index(
+            "idx_reflections_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "halfvec_cosine_ops"},
+            postgresql_with={"m": 16, "ef_construction": 128},
+        ),
+    )
     embedding: Mapped[list[float] | None] = mapped_column(
         HALFVEC(settings.embedding_dim),
         nullable=True,

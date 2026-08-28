@@ -248,6 +248,29 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]
 
+    # 分级保留阈值的唯一真相源：fetch_retention_candidates（压缩候选筛选）
+    # 与 loops.run_memory_retention_cycle（阶段二分级删除）必须共用同一组条件，
+    # 否则会出现「筛出来却不删」或「删了未压缩的」两类不一致（审查 §4.2.6）。
+    @staticmethod
+    def retention_tier_conditions(
+        low_cutoff: datetime,
+        mid_cutoff: datetime,
+    ) -> tuple[Any, Any]:
+        """返回 (低档条件, 中档条件)——importance >= permanent 者永不清理"""
+        permanent = settings.memory_retention_permanent_importance
+        low_tier = and_(
+            MemoryEpisode.importance <= 3,
+            MemoryEpisode.timestamp < low_cutoff,
+            MemoryEpisode.source_type != "archive",
+        )
+        mid_tier = and_(
+            MemoryEpisode.importance >= 4,
+            MemoryEpisode.importance < permanent,
+            MemoryEpisode.timestamp < mid_cutoff,
+            MemoryEpisode.source_type != "archive",
+        )
+        return low_tier, mid_tier
+
     async def fetch_retention_candidates(
         self,
         low_cutoff: datetime,
@@ -257,28 +280,14 @@ class MemoryRepository(BaseRepository[MemoryEpisode]):
         """拉取达到删除标准的记忆（压缩归档候选，跨角色）
 
         - importance<=3 且早于 low_cutoff（默认 90 天）
-        - importance 4-6 且早于 mid_cutoff（默认 180 天）
+        - importance 4..(permanent-1) 且早于 mid_cutoff（默认 180 天）
         - 归档行（source_type='archive'）豁免：其本身已是压缩形态
+
+        永久保留阈值取 settings.memory_retention_permanent_importance（默认 7），
+        中档上界由其推导，避免阈值外置后与此处硬编码的 6 漂移（审查 §4.2.6）。
         """
-        stmt = (
-            select(MemoryEpisode)
-            .where(
-                or_(
-                    and_(
-                        MemoryEpisode.importance <= 3,
-                        MemoryEpisode.timestamp < low_cutoff,
-                    ),
-                    and_(
-                        MemoryEpisode.importance >= 4,
-                        MemoryEpisode.importance <= 6,
-                        MemoryEpisode.timestamp < mid_cutoff,
-                    ),
-                ),
-                MemoryEpisode.source_type != "archive",
-            )
-            .order_by(MemoryEpisode.timestamp.asc())
-            .limit(limit)
-        )
+        low_tier, mid_tier = self.retention_tier_conditions(low_cutoff, mid_cutoff)
+        stmt = select(MemoryEpisode).where(or_(low_tier, mid_tier)).order_by(MemoryEpisode.timestamp.asc()).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
