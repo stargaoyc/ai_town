@@ -95,6 +95,7 @@ def _filter_outbound_reply(text: str) -> str:
         cleaned = re.sub(pattern, f"[{desc}]", cleaned, flags=re.IGNORECASE)
     return cleaned
 
+
 # 群聊智能回复各分支的回复概率（互斥分支非叠加，最终回复率为各触发路径的组合上界）
 GROUP_REPLY_PROBABILITY_CAP = 0.7  # 疑问句启发式回复概率
 GROUP_REPLY_EMOTION_PROBABILITY = 0.5  # 情绪句启发式回复概率
