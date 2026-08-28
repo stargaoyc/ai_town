@@ -33,6 +33,11 @@ _DEFAULT_TTL = 30  # 秒
 # locks 应保持零业务依赖可独立单测（一致性由 tests/test_locks.py 钉死）。
 TICK_LOCK_PREFIX = "char:tick:lock:"
 
+# 旁路临界区的锁 TTL（秒）：对账修复、API 传送等短临界区借 Tick 锁时使用。
+# 远短于 Tick 锁的 30s——这些操作只做「复核 + 一次写入」，持有者崩溃时
+# 最多阻塞下一轮 Tick 5 秒。集中定义以免各调用方各定一个值并逐渐漂移。
+SHORT_CRITICAL_SECTION_TTL = 5
+
 # compare-and-delete：仅当 value 与持有者 token 一致时才删除，
 # 防止锁过期被他人获取后误删他人的锁
 _RELEASE_LOCK_LUA = """
@@ -78,6 +83,52 @@ async def renew_lock(redis: Redis, key: str, token: str, ttl: int) -> bool:
     return int(result) == 1
 
 
+# fencing 原子写：仅当锁键仍等于本持有者的 token 时才写状态哈希。
+#
+# 背景（审查 §4.1.3 并发-01）：角色 Tick 的并发保护此前是**协作式**的——
+# 看门狗每 ttl/3（10s）才检查一次续租结果，锁过期后本实例最长要 10 秒才
+# 感知。看门狗能覆盖的是「流程内的 await 边界」，覆盖不了「进程停顿苏醒
+# 后紧接着的一次写入」：锁在 T 时刻易主，本实例 T+9 苏醒直接 HSET 覆盖。
+#
+# 把「校验持有权」与「写入状态」合并进单个 Redis 原子操作后，旧持有者的
+# 任何迟到写入都会被直接拒绝（返回 0），与 WorldEngine 的纪元 CAS 同构。
+_FENCED_STATE_WRITE_LUA = """
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+for i = 2, #ARGV, 2 do
+  redis.call('HSET', KEYS[2], ARGV[i], ARGV[i + 1])
+end
+return 1
+"""
+
+
+async def fenced_state_write(
+    redis: Redis,
+    lock_key: str,
+    token: str,
+    state_key: str,
+    mapping: dict[str, str],
+) -> bool:
+    """带 fencing 的状态写入：仅当仍持有锁时才落盘
+
+    Args:
+        redis: Redis 客户端
+        lock_key: 保护该状态的锁键（Tick 锁 / 对账修复锁）
+        token: 获取锁时写入的持有者令牌
+        state_key: 目标状态哈希键
+        mapping: 待写入的字段映射（须已编码为字符串）
+
+    Returns:
+        True 表示写入生效；False 表示锁已易主，调用方**必须**中止后续写入
+    """
+    args: list[str] = [token]
+    for field, value in mapping.items():
+        args.extend((field, value))
+    result = await redis.eval(_FENCED_STATE_WRITE_LUA, 2, lock_key, state_key, *args)
+    return int(result) == 1
+
+
 async def try_acquire_lock(redis: Redis, key: str, ttl: int) -> str | None:
     """无等待尝试获取单把锁（SET NX EX），成功返回持有者 token，失败立即返回 None
 
@@ -95,6 +146,7 @@ async def acquire_resource_locks(
     redis: Redis,
     *character_ids: UUID | str,
     ttl: int = _DEFAULT_TTL,
+    lock_lost: asyncio.Event | None = None,
 ) -> AsyncIterator[bool]:
     """跨角色资源锁上下文管理器
 
@@ -112,6 +164,10 @@ async def acquire_resource_locks(
         redis: Redis 客户端
         *character_ids: 参与交互的角色 ID（可变参数）
         ttl: 锁 TTL（秒），默认 30
+        lock_lost: 失锁信号（审查 §4.1.3 并发-03）。跨角色操作（对话、
+            送礼）含多轮 LLM 往返，耗时可能越过 TTL；锁易主后受其保护的
+            关系/记忆写入必须中止。传入后由看门狗在续租失败时置位，调用方
+            在写入前自查。缺省表示调用方不关心失锁（仅用于短临界区）。
 
     Yields:
         bool: True 表示所有锁获取成功，False 表示至少一个失败
@@ -125,7 +181,7 @@ async def acquire_resource_locks(
     acquired: dict[str, str] = {}
     all_acquired = False
     renew_stop = asyncio.Event()
-    watchdog = asyncio.create_task(lock_watchdog(redis, renew_stop, acquired, ttl))
+    watchdog = asyncio.create_task(watch_locks(redis, renew_stop, acquired, ttl, lock_lost=lock_lost))
 
     try:
         for cid in unique_ids:
@@ -164,19 +220,6 @@ async def acquire_resource_locks(
                 logger.warning("resource_lock_release_failed", lock_key=lock_key)
 
 
-async def lock_watchdog(redis: Redis, renew_stop: asyncio.Event, acquired: dict[str, str], ttl: int) -> None:
-    """锁看门狗：受锁保护的操作可能超过 TTL（含多次 LLM 调用），定期续租防止锁过期易主"""
-    interval = ttl / 3
-    while not renew_stop.is_set():
-        try:
-            await asyncio.wait_for(renew_stop.wait(), timeout=interval)
-        except TimeoutError:
-            for lock_key, token in list(acquired.items()):
-                renewed = await renew_lock(redis, lock_key, token, ttl)
-                if not renewed:
-                    logger.warning("resource_lock_renew_failed", lock_key=lock_key)
-
-
 async def watch_locks(
     redis: Redis,
     stop: asyncio.Event,
@@ -184,12 +227,15 @@ async def watch_locks(
     ttl: int,
     lock_lost: asyncio.Event | None = None,
 ) -> asyncio.Event:
-    """锁看门狗（带失锁信号变体）：任一续租失败即置位 lock_lost 并返回该事件
+    """锁看门狗：定期续租，任一续租失败即置位 lock_lost
 
-    与 lock_watchdog 的区别：后者只记日志，调用方无从感知锁已易主；
-    本变体把「续租失败（renew_lock 返回 False 或抛异常）」转化为失锁信号，
-    供 Tick 在 await 边界检查并中止后续状态写入——失锁后继续写会造成
-    跨实例 double-tick（round-3 review H10）。
+    受锁保护的操作（Tick、跨角色交互）含多次 LLM 调用，耗时可能超过 TTL，
+    需定期续租防止锁过期易主。续租失败（renew_lock 返回 False 或抛异常）
+    转化为失锁信号，供调用方在 await 边界检查并中止后续状态写入——
+    失锁后继续写会造成跨实例 double-tick（round-3 review H10）。
+
+    原先有 lock_watchdog / watch_locks 两个变体，前者只记日志、让跨角色
+    锁路径无法感知失锁（审查 §4.1.3 并发-03），已合并为本函数。
 
     Args:
         redis: Redis 客户端

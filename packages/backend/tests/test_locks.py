@@ -16,6 +16,7 @@ from src.core.character.tick import CharacterTickEngine
 from src.core.locks import (
     TICK_LOCK_PREFIX,
     acquire_resource_locks,
+    fenced_state_write,
     release_lock,
     renew_lock,
     try_acquire_lock,
@@ -24,10 +25,15 @@ from src.core.locks import (
 
 
 class FakeLockRedis:
-    """模拟 Redis 的 set/get/del/eval（Lua compare-and-delete/expire 语义）"""
+    """模拟 Redis 的 set/get/del/hset/eval（Lua 脚本语义）
+
+    eval 按 numkeys 拆分 KEYS/ARGV，与 redis-py 的调用约定一致；
+    脚本分支按特征字符串分派：各脚本的特征互不重叠（见各分支注释）。
+    """
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
 
     async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
         if nx and key in self.store:
@@ -41,14 +47,34 @@ class FakeLockRedis:
     async def delete(self, key: str) -> int:
         return 1 if self.store.pop(key, None) is not None else 0
 
-    async def eval(self, script: str, numkeys: int, key: str, *args: Any) -> int:
+    async def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self.hashes.get(key, {}))
+
+    async def hset(self, key: str, mapping: dict[str, str] | None = None, **kwargs: Any) -> int:
+        bucket = self.hashes.setdefault(key, {})
+        bucket.update(mapping or {})
+        bucket.update(kwargs)
+        return len(mapping or kwargs)
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> int:
+        keys = list(args[:numkeys])
+        argv = list(args[numkeys:])
+        # fencing 原子写（_FENCED_STATE_WRITE_LUA）：校验持有权后 HSET 目标哈希
+        if "HSET" in script:
+            if self.store.get(keys[0]) != argv[0]:
+                return 0
+            bucket = self.hashes.setdefault(keys[1], {})
+            for i in range(1, len(argv), 2):
+                bucket[argv[i]] = argv[i + 1]
+            return 1
+        # compare-and-delete（_RELEASE_LOCK_LUA）
         if "del" in script:
-            if self.store.get(key) == args[0]:
-                del self.store[key]
+            if self.store.get(keys[0]) == argv[0]:
+                del self.store[keys[0]]
                 return 1
             return 0
-        # expire 脚本
-        return 1 if self.store.get(key) == args[0] else 0
+        # compare-and-expire（_RENEW_LOCK_LUA）
+        return 1 if self.store.get(keys[0]) == argv[0] else 0
 
 
 async def test_release_lock_succeeds_for_owner() -> None:
@@ -142,6 +168,27 @@ async def test_watch_locks_keeps_lock_lost_clear_while_owner_renews() -> None:
     assert redis.store["lock:a"] == "token-owner"
 
 
+async def test_acquire_resource_locks_reports_lock_loss() -> None:
+    """跨角色锁续租失败必须传导给调用方（审查 §4.1.3 并发-03）
+
+    此前 acquire_resource_locks 用的看门狗只记日志，跨角色交互（对话、
+    送礼）在锁易主后仍会写关系——本测试钉死「失锁信号可达」这条链路。
+    """
+    redis = FakeLockRedis()
+    lock_lost = asyncio.Event()
+
+    # ttl=1 使续租间隔为 ttl/3≈0.33s，避免为一个信号等满 10 秒
+    async with acquire_resource_locks(cast_redis(redis), "11111111", ttl=1, lock_lost=lock_lost) as acquired:
+        assert acquired is True
+        # 模拟锁过期易主：续租时 compare-and-expire 将失败
+        redis.store["char:resource:lock:11111111"] = "other-holder"
+        deadline = asyncio.get_running_loop().time() + 5
+        while not lock_lost.is_set() and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.02)
+
+    assert lock_lost.is_set()
+
+
 async def test_try_acquire_lock_returns_token_when_free() -> None:
     redis = FakeLockRedis()
 
@@ -164,6 +211,59 @@ async def test_try_acquire_lock_returns_none_when_held() -> None:
 def test_tick_lock_prefix_matches_tick_engine() -> None:
     """对账与 Tick 必须抢同一把锁才互斥；两处字面量靠本测试钉死防漂移"""
     assert TICK_LOCK_PREFIX == CharacterTickEngine.LOCK_PREFIX
+
+
+async def test_fenced_state_write_applies_for_owner() -> None:
+    """持有锁时写入生效"""
+    redis = FakeLockRedis()
+    redis.store["lock:a"] = "owner-token"
+
+    written = await fenced_state_write(cast_redis(redis), "lock:a", "owner-token", "char:a:state", {"location": "cafe"})
+
+    assert written is True
+    assert redis.hashes["char:a:state"] == {"location": "cafe"}
+
+
+async def test_fenced_state_write_rejected_after_ownership_change() -> None:
+    """锁易主后旧持有者的迟到写入必须被拒绝且不污染状态（审查 §4.1.3 并发-01）
+
+    这是 fencing 相对「看门狗协作式轮询」的核心增量：旧持有者即使刚从
+    停顿中苏醒、尚未轮到下一次续租检查，其写入也会被原子地挡在门外。
+    """
+    redis = FakeLockRedis()
+    redis.store["lock:a"] = "new-owner-token"
+    redis.hashes["char:a:state"] = {"location": "park"}
+
+    written = await fenced_state_write(cast_redis(redis), "lock:a", "stale-token", "char:a:state", {"location": "cafe"})
+
+    assert written is False
+    assert redis.hashes["char:a:state"] == {"location": "park"}
+
+
+async def test_fenced_state_write_rejected_when_lock_expired() -> None:
+    """锁过期（键消失）后写入同样被拒绝：无持有者即无权写"""
+    redis = FakeLockRedis()
+
+    written = await fenced_state_write(cast_redis(redis), "lock:a", "any-token", "char:a:state", {"location": "cafe"})
+
+    assert written is False
+    assert "char:a:state" not in redis.hashes
+
+
+async def test_fenced_state_write_is_atomic() -> None:
+    """校验与写入必须是一次原子操作：不允许出现「校验通过、写入被他人插队」"""
+    redis = FakeLockRedis()
+    redis.store["lock:a"] = "owner-token"
+
+    # 替身严格按脚本语义执行：GET 校验失败时不会执行任何 HSET，
+    # 上面 test_fenced_state_write_rejected_* 已覆盖该不变式。
+    # 此处额外确认单次 eval 内可写多字段（真实 Lua 循环语义）。
+    written = await fenced_state_write(
+        cast_redis(redis), "lock:a", "owner-token", "char:a:state", {"location": "cafe", "energy": "80"}
+    )
+
+    assert written is True
+    assert redis.hashes["char:a:state"] == {"location": "cafe", "energy": "80"}
 
 
 def cast_redis(fake: FakeLockRedis) -> Redis:

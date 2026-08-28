@@ -283,31 +283,56 @@ async def move_character(character_id: str, to_scene: str, hour: int | None = No
 
     # 更新角色位置（A-1：双写——先 PG 镜像事务提交，再写 Redis 真相源）
     # 同事务写入 ActionRecord：此前 API 移动绕过审计（审查 P0-5/#5）
+    from src.core.locks import (
+        SHORT_CRITICAL_SECTION_TTL,
+        TICK_LOCK_PREFIX,
+        fenced_state_write,
+        release_lock,
+        try_acquire_lock,
+    )
     from src.db.models import ActionRecord
     from src.db.repositories import ActionRepository, CharacterRepository
     from src.db.session import db
 
-    async with db.session() as session:
-        await ActionRepository(session).add(
-            ActionRecord(
-                character_id=cid,
-                action_id="move",
-                action_name="移动",
-                params={"target_scene": to_scene, "source": "api"},
-                reason=None,
-                result=str(result.path),
-                duration_minutes=result.total_minutes,
-                location=to_scene,
-                related_characters=[],
+    # 审查 §4.1.3：与角色 Tick 互斥。此前此处裸 HSET，与并发 Tick 双向覆盖——
+    # 传送盖掉 Tick 刚算出的状态，或被 Tick 盖掉传送结果，且无任何提示。
+    # 抢不到锁说明 Tick 正在运行，直接 409 让调用方重试（比对账的静默跳过更合适：
+    # 这是用户显式发起的操作，需要明确反馈而非静默丢弃）。
+    tick_lock_key = f"{TICK_LOCK_PREFIX}{cid}"
+    move_token = await try_acquire_lock(redis, tick_lock_key, SHORT_CRITICAL_SECTION_TTL)
+    if move_token is None:
+        raise HTTPException(status_code=409, detail="角色 Tick 正在运行，请稍后重试")
+    try:
+        async with db.session() as session:
+            await ActionRepository(session).add(
+                ActionRecord(
+                    character_id=cid,
+                    action_id="move",
+                    action_name="移动",
+                    params={"target_scene": to_scene, "source": "api"},
+                    reason=None,
+                    result=str(result.path),
+                    duration_minutes=result.total_minutes,
+                    location=to_scene,
+                    related_characters=[],
+                )
             )
+            cas_ok = await CharacterRepository(session).update_state_cas(cid, location=to_scene)
+            if not cas_ok:
+                # round-3 review M8：CAS 全部重试失败说明状态版本已被并发写推进，
+                # 此时继续 hset 会用陈旧位置覆盖 Redis 真相源。在会话内抛出以连带
+                # 回滚本次移动的 ActionRecord（半截审计记录比没有更糟），不写 Redis
+                raise HTTPException(status_code=409, detail="角色状态已变化，请刷新后重试")
+        written = await fenced_state_write(
+            redis, tick_lock_key, move_token, f"char:{cid}:state", {"location": to_scene}
         )
-        cas_ok = await CharacterRepository(session).update_state_cas(cid, location=to_scene)
-        if not cas_ok:
-            # round-3 review M8：CAS 全部重试失败说明状态版本已被并发写推进，
-            # 此时继续 hset 会用陈旧位置覆盖 Redis 真相源。在会话内抛出以连带
-            # 回滚本次移动的 ActionRecord（半截审计记录比没有更糟），不写 Redis
-            raise HTTPException(status_code=409, detail="角色状态已变化，请刷新后重试")
-    await redis.hset(f"char:{cid}:state", "location", to_scene)
+        if not written:
+            raise HTTPException(status_code=409, detail="角色状态已被并发更新，请刷新后重试")
+    finally:
+        try:
+            await release_lock(redis, tick_lock_key, move_token)
+        except Exception:
+            logger.warning("api_move_lock_release_failed", character_id=character_id)
 
     return {
         "success": True,

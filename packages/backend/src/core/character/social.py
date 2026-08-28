@@ -142,7 +142,10 @@ class SocialMixin:
 
         # 跨角色资源锁：防止 A→B 和 B→A 同时执行导致关系更新竞争
 
-        async with acquire_resource_locks(self.redis, character_id, target_id) as acquired:
+        # 跨角色锁的失锁独立于 Tick 锁：两者保护的写入集合不同，
+        # 混用同一个事件会让「资源锁丢失」连带掐掉本角色自己的记忆写入
+        resource_lost = asyncio.Event()
+        async with acquire_resource_locks(self.redis, character_id, target_id, lock_lost=resource_lost) as acquired:
             if not acquired:
                 logger.info(
                     "chat_with_lock_busy",
@@ -158,6 +161,7 @@ class SocialMixin:
                 decision,
                 context,
                 lock_lost=lock_lost,
+                resource_lost=resource_lost,
             )
 
     async def _do_chat_with(
@@ -170,6 +174,7 @@ class SocialMixin:
         context: dict[str, Any],
         *,
         lock_lost: asyncio.Event | None = None,
+        resource_lost: asyncio.Event | None = None,
     ) -> str | None:
         """chat_with 实际执行逻辑（在跨角色锁保护下运行）
 
@@ -180,8 +185,15 @@ class SocialMixin:
         失锁闸口（R5-M6）：多轮对话的 LLM 往返可能横跨锁 TTL，锁易主后
         关系与记忆写入一律跳过——实现与 _execute_action docstring 的
         「失锁后无任何 PG 写入」承诺保持一致。
+
+        Args:
+            lock_lost: 角色 Tick 锁的失锁信号
+            resource_lost: 跨角色资源锁的失锁信号（审查 §4.1.3 并发-03）。
+                两者任一置位即中止关系写入；此前资源锁续租失败只记日志，
+                调用方无从感知，锁易主后仍会写关系。
         """
         lost = lock_lost if lock_lost is not None else asyncio.Event()
+        resource_locks_lost = resource_lost if resource_lost is not None else asyncio.Event()
         async with db.session() as session:
             char_repo = CharacterRepository(session)
             target_data = await char_repo.get_character_with_state(target_id)
@@ -295,11 +307,13 @@ class SocialMixin:
         # H10 闸口：对话生成完成后、任何持久化写入前自查——多轮 LLM 往返期间
         # 锁可能已被他实例接走，继续写关系/记忆即 double-tick；
         # 对话文本照常返回，其后的 ActionRecord/Redis 写入由调用方失锁闸口拦截
-        if lost.is_set():
+        if lost.is_set() or resource_locks_lost.is_set():
             logger.warning(
                 "chat_with_writes_skipped_lock_lost",
                 character_id=str(character_id),
                 target_id=target_id_str,
+                tick_lock_lost=lost.is_set(),
+                resource_lock_lost=resource_locks_lost.is_set(),
             )
             return dialogue
 

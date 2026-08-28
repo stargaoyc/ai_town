@@ -23,7 +23,12 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from structlog import get_logger
 
-from src.core.locks import TICK_LOCK_PREFIX, release_lock, try_acquire_lock
+from src.core.locks import (
+    SHORT_CRITICAL_SECTION_TTL,
+    TICK_LOCK_PREFIX,
+    release_lock,
+    try_acquire_lock,
+)
 from src.core.rehydration import restore_character_to_redis
 from src.core.state_codec import decode_state_value
 from src.db.models import Character, CharacterState
@@ -52,9 +57,7 @@ _JSON_FIELDS = frozenset({"inventory", "current_action"})
 # tick 双写失败时的优先修复队列（P1-2）：SADD 幂等，对账每轮先 SPOP 排空
 _PRIORITIZE_KEY = "reconcile:prioritize"
 
-# 修复临界区（复核+HSET）远短于 Tick 的 30s 锁 TTL，短 TTL 即可：
-# 持有者崩溃时最多阻塞下一轮 Tick 5 秒
-_REPAIR_LOCK_TTL = 5
+# 旁路临界区 TTL 统一取自 locks.SHORT_CRITICAL_SECTION_TTL（单一真相源）
 
 # 基线版本键 TTL（审查 §4.1.3）：此前 redis.set 不带 TTL，键只在删除角色时清理，
 # 角色频繁增删会持续泄漏。取 7 天——远长于 600s 对账周期，重启后基线仍在；
@@ -269,7 +272,7 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                 # 拿不到锁 = Tick 正在运行，跳过本角色即可——对账周期性执行，
                 # 下轮以新快照自愈。
                 tick_lock_key = f"{TICK_LOCK_PREFIX}{character.id}"
-                repair_token = await try_acquire_lock(redis, tick_lock_key, _REPAIR_LOCK_TTL)
+                repair_token = await try_acquire_lock(redis, tick_lock_key, SHORT_CRITICAL_SECTION_TTL)
                 if repair_token is None:
                     logger.info("reconcile_repair_skipped_tick_active", character_id=str(character.id))
                     continue
@@ -280,12 +283,21 @@ async def run_reconciliation(redis: Redis, session_factory: SessionFactory) -> d
                     if fresh_version is None or int(fresh_version) != int(pg_state.version):
                         logger.debug("reconcile_skip_stale_snapshot", character_id=str(character.id))
                         continue
+                    from src.core.locks import fenced_state_write
                     from src.core.state_codec import encode_state_mapping
 
-                    await redis.hset(
+                    # fencing 写：旁路 TTL（5s）短于 Tick 锁 TTL，若本轮
+                    # 修复耗时越过 TTL 被 Tick 接管，此处必须拒绝而非覆盖新状态
+                    written = await fenced_state_write(
+                        redis,
+                        tick_lock_key,
+                        repair_token,
                         key,
-                        mapping=encode_state_mapping({f: getattr(pg_state, f) for f in drift}),  # type: ignore[arg-type]
+                        encode_state_mapping({f: getattr(pg_state, f) for f in drift}),
                     )
+                    if not written:
+                        logger.warning("reconcile_repair_fenced_rejected", character_id=str(character.id))
+                        continue
                     direction = "pg_to_redis"
                     RECONCILE_REPAIR_TOTAL.labels(direction="pg_to_redis").inc()
                     baseline_version = int(fresh_version)

@@ -252,7 +252,12 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             semaphore = CharacterTickEngine.SEMAPHORE
             assert semaphore is not None
             async with semaphore:
-                await self._execute_tick(character_id, lock_lost=lock_lost)
+                await self._execute_tick(
+                    character_id,
+                    lock_lost=lock_lost,
+                    lock_key=lock_key,
+                    lock_token=lock_token,
+                )
         except CircuitOpen:
             # 熔断器开启时 LLM 调用必然失败，重试无意义，跳过本角色本周期
             logger.warning("character_tick_skipped_circuit_open", character_id=str(character_id))
@@ -281,12 +286,21 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                 max_concurrent=settings.character_max_concurrent,
             )
 
-    async def _execute_tick(self, character_id: UUID, *, lock_lost: asyncio.Event) -> None:
+    async def _execute_tick(
+        self,
+        character_id: UUID,
+        *,
+        lock_lost: asyncio.Event,
+        lock_key: str,
+        lock_token: str,
+    ) -> None:
         """五阶段闭环核心逻辑
 
         Args:
             character_id: 角色 ID
             lock_lost: 看门狗失锁信号；置位后本 Tick 禁止任何 PG/Redis 状态写入（H10）
+            lock_key: 本角色 Tick 锁键（下传给 _execute_action 做 fencing 写）
+            lock_token: 锁持有者令牌
         """
         logger.info("character_tick_start", character_id=str(character_id))
 
@@ -327,7 +341,14 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         decision = await self._maybe_structured_encounter(character_id, decision, context, lost=lock_lost)
 
         # 4. 执行 Action
-        await self._execute_action(character_id, decision, context, lock_lost=lock_lost)
+        await self._execute_action(
+            character_id,
+            decision,
+            context,
+            lock_lost=lock_lost,
+            lock_key=lock_key,
+            lock_token=lock_token,
+        )
 
         # 5. 记忆沉淀
         # H10 闸口（R8-H10b）：_execute_action 在「PG 已提交、Redis 镜像写入前」
@@ -991,6 +1012,8 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         context: dict[str, Any],
         *,
         lock_lost: asyncio.Event | None = None,
+        lock_key: str | None = None,
+        lock_token: str | None = None,
     ) -> None:
         """执行 Action - 事务化
 
@@ -998,13 +1021,17 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         1. 获取 Action 定义
         2. 计算状态变更
         3. 单一事务：写入 ActionRecord + 更新 PG 状态 + 写入 MemoryEpisode
-        4. 更新 Redis 实时状态
+        4. 更新 Redis 实时状态（持有锁时走 fencing 原子写）
 
         Args:
             character_id: 角色 ID
             decision: 决策结果
             context: 感知环境结果
             lock_lost: 看门狗失锁信号；缺省时视为未启用失锁闸口（保持既有直接调用方兼容）。
+            lock_key: 保护本角色的锁键；与 lock_token 同时给出时 Redis 状态写入
+                走 fencing CAS，锁易主即拒绝写入。缺省表示无锁场景（单测直接调用），
+                此时不存在并发持有者，直接写入。
+            lock_token: 锁持有者令牌（语义同上，须与 lock_key 成对给出）
                 置位后在入口、chat_with 关系/记忆写入前、PG 事务前与 Redis 镜像写入前
                 四处中止，保证失锁后不再发生任何 PG/Redis 状态写入——含 chat_with 的
                 关系/记忆写入与工具暂存记忆（H10/R5-M6/R5-L11）
@@ -1258,7 +1285,14 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
 
             # 更新 Redis 实时状态（P1-2：失败立即重试一次并进优先对账队列，
             # 不再被动等待最长一个全量对账周期）
-            await self._write_redis_state_with_repair(self.redis, character_id, new_state)
+            await self._write_redis_state_with_repair(
+                self.redis,
+                character_id,
+                new_state,
+                lock_key=lock_key,
+                lock_token=lock_token,
+                lock_lost=lost,
+            )
 
             # 记忆沉淀与显著性门禁需要读取「执行后」状态；context["state"] 是执行前快照，
             # 不回写会导致移动类记忆记录成旧位置（审查 §4.2.6 附带发现）
@@ -1291,32 +1325,81 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             raise
 
     @staticmethod
-    async def _write_redis_state_with_repair(redis: Any, character_id: UUID, new_state: dict[str, Any]) -> None:
-        """写 Redis 镜像；失败重试一次后把角色送入优先对账队列（P1-2）"""
+    @staticmethod
+    async def _write_redis_state_with_repair(
+        redis: Any,
+        character_id: UUID,
+        new_state: dict[str, Any],
+        *,
+        lock_key: str | None,
+        lock_token: str | None,
+        lock_lost: asyncio.Event,
+    ) -> bool:
+        """写 Redis 镜像；失败重试一次后送入优先对账队列（P1-2）
+
+        持有锁时写入以「锁键仍为本持有者 token」为前提（审查 §4.1.3 并发-01）：
+        此前是裸 HSET，锁过期易主后本实例的迟到写入仍会覆盖新持有者的结果，
+        而看门狗是协作式轮询，最长要 ttl/3（10s）才感知。
+
+        Args:
+            redis: Redis 客户端
+            character_id: 角色 ID
+            new_state: 待写入状态
+            lock_key: 锁键；为 None 表示无锁场景，直接写入
+            lock_token: 锁持有者令牌
+            lock_lost: 失锁信号；fencing 拒绝时置位，供调用方中止后续写入
+
+        Returns:
+            True 表示写入生效；False 表示锁已易主或写失败，本次状态变更被丢弃
+        """
+        from src.core.locks import fenced_state_write
         from src.core.reconcile import request_character_repair
 
         mapping = encode_state_mapping(new_state)
+        state_key = f"char:{character_id}:state"
+
+        # 无锁场景（单测直接调用 _execute_action）：不存在并发持有者，无需 fencing
+        if lock_key is None or lock_token is None:
+            try:
+                await redis.hset(state_key, mapping=mapping)
+            except Exception as unfenced_error:
+                logger.warning(
+                    "redis_state_write_failed_unfenced",
+                    character_id=str(character_id),
+                    error=str(unfenced_error),
+                )
+                return False
+            return True
+
         try:
-            await redis.hset(f"char:{character_id}:state", mapping=mapping)
-            return
+            written = await fenced_state_write(redis, lock_key, lock_token, state_key, mapping)
         except Exception as first_error:
             logger.warning(
                 "redis_state_write_failed_retrying",
                 character_id=str(character_id),
                 error=str(first_error),
             )
-        await asyncio.sleep(1.0)
-        try:
-            await redis.hset(f"char:{character_id}:state", mapping=mapping)
-            logger.info("redis_state_write_recovered", character_id=str(character_id))
-        except Exception as second_error:
-            logger.error(
-                "redis_state_write_failed_enqueued_repair",
-                character_id=str(character_id),
-                error=str(second_error),
-                exc_info=True,
-            )
-            await request_character_repair(redis, character_id)
+            await asyncio.sleep(1.0)
+            try:
+                written = await fenced_state_write(redis, lock_key, lock_token, state_key, mapping)
+                if written:
+                    logger.info("redis_state_write_recovered", character_id=str(character_id))
+            except Exception as second_error:
+                logger.error(
+                    "redis_state_write_failed_enqueued_repair",
+                    character_id=str(character_id),
+                    error=str(second_error),
+                    exc_info=True,
+                )
+                await request_character_repair(redis, character_id)
+                return False
+        if not written:
+            # fencing 拒绝 = 锁已易主，另一实例正在推进同一角色。
+            # 置位后本 Tick 的后续所有状态写入（含记忆）都会随之中止。
+            logger.warning("redis_state_write_fenced_rejected", character_id=str(character_id))
+            lock_lost.set()
+            return False
+        return True
 
     @staticmethod
     def _build_memory_content(character_name: str, state: dict[str, Any], decision: DecisionResult) -> str:

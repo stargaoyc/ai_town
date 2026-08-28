@@ -166,7 +166,12 @@ async def test_execute_tick_fires_share_handler_when_intent_true(monkeypatch: py
         DecisionResult(action="wait", reason="刚遇到有趣的事", proactive_share_intent=True),
     )
 
-    await engine._execute_tick(_CHARACTER_ID, lock_lost=asyncio.Event())
+    await engine._execute_tick(
+        _CHARACTER_ID,
+        lock_lost=asyncio.Event(),
+        lock_key=f"char:tick:lock:{_CHARACTER_ID}",
+        lock_token="test-token",
+    )
 
     assert shared == [_CHARACTER_ID]
 
@@ -185,6 +190,11 @@ async def test_execute_tick_skips_share_handler_when_intent_false(monkeypatch: p
         DecisionResult(action="wait", reason="平平无奇的一天"),
     )
 
-    await engine._execute_tick(_CHARACTER_ID, lock_lost=asyncio.Event())
+    await engine._execute_tick(
+        _CHARACTER_ID,
+        lock_lost=asyncio.Event(),
+        lock_key=f"char:tick:lock:{_CHARACTER_ID}",
+        lock_token="test-token",
+    )
 
     assert shared == []
