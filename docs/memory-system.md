@@ -46,10 +46,11 @@
 | `content` | 自然语言描述（"小明在咖啡店工作了 2 小时"） |
 | `embedding` | 2048 维半精度向量（halfvec(2048)，P3-3 维度口径与迁移 0005 对齐） |
 | `importance` | 1–10 重要程度，影响检索权重。默认固定为 5；启用 `MEMORY_LLM_SCORING_ENABLED=true` 后由 LLM 按情感强度/关系影响/稀缺性/后续影响评分 |
-| `source_type` | `action` / `conversation` / `reflection` / `event` |
+| `source_type` | `action` / `conversation` / `gossip` / `archive`（传闻为第二手记忆，归档为压缩产物） |
 | `related_characters` | 涉及的其他角色 ID |
 | `location` | 发生地点 |
 | `is_reflected` | 是否已被反思吸收 |
+| `is_duplicate` | 是否被改写式去重标记（向量化时余弦 ≥0.95 判重） |
 
 ### 2.2 反思总结（reflections）
 
@@ -57,10 +58,13 @@
 
 | 字段 | 说明 |
 |------|------|
-| `summary` | 一句话总结（"我习惯早睡早起"） |
-| `detail` | 详细论证 |
-| `source_memory_ids` | 由哪些记忆归纳而来 |
-| `embedding` | 反思向量（可选） |
+| `content` | 反思内容（LLM 归纳的高层认知文本） |
+| `tier` | 反思层级：1=批次主题反思，2=跨期元反思（`[长期倾向]`） |
+| `importance` | 重要性 1-10（按支撑记忆数/主题数推导） |
+| `source_reflection_ids` | 元反思来源的 tier-1 反思 ID 列表（仅 tier=2 使用） |
+| `embedding` | 反思向量（保存时即时生成，失败留 NULL） |
+
+> 反思经 `reflection_sources` 中间表关联来源记忆（`related_episodes` 字段已在迁移中移除）。
 
 ### 2.3 长期规划（plans）
 
@@ -69,10 +73,13 @@
 | 字段 | 说明 |
 |------|------|
 | `title` | 目标描述（"三个月内学会咖啡拉花"） |
-| `horizon` | `daily` / `weekly` / `monthly` / `quarterly` / `yearly` |
-| `steps` | JSONB 步骤数组 |
-| `status` | `active` / `completed` / `abandoned` / `paused` |
-| `due_at` | 截止时间 |
+| `type` | `long_term` / `short_term` / `daily`（当日计划） |
+| `description` | 详细描述 |
+| `status` | `active` / `completed` / `abandoned` / `expired` |
+| `priority` | 优先级 1-5，影响决策权重 |
+| `deadline` | 截止时间 |
+| `progress` | 进度 0-100（决策后按标题二元组重叠自动推进） |
+| `plan_date` | daily 计划幂等键（精确日期，0022 迁移） |
 
 详细 DDL 见 [数据模型设计](data-model.md)。
 
@@ -153,9 +160,9 @@ LIMIT 5;
 
 | 触发条件 | 说明 | 实现状态 |
 |----------|------|----------|
-| 数量阈值 | 每新增 20 条未反思记忆触发一次反思 | ✅ 已实现（`REFLECTION_THRESHOLD`，可经 `reflection_threshold` 配置） |
-| 时间阈值 | 每日固定时间（如晚上 22:00） | ❌ 未实现（P1-12 文档-实现漂移修正：当前代码无此触发器） |
-| 事件触发 | 关键事件后（关系变化、重大决策、突发事件） | ❌ 未实现（同上；关键事件目前仅通过重要性评分间接提高反思优先级） |
+| 数量阈值 | 每新增 20 条未反思记忆触发一次批次反思 | ✅ 已实现（`REFLECTION_THRESHOLD`，可经 `reflection_threshold` 配置） |
+| 重大事件 | importance ≥ 9 的记忆即时触发反思（300s 冷却防 LLM 风暴） | ✅ 已实现（`reflection_major_importance` / `reflection_major_cooldown_seconds`） |
+| 时间阈值 | 每日固定时间触发 | ❌ 未实现（当前无此触发器，反思由数量/事件驱动） |
 
 ### 4.2 反思生成流程
 
@@ -198,17 +205,17 @@ LIMIT 5;
 
 | 触发 | 说明 | 实现状态 |
 |------|------|----------|
-| 决策自发创建 | LLM 在 Tick 决策中返回 createPlanChanges | ✅ 唯一生成入口 |
+| 决策自发创建 | LLM 在 Tick 决策中返回 createPlanChanges | ✅ 已实现 |
 | 启发式推进 | Action 与计划标题重叠时自动 progress+delta | ✅ 已实现 |
 | 反思驱动重排 | 反思产生新认知后调整长期计划 | ⚠️ 仅经 Prompt 软引导，无独立 replan 任务 |
-| 每日定时规划 | 每天 6:00 生成当日计划 | ❌ 未实现（原文档宣称，实际无此任务） |
+| 每日定时规划 | 每天 06:00-09:00（世界时间）为活跃角色生成当日计划 | ✅ 已实现（`DailyPlanService`，plan_date 精确日期幂等） |
 
 ### 5.2 计划与 Action 的关系
 
 ```text
-长期计划 (plans)
-    ↓ 分解
-每日计划 (steps JSONB)
+长期计划 (plans, type=long_term/short_term)
+    ↓ 生成
+每日计划 (plans, type=daily, plan_date 精确日期幂等)
     ↓ 影响
 候选 Action 过滤 (优先选择符合计划的 Action)
     ↓
