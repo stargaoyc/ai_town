@@ -45,6 +45,13 @@ class StubPlanRepo:
     async def get_active_plans(self, character_id: UUID) -> list[Any]:
         return [SimplePlan(p["type"], p["title"]) for p in self.plans if p["character_id"] == character_id]
 
+    async def has_daily_plan_on(self, character_id: UUID, plan_date: Any) -> bool:
+        return any(
+            p["character_id"] == character_id and p.get("plan_date") == plan_date
+            for p in self.plans
+            if p["type"] == "daily"
+        )
+
     async def create_plan(self, character_id: UUID, **fields: Any) -> Any:
         self.plans.append({"character_id": character_id, **fields})
         self.created.append((character_id, fields))
@@ -127,13 +134,32 @@ class TestDailyPlanService:
 
     async def test_idempotent_within_same_world_day(self, monkeypatch: MonkeyPatch, plan_repo: StubPlanRepo) -> None:
         cid = uuid4()
-        plan_repo.plans.append({"character_id": cid, "type": "daily", "title": "[2026-08-27] 已有计划"})
+        # 0022：幂等键为 plan_date 精确日期（非标题字符串），标题不再带日期前缀
+        plan_repo.plans.append(
+            {
+                "character_id": cid,
+                "type": "daily",
+                "title": "已有计划",
+                "plan_date": datetime(2026, 8, 27, tzinfo=UTC).date(),
+            }
+        )
         service = _make_service([_char(cid)], plan_repo, StubLLM(), monkeypatch)
 
         created = await service.generate_for_all_characters(datetime(2026, 8, 27, 7, 0, tzinfo=UTC))
 
         assert created == 0
         assert plan_repo.created == []
+
+    async def test_generates_plan_with_plan_date(self, monkeypatch: MonkeyPatch, plan_repo: StubPlanRepo) -> None:
+        cid = uuid4()
+        service = _make_service([_char(cid)], plan_repo, StubLLM(), monkeypatch)
+
+        await service.generate_for_all_characters(datetime(2026, 8, 27, 7, 0, tzinfo=UTC))
+
+        _cid, fields = plan_repo.created[0]
+        assert fields["plan_date"] == datetime(2026, 8, 27, tzinfo=UTC).date()
+        # 标题不再拼日期前缀（plan_date 已承载幂等键）
+        assert not fields["title"].startswith("[2026-08-27]")
 
     async def test_llm_failure_skips_character(self, monkeypatch: MonkeyPatch, plan_repo: StubPlanRepo) -> None:
         cid = uuid4()

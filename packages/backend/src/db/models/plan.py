@@ -5,10 +5,10 @@ LLM 决策时可返回 planChanges，更新此表。
 不做 precondition 硬过滤——硬门禁会阻断角色的自主行为空间。
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Date, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
@@ -46,6 +46,8 @@ class Plan(Base):
     status: Mapped[str] = mapped_column(String(20), default="active", comment="状态")
     priority: Mapped[int] = mapped_column(Integer, default=3, comment="优先级 1-5")
     deadline: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), comment="截止时间")
+    # 0022 迁移：daily 计划的幂等键（精确日期，替代标题字符串匹配）；非 daily 为 NULL
+    plan_date: Mapped[date | None] = mapped_column(Date, comment="计划日期（daily 幂等键，仅 daily 计划非空）")
     progress: Mapped[int] = mapped_column(Integer, default=0, comment="进度 0-100")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="now()", comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(

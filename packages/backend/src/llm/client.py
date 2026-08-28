@@ -181,6 +181,12 @@ class LLMClient:
         # 多模型源池（主源 = settings，备用源 = llm_fallback_sources，失败冷却切换）
         self._source_pool = ModelSourcePool()
 
+        # embed 进程内缓存（审查 记忆-06）：感知 query 短时段内高频重复
+        # （同角色/位置/计划），同文本重新 embed 是纯浪费；用有界 dict 缓存
+        # 文本→向量，超上限时清空（简单 LRU 近似，embedding 是纯函数无一致性风险）。
+        self._embed_cache: dict[str, list[float]] = {}
+        self._embed_cache_max = 512
+
         # HTTP 客户端（用于视频生成轮询等非 OpenAI SDK 端点）
         self._http_client: httpx.AsyncClient | None = None
 
@@ -226,6 +232,10 @@ class LLMClient:
             嵌入向量列表
         """
         await self._check_cost_control()
+        # 缓存命中直接返回（审查 记忆-06）：感知 query 短时段内高频重复
+        cached = self._embed_cache.get(text)
+        if cached is not None:
+            return cached
         start_perf = time.perf_counter()
         try:
             # OpenRouter 需要 extra_headers + 多模态 content 格式
@@ -254,6 +264,10 @@ class LLMClient:
             self._record_embedding_metrics(elapsed, est_tokens, est_cost)
             await self._record_cost_control_success(est_tokens, est_cost)
             embedding = self._fit_dim(embedding)
+            # 写缓存（有界，超限清空近似 LRU）
+            if len(self._embed_cache) >= self._embed_cache_max:
+                self._embed_cache.clear()
+            self._embed_cache[text] = embedding
             logger.debug("embedding_created", dim=len(embedding))
             return embedding
         except Exception:

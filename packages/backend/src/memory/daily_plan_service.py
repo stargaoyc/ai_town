@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from structlog import get_logger
 
@@ -40,25 +39,18 @@ class DailyPlanService:
         Returns:
             实际生成计划数
         """
-        day_key = world_now.strftime("%Y-%m-%d")
+        day_key = world_now.date()
         created = 0
         async with self.session_factory() as session:
             chars = await CharacterRepository(session).get_active_characters()
             plan_repo = PlanRepository(session)
             for char in chars:
-                if await self._has_daily_plan(plan_repo, char.id, day_key):
+                if await plan_repo.has_daily_plan_on(char.id, day_key):
                     continue
                 created += await self._generate_for_character(plan_repo, char, world_now)
         if created:
-            logger.info("daily_plans_generated", day=day_key, count=created)
+            logger.info("daily_plans_generated", day=str(day_key), count=created)
         return created
-
-    @staticmethod
-    async def _has_daily_plan(plan_repo: PlanRepository, character_id: UUID, day_key: str) -> bool:
-        for plan in await plan_repo.get_active_plans(character_id):
-            if plan.type == "daily" and plan.title and day_key in plan.title:
-                return True
-        return False
 
     async def _generate_for_character(self, plan_repo: PlanRepository, char: Any, world_now: datetime) -> int:
         """为单个角色生成当日计划（LLM 结构化输出 → 落库）"""
@@ -95,7 +87,7 @@ class DailyPlanService:
             return 0
 
         created = 0
-        day_label = world_now.strftime("%Y-%m-%d")
+        plan_date = world_now.date()
         for item in result.get("plans", [])[:_DAILY_PLAN_MAX_PER_CHARACTER]:
             if not isinstance(item, dict):
                 continue
@@ -105,10 +97,11 @@ class DailyPlanService:
             description = item.get("description")
             await plan_repo.create_plan(
                 char.id,
-                title=f"[{day_label}] {title.strip()[:180]}",
+                title=title.strip()[:180],
                 description=description.strip()[:1000] if isinstance(description, str) else None,
                 type="daily",
                 priority=3,
+                plan_date=plan_date,
             )
             created += 1
         if created:
@@ -116,6 +109,6 @@ class DailyPlanService:
                 "daily_plan_created",
                 character_id=str(char.id),
                 count=created,
-                day=day_label,
+                day=str(plan_date),
             )
         return created

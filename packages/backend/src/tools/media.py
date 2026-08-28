@@ -15,11 +15,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from uuid import UUID
 
 import structlog
 
+from src.config import settings
 from src.observability.metrics import MEDIA_GENERATION_TOTAL
 from src.runtime import get_llm
 
@@ -50,7 +52,12 @@ async def _finalize_video(character_id: str, prompt: str, frames: int) -> None:
 
     async def _run() -> None:
         try:
-            url = await llm.generate_video(prompt=prompt, num_frames=frames)
+            # 后台任务同样受 tool_timeout 纪律约束（审查 LLM-02）：视频轮询
+            # 挂死时超时取消并记失败，不让后台任务无限占用。
+            url = await asyncio.wait_for(
+                llm.generate_video(prompt=prompt, num_frames=frames),
+                timeout=settings.tool_timeout_seconds if settings.tool_timeout_seconds > 0 else 900.0,
+            )
         except Exception as exc:
             MEDIA_GENERATION_TOTAL.labels(tool="generate_video", outcome="failed").inc()
             logger.warning("generate_video_bg_failed", error=str(exc), character_id=character_id)
@@ -67,7 +74,13 @@ async def _finalize_video(character_id: str, prompt: str, frames: int) -> None:
         from src.memory.episode_service import EpisodeService
 
         async with db.session() as session:
-            from src.db.repositories import MemoryRepository
+            from src.db.repositories import CharacterRepository, MemoryRepository
+
+            # 校验角色仍存在（审查 LLM-02）：后台回调可能晚于角色删除/下线，
+            # 此时写入记忆会因外键失败或产生孤儿记录；显式校验并跳过。
+            if await CharacterRepository(session).get_by_id(UUID(character_id)) is None:
+                logger.info("generate_video_bg_character_gone", character_id=character_id)
+                return
 
             service = EpisodeService(llm, MemoryRepository(session))
             await service.create_episode(

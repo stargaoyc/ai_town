@@ -3,6 +3,7 @@
 LLM 决策返回 planChanges 时更新此表，计划影响候选 Action 的 precondition 评估。
 """
 
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -50,6 +51,19 @@ class PlanRepository(BaseRepository[Plan]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars())
+
+    async def has_daily_plan_on(self, character_id: UUID, plan_date: date) -> bool:
+        """当日是否已存在 daily 计划（0022：精确日期幂等判定）
+
+        替代此前「day_key in plan.title」字符串匹配——LLM 生成含日期串的
+        任意标题都会被误判为今日已规划；精确列查询消除误判。
+        """
+        stmt = select(Plan.id).where(
+            Plan.character_id == character_id,
+            Plan.type == "daily",
+            Plan.plan_date == plan_date,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none() is not None
 
     async def create_plan(self, character_id: UUID, **fields: Any) -> Plan:
         """创建角色计划（LLM 新建路径，character_id 服务端绑定防越权）
