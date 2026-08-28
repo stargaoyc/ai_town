@@ -1271,7 +1271,6 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
             raise
 
     @staticmethod
-    @staticmethod
     async def _write_redis_state_with_repair(redis: Any, character_id: UUID, new_state: dict[str, Any]) -> None:
         """写 Redis 镜像；失败重试一次后把角色送入优先对账队列（P1-2）"""
         from src.core.reconcile import request_character_repair
