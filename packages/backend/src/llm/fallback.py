@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from langchain_openai import ChatOpenAI
+from openai import AsyncOpenAI
 from structlog import get_logger
 
 from src.config import settings
@@ -62,22 +63,39 @@ class _SourceState:
 
 
 class ModelSourcePool:
-    """多模型源池：主源（settings）+ 备用源（llm_fallback_sources），带失败冷却"""
+    """多模型源池：主源（settings）+ 备用源（llm_fallback_sources），带失败冷却
 
-    def __init__(self) -> None:
-        primary = ModelSource(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-            model=settings.model_chat,
-        )
+    LLM-05 方案 B：池子泛化到「客户端类型」，同一套冷却/切换逻辑同时服务
+    chat（ChatOpenAI）与 embed/图像/视频（AsyncOpenAI）两条链路——
+    此前 embed 走单源 AsyncOpenAI 无 fallback，单源失败即失败。
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        model: str,
+        fallback_sources: str | None = None,
+    ) -> None:
+        """构造源池
+
+        Args:
+            api_key: 主源 API Key
+            base_url: 主源 Base URL
+            model: 主源模型
+            fallback_sources: LLM_FALLBACK_SOURCES JSON（缺省用 settings.llm_fallback_sources）
+        """
+        primary = ModelSource(api_key=api_key, base_url=base_url, model=model)
         self._sources: list[ModelSource] = [primary]
         self._states: list[_SourceState] = [_SourceState()]
-        for raw in self._parse_fallbacks(settings.llm_fallback_sources):
+        raw_fallbacks = settings.llm_fallback_sources if fallback_sources is None else fallback_sources
+        for raw in self._parse_fallbacks(raw_fallbacks):
             self._sources.append(
                 ModelSource(
                     api_key=raw["api_key"],
                     base_url=raw["base_url"],
-                    model=raw.get("model") or settings.model_chat,
+                    model=raw.get("model") or model,
                 )
             )
             self._states.append(_SourceState())
@@ -110,13 +128,23 @@ class ModelSourcePool:
         return healthy + cooling
 
     def build_llm(self, index: int) -> ChatOpenAI:
-        """为指定源构造 ChatOpenAI 实例"""
+        """为指定源构造 ChatOpenAI 实例（chat 链路）"""
         src = self._sources[index]
         return ChatOpenAI(
             model=src.model,
             api_key=src.api_key,  # type: ignore[arg-type]
             base_url=src.base_url,
             timeout=settings.llm_timeout,
+            max_retries=settings.llm_max_retries,
+        )
+
+    def build_openai_client(self, index: int) -> AsyncOpenAI:
+        """为指定源构造 AsyncOpenAI 实例（embed/图像/视频链路，LLM-05 方案 B）"""
+        src = self._sources[index]
+        return AsyncOpenAI(
+            api_key=src.api_key,
+            base_url=src.base_url,
+            timeout=float(settings.llm_timeout),
             max_retries=settings.llm_max_retries,
         )
 
@@ -136,21 +164,36 @@ class ModelSourcePool:
         )
 
 
-async def invoke_with_fallback(pool: ModelSourcePool, run: Any) -> tuple[Any, int]:
-    """按候选顺序执行 run(llm)，失败切换下一源
+async def invoke_with_fallback(
+    pool: ModelSourcePool,
+    run: Any,
+    *,
+    client_kind: str = "chat",
+) -> tuple[Any, int]:
+    """按候选顺序执行 run(client)，失败切换下一源
 
     Args:
         pool: 模型源池
-        run: 接收 ChatOpenAI 实例并返回 awaitable 的回调（如 lambda llm: llm.ainvoke(msgs)）
+        run: 接收客户端实例并返回 awaitable 的回调
+            （chat 传 ChatOpenAI，embed/图像/视频传 AsyncOpenAI）
+        client_kind: 客户端类型——"chat" 用 build_llm（ChatOpenAI），
+            "openai" 用 build_openai_client（AsyncOpenAI）。显式传入避免
+            运行时类型猜测（LLM-05 方案 B）。
 
     Returns:
         (run 的返回值, 成功的源索引)
     """
     last_error: Exception | None = None
     for index in pool.ordered_candidates():
-        llm = pool.build_llm(index)
+        # client 类型由调用方经 client_kind 决定（chat=ChatOpenAI / openai=AsyncOpenAI），
+        # run 回调按对应接口使用；统一注解 Any 避免两种客户端类型冲突
+        client: Any
+        if client_kind == "openai":
+            client = pool.build_openai_client(index)
+        else:
+            client = pool.build_llm(index)
         try:
-            result = await run(llm)
+            result = await run(client)
         except Exception as e:  # noqa: BLE001 —— 切换语义要求捕获任意调用异常后尝试下一源
             last_error = e
             pool.mark_failure(index)

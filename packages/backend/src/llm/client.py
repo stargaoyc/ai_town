@@ -166,20 +166,24 @@ class LLMClient:
             max_retries=settings.llm_max_retries,
         )
 
-        # Embedding 专用客户端（独立 API Key + URL，如 OpenRouter）
-        # 未配置时回退到主客户端
-        if settings.embedding_model_key and settings.embedding_model_url:
-            self._embedding_client = AsyncOpenAI(
-                api_key=settings.embedding_model_key,
-                base_url=settings.embedding_model_url,
-                timeout=float(settings.llm_timeout),
-                max_retries=settings.llm_max_retries,
-            )
-        else:
-            self._embedding_client = self.openai
-
-        # 多模型源池（主源 = settings，备用源 = llm_fallback_sources，失败冷却切换）
-        self._source_pool = ModelSourcePool()
+        # 多模型源池（LLM-05 方案 B：chat 与 embed 各持独立池，同一套冷却/切换）
+        # chat 池：主源 = settings.openai，备用源 = llm_fallback_sources
+        self._source_pool = ModelSourcePool(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            model=settings.model_chat,
+        )
+        # embed 池：主源 = embedding 专用配置（如 OpenRouter），备用源复用 fallback_sources；
+        # 未配置 embedding 专用源时主源回退 chat 主源
+        embed_api_key = settings.embedding_model_key or settings.openai_api_key
+        embed_base_url = settings.embedding_model_url or settings.openai_base_url
+        self._embed_pool = ModelSourcePool(
+            api_key=embed_api_key,
+            base_url=embed_base_url,
+            model=settings.model_embedding,
+        )
+        # 向后兼容引用：embed 主源客户端（部分路径仍直连，见 _embedding_client 用法）
+        self._embedding_client = self._embed_pool.build_openai_client(0)
 
         # embed 进程内缓存（审查 记忆-06）：感知 query 短时段内高频重复
         # （同角色/位置/计划），同文本重新 embed 是纯浪费；用有界 dict 缓存
@@ -241,21 +245,24 @@ class LLMClient:
             # OpenRouter 需要 extra_headers + 多模态 content 格式
             is_openrouter = "openrouter.ai" in (settings.embedding_model_url or "")
 
-            if is_openrouter:
-                response = await self._embedding_client.embeddings.create(
-                    model=settings.model_embedding,
-                    input=[{"content": [{"type": "text", "text": text}]}],  # type: ignore[arg-type]
-                    encoding_format="float",
-                    extra_headers={
-                        "HTTP-Referer": "https://github.com/ai-town",
-                        "X-OpenRouter-Title": "AI Town",
-                    },
-                )
-            else:
-                response = await self._embedding_client.embeddings.create(
+            async def _run_embed(client: Any) -> Any:
+                if is_openrouter:
+                    return await client.embeddings.create(
+                        model=settings.model_embedding,
+                        input=[{"content": [{"type": "text", "text": text}]}],
+                        encoding_format="float",
+                        extra_headers={
+                            "HTTP-Referer": "https://github.com/ai-town",
+                            "X-OpenRouter-Title": "AI Town",
+                        },
+                    )
+                return await client.embeddings.create(
                     model=settings.model_embedding,
                     input=text,
                 )
+
+            # LLM-05 方案 B：embed 纳入多源 fallback（失败自动切下一源 + 冷却）
+            response, _index = await invoke_with_fallback(self._embed_pool, _run_embed, client_kind="openai")
 
             embedding = response.data[0].embedding
             elapsed = time.perf_counter() - start_perf
@@ -294,24 +301,27 @@ class LLMClient:
             # OpenRouter 需要 extra_headers + 多模态 content 格式（与 embed() 同路径）
             is_openrouter = "openrouter.ai" in (settings.embedding_model_url or "")
 
-            if is_openrouter:
-                response = await self._embedding_client.embeddings.create(
-                    model=settings.model_embedding,
-                    input=[
-                        {"content": [{"type": "text", "text": text}]}
-                        for text in texts  # type: ignore[arg-type]
-                    ],
-                    encoding_format="float",
-                    extra_headers={
-                        "HTTP-Referer": "https://github.com/ai-town",
-                        "X-OpenRouter-Title": "AI Town",
-                    },
-                )
-            else:
-                response = await self._embedding_client.embeddings.create(
+            async def _run_batch(client: Any) -> Any:
+                if is_openrouter:
+                    return await client.embeddings.create(
+                        model=settings.model_embedding,
+                        input=[
+                            {"content": [{"type": "text", "text": text}]}
+                            for text in texts
+                        ],
+                        encoding_format="float",
+                        extra_headers={
+                            "HTTP-Referer": "https://github.com/ai-town",
+                            "X-OpenRouter-Title": "AI Town",
+                        },
+                    )
+                return await client.embeddings.create(
                     model=settings.model_embedding,
                     input=texts,
                 )
+
+            # LLM-05 方案 B：embed_batch 纳入多源 fallback
+            response, _index = await invoke_with_fallback(self._embed_pool, _run_batch, client_kind="openai")
 
             if len(response.data) != len(texts):
                 raise RuntimeError(
@@ -370,15 +380,19 @@ class LLMClient:
             if image_url:
                 content.append({"type": "image_url", "image_url": {"url": image_url}})
 
-            response = await self._embedding_client.embeddings.create(
-                model=settings.model_embedding,
-                input=[{"content": content}],  # type: ignore[arg-type]
-                encoding_format="float",
-                extra_headers={
-                    "HTTP-Referer": "https://github.com/ai-town",
-                    "X-OpenRouter-Title": "AI Town",
-                },
-            )
+            async def _run_multimodal(client: Any) -> Any:
+                return await client.embeddings.create(
+                    model=settings.model_embedding,
+                    input=[{"content": content}],
+                    encoding_format="float",
+                    extra_headers={
+                        "HTTP-Referer": "https://github.com/ai-town",
+                        "X-OpenRouter-Title": "AI Town",
+                    },
+                )
+
+            # LLM-05 方案 B：embed_multimodal 纳入多源 fallback
+            response, _index = await invoke_with_fallback(self._embed_pool, _run_multimodal, client_kind="openai")
             embedding = response.data[0].embedding
             elapsed = time.perf_counter() - start_perf
             est_tokens = max(1, len(text) // 2)

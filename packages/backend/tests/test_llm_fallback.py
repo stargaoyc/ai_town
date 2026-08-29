@@ -33,7 +33,12 @@ def _fresh_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_pool(fallbacks_json: str, monkeypatch: pytest.MonkeyPatch) -> ModelSourcePool:
     monkeypatch.setattr(settings, "llm_fallback_sources", fallbacks_json, raising=False)
-    return ModelSourcePool()
+    return ModelSourcePool(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+        model=settings.model_chat,
+        fallback_sources=fallbacks_json,
+    )
 
 
 class TestParseFallbacks:
