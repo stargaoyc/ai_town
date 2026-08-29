@@ -115,6 +115,9 @@ services:
       # P1-21/P2-17：Trace 经 OTel Collector（tail_sampling：错误/慢链路必采）
       # 再入 Jaeger；本地裸机直连可改回 http://jaeger:4318
       OTEL_ENDPOINT: http://otel-collector:4318
+      # LANGFUSE_HOST 覆盖 .env：容器内必须用 compose 服务名 langfuse-web:3000
+      # （.env 的 localhost:3001 是宿主机视角，容器内 localhost 是容器自身）
+      LANGFUSE_HOST: http://langfuse-web:3000
       # P1-20：多副本部署时附加实例设 RUN_MIGRATIONS=0（迁移由首副本/Init Job 承担）
       RUN_MIGRATIONS: "1"
       TZ: Asia/Shanghai
@@ -398,7 +401,8 @@ services:
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
       NEXTAUTH_URL: http://localhost:3001 # 生产经反代暴露时改为实际域名
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET_required}
-      SALT_KEY: ${LANGFUSE_SALT_KEY:?LANGFUSE_SALT_KEY_required}
+      # langfuse 镜像读取的变量名是 SALT 而非 SALT_KEY（校验 schema 用 process.env.SALT）
+      SALT: ${LANGFUSE_SALT_KEY:?LANGFUSE_SALT_KEY_required}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY_required}
       TELEMETRY_ENABLED: "false"
       TZ: Asia/Shanghai
@@ -408,7 +412,9 @@ services:
       langfuse-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/public/health || exit 1"]
+      # langfuse 进程只绑定容器自身网卡 IP（不绑 localhost），healthcheck 必须
+      # 动态取本机 IP 才能命中——静态 localhost/127.0.0.1 均 Connection refused
+      test: ["CMD-SHELL", "wget --spider -q http://$(hostname -i):3000/api/public/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -427,7 +433,7 @@ services:
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
       # worker 校验与 web 的关键 env 一致，三个密钥必须同步提供
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET_required}
-      SALT_KEY: ${LANGFUSE_SALT_KEY:?LANGFUSE_SALT_KEY_required}
+      SALT: ${LANGFUSE_SALT_KEY:?LANGFUSE_SALT_KEY_required}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY_required}
       TELEMETRY_ENABLED: "false"
       TZ: Asia/Shanghai
