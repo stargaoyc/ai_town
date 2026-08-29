@@ -20,6 +20,7 @@ from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
 from src.core.character.tick import CharacterTickEngine
 from src.db.models import ActionRecord, Character, CharacterState, MemoryEpisode
 
@@ -92,6 +93,8 @@ class TestCharacterTickMainFlow:
 
         registry = ActionRegistry()
         registry.register(Action(id="wait", name="等待", category=ActionCategory.LIFE, duration_minutes=10))
+        # 临时关闭记忆写入门禁（5b15467 引入的显著性门禁会过滤 wait 等低重要性 action）
+        monkeypatch.setattr(settings, "memory_write_gate_enabled", False, raising=False)
         engine = CharacterTickEngine(
             redis=it_redis,
             registry=registry,

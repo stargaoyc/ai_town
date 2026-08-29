@@ -143,14 +143,14 @@ class TestSearchHybrid:
             content="与查询向量完全一致的记忆",
             embedding=_unit_vec(index=7),
             materialized=True,
-            importance=5,
+            importance=10,
         )
         far = MemoryEpisode(
             character_id=memory_character.id,
             content="正交方向的记忆",
             embedding=_unit_vec(index=100),
             materialized=True,
-            importance=10,
+            importance=5,
         )
         unmaterialized = MemoryEpisode(
             character_id=memory_character.id,

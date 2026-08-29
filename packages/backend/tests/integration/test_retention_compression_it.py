@@ -72,8 +72,8 @@ class TestRetentionCompression:
 
         # 大组（>=min_batch）：走压缩归档路径
         await _seed_old(it_session, archive_character.id, count=6, importance=2, days=120)
-        # 小组（<min_batch）：无需摘要，阶段二直接删除
-        await _seed_old(it_session, archive_character.id, count=3, importance=3, days=110)
+        # 小组（<min_batch）：在不同月份（150 天前），确保独立成组——无需摘要，阶段二直接删除
+        await _seed_old(it_session, archive_character.id, count=3, importance=3, days=150)
         # 高重要性记忆不受影响
         await _seed_old(it_session, archive_character.id, count=2, importance=9, days=120)
         await it_session.flush()
