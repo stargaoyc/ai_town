@@ -379,7 +379,7 @@ CREATE INDEX idx_ar_action ON action_records (action_id);
 #### 3.3.5 memory_episodes 表（记忆事实，HASH 16 分区 + pgvector）
 
 ```sql
--- 0001 初始为普通表，0002 重建为 HASH 16 分区，0005 改 embedding 为 halfvec(2048)
+-- 0001 初始为普通表，0002 重建为 HASH 16 分区，embedding 维度与 EMBEDDING_DIM 对齐（启动自动同步，halfvec 上限 4000）
 CREATE TABLE memory_episodes (
     id UUID NOT NULL DEFAULT uuidv7(),
     character_id UUID NOT NULL,
@@ -393,7 +393,7 @@ CREATE TABLE memory_episodes (
     tags JSONB,                             -- 标签
     source_type VARCHAR(50),                -- 来源类型
     is_reflected BOOLEAN NOT NULL DEFAULT FALSE, -- 是否已被反思
-    embedding halfvec(2048),                -- 向量（halfvec 半精度，支持 4000 维）
+    embedding halfvec(4000),                -- 向量（halfvec 半精度，维度与 EMBEDDING_DIM 对齐，上限 4000 维）
     fail_count INTEGER NOT NULL DEFAULT 0,  -- 向量化失败次数（0003 新增）
     last_error TEXT,                        -- 最近一次错误（0003 新增）
     next_retry_at TIMESTAMPTZ,              -- 下次重试时间（指数退避，0004 新增）
@@ -420,7 +420,7 @@ CREATE INDEX idx_mem_importance ON memory_episodes (character_id, importance DES
 **关键设计**：
 - **HASH 16 分区**：按 `character_id` 哈希分散到 16 个分区，避免单角色记忆集中在一个分区
 - **HASH 分区固定**：分区数固定为 16，扩展需要全表重分布（设计文档需明确声明）
-- **halfvec(2048)**：pgvector 半精度浮点向量，支持最多 4000 维，存储效率是 vector 的 2 倍
+- **halfvec(4000)**：pgvector 半精度浮点向量，支持最多 4000 维，存储效率是 vector 的 2 倍；维度由 `EMBEDDING_DIM` 驱动（启动自动同步，换模型无需新增迁移）
 - **HNSW 索引**：`m=16`（每层连接数）、`ef_construction=128`（构建时搜索宽度），平衡召回率与构建速度
 - **fail_count + next_retry_at**：向量化失败指数退避机制，`fail_count >= 5` 熔断（EmbeddingWorker 不再处理）
 - **复合外键**：`reflection_sources` 通过 `(memory_id, memory_character_id)` 引用 `memory_episodes(id, character_id)`
@@ -730,11 +730,11 @@ WITH ranked_memories AS (
         timestamp,
         source_type,
         is_reflected,
-        1 - (embedding <=> $2::halfvec(2048)) AS sim_score  -- 余弦相似度
+        1 - (embedding <=> $2::halfvec) AS sim_score  -- 余弦相似度（维度由值推断）
     FROM memory_episodes
     WHERE character_id = $1::uuid
       AND embedding IS NOT NULL
-    ORDER BY embedding <=> $2::halfvec(2048)  -- HNSW 索引扫描
+    ORDER BY embedding <=> $2::halfvec  -- HNSW 索引扫描
     LIMIT $3::int * 3                          -- 过采样 3 倍
 )
 SELECT * FROM ranked_memories
@@ -1271,11 +1271,11 @@ async def search_memories(character_id, query, limit=5):
     results = await session.execute(
         text("""
             WITH ranked AS (
-                SELECT *, 1 - (embedding <=> :q::halfvec(2048)) AS sim_score
+                SELECT *, 1 - (embedding <=> :q::halfvec) AS sim_score
                 FROM memory_episodes
                 WHERE character_id = :cid AND embedding IS NOT NULL
-                ORDER BY embedding <=> :q::halfvec(2048)
-                LIMIT :lim * 3
+                ORDER BY embedding <=> :q::halfvec
+                LIMIT :lim * 4
             )
             SELECT * FROM ranked
             ORDER BY (sim_score * 0.7 + importance / 10.0 * 0.2 + time_decay * 0.1) DESC
@@ -1902,7 +1902,7 @@ async def _compress_context(self, conversation, history):
 
     # 2. LLM 生成摘要
     summary = await self.llm.chat(
-        model=settings.model_flash,  # 用便宜模型
+        model=settings.model_chat,  # 对话模型（model_flash 已移除，由 model_chat 承担）
         messages=[{"role": "user", "content": f"总结对话：{old_messages}"}]
     )
 
@@ -1972,12 +1972,12 @@ async def _get_world_context(self) -> str:
 
 | 模型类型 | 配置项 | 默认值 | 用途 |
 |----------|--------|--------|------|
-| `chat` | `model_chat` | `gpt-4o-mini` | 对话 + 图像理解（主力模型） |
-| `strong` | `model_strong` | `gpt-4o` | **图像生成**（非通用强模型） |
-| `flash` | `model_flash` | `gpt-3.5-turbo` | **视频生成**（非通用快模型） |
-| `embedding` | `model_embedding` | `text-embedding-3-small` | 向量化 |
+| `chat` | `model_chat` | `gpt-4o-mini` | 对话 + 结构化决策（主力模型） |
+| `image` | `model_image` | `agnes-image-2.1-flash` | 图像生成（仅 generate_image 使用） |
+| `video` | `model_video` | `agnes-video-v2.0` | 视频生成（仅 generate_video 使用） |
+| `embedding` | `model_embedding` | `text-embedding-3-small` | 向量化（可配专用 URL/Key） |
 
-> **关键澄清**：`strong` 用于图像生成，`flash` 用于视频生成，并非传统意义上的"强/弱对话模型"。对话主力是 `chat`。
+> **双栈说明（LLM-05 方案 B）**：chat/structured_output 走 LangChain `ChatOpenAI`，embed/图像/视频走原生 `AsyncOpenAI`；embed 已纳入多源 fallback。原 `model_strong`/`model_flash` 已移除。
 
 #### 9.1.2 核心方法
 
@@ -2992,15 +2992,16 @@ class Settings(BaseSettings):
     # === LLM ===
     openai_api_key: str                        # 必填
     openai_base_url: str = "https://api.openai.com/v1"
-    model_chat: str = "gpt-4o-mini"            # 对话 + 图像理解
-    model_strong: str = "gpt-4o"               # 图像生成
-    model_flash: str = "gpt-3.5-turbo"         # 视频生成
+    model_chat: str = "gpt-4o-mini"            # 对话 + 结构化决策
+    model_image: str = "agnes-image-2.1-flash"   # 图像生成（原 model_strong 已移除）
+    model_video: str = "agnes-video-v2.0"        # 视频生成（原 model_flash 已移除）
     model_embedding: str = "text-embedding-3-small"
     embedding_model_key: str | None = None     # 独立 embedding API key
     embedding_model_url: str | None = None     # 独立 embedding base url
     llm_timeout: int = 30
     llm_max_retries: int = 2
-    embedding_dim: int = 1536                  # 注意：实际迁移用 2048
+    llm_fallback_sources: str = "[]"           # 多源 fallback（chat/embed 共用，失败冷却切换）
+    embedding_dim: int = 2048                  # 与 pgvector halfvec 列对齐（上限 4000，启动自动同步）
 
     # === Observability ===
     otel_endpoint: str | None = None
@@ -3061,7 +3062,7 @@ class Settings(BaseSettings):
 
 | 配置 | 默认值 | 关键说明 |
 |------|--------|----------|
-| `embedding_dim` | 1536 | **注意**：配置默认 1536，但 0005 迁移实际改为 `halfvec(2048)` |
+| `embedding_dim` | 2048 | 与 pgvector halfvec 列对齐（`EMBEDDING_DIM` 配置，上限 4000；启动自动同步） |
 | `share_cooldown_seconds` | 1800 | 30 分钟，不是 3600 |
 | `share_daily_limit` | 8 | 每日 8 次，不是 5 |
 | `onebot_group_at_only` | False | 默认开启智能回复（四层决策） |

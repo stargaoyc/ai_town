@@ -1270,7 +1270,7 @@ class MemoryRepository:
 │   - id (UUID v7)                                 │
 │   - character_id (分区键，FK ON DELETE CASCADE)   │
 │   - content (Text)                               │
-│   - embedding (HALFVEC(2048), nullable)          │
+│   - embedding (HALFVEC(settings.embedding_dim), nullable) │
 │   - materialized (bool，embedding 是否已生成)     │
 │   - importance (1-10)                            │
 │   - timestamp (TIMESTAMPTZ)                      │

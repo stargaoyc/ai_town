@@ -199,7 +199,7 @@ Character Tick 是角色的"大脑循环"。每 30 秒（`CHARACTER_TICK_SECONDS
 | `id`           | UUID v7 主键（时间有序）                         |
 | `character_id` | 所属角色                                         |
 | `content`      | 记忆内容（自然语言，如"和小春在咖啡店吃了午饭"） |
-| `embedding`    | 向量（1536 维，用 text-embedding-3-small 生成）  |
+| `embedding`    | 向量（halfvec，维度与 EMBEDDING_DIM 对齐，默认 2048，上限 4000） |
 | `importance`   | 重要性分数（1–10，影响检索权重）                 |
 | `timestamp`    | 发生时间                                         |
 | `is_reflected` | 是否已被反思吸收                                 |
@@ -811,15 +811,16 @@ OPENAI_BASE_URL=http://localhost:11434/v1
 **模型配置**（按你的提供商修改）：
 
 ```env
-MODEL_CHAT=gpt-4o-mini        # 日常对话模型（便宜）
-MODEL_STRONG=gpt-4o           # 复杂决策模型（Character Tick 用）
-MODEL_FLASH=gpt-3.5-turbo     # 快速任务模型（分类、判断）
+MODEL_CHAT=gpt-4o-mini        # 日常对话模型（对话 + 结构化决策）
+MODEL_IMAGE=agnes-image-2.1-flash   # 图像生成（仅 generate_image）
+MODEL_VIDEO=agnes-video-v2.0        # 视频生成（仅 generate_video）
+LLM_FALLBACK_SOURCES=[]       # 多源 fallback（可选）
 ```
 
 **Embedding 配置**：
 
 ```env
-EMBEDDING_DIM=1536
+EMBEDDING_DIM=2048
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
@@ -888,16 +889,32 @@ alembic upgrade head
 | `0002_optimize`           | 性能优化索引                                                                                                                                                            |
 | `0003_messages`           | 消息表（conversations/messages）                                                                                                                                        |
 | `0004_phase3_refinements` | Phase 3 字段调整                                                                                                                                                        |
-| `0005_embedding_dim_2048` | 调整 embedding 维度                                                                                                                                                     |
+| `0005_embedding_dim_2048` | embedding 维度 1536→2048（halfvec）                                                                                                                                     |
 | `0006_world_event_key`    | world_events 主键调整                                                                                                                                                   |
-| `0020_memory_index_governance` | R6 索引治理 + 移除 pg_trgm（死扩展，全库零使用） + 新增 idx_mem_retention（保留周期索引） + 重建 idx_mem_unmaterialized（对齐实际查询列） |
+| `0007_character_state_history` | 角色状态历史表（RANGE 分区）                                                                                                                                            |
+| `0008_add_character_diaries` | 角色日记表                                                                                                                                                            |
+| `0009_gossip_source_type` | 传闻来源类型                                                                                                                                                            |
+| `0010_reflection_tier_archive` | 反思层级 + 归档                                                                                                                                                       |
+| `0011_person_memory_entries` | Person Memory 事实条目表                                                                                                                                               |
+| `0012_memory_dedup_flag`  | 改写式记忆去重标记（is_duplicate）                                                                                                                                       |
+| `0013_unify_related_chars` | related_characters 统一为 UUID[]                                                                                                                                         |
+| `0014_world_events_created_at_index` | world_events 时间索引                                                                                                                                                  |
+| `0015_reflection_embedding` | reflections 补 embedding 列 + HNSW 索引                                                                                                                                  |
+| `0016_missing_doc_indexes` | 补建文档缺失索引                                                                                                                                                          |
+| `0017_mem_episode_created_at` | memory_episodes 补 created_at（归档计龄基准）                                                                                                                          |
+| `0018_mem_episode_autovacuum` | HASH 分区 autovacuum 调优                                                                                                                                               |
+| `0019_cognition_fixes`    | 认知机制修复（反思 importance/元反思来源/计划推进）                                                                                                                      |
+| `0020_memory_index_governance` | R6 索引治理 + 移除 pg_trgm + 新增 idx_mem_retention + 重建 idx_mem_unmaterialized                                                                                      |
+| `0021_embedding_dim_sync` | embedding 维度可配置化（与 EMBEDDING_DIM 对齐）                                                                                                                          |
+| `0022_plan_date`          | plans 加 plan_date（daily 计划精确日期幂等）                                                                                                                              |
+| `0023_pmem_embedding`     | person_memory_entries 加 embedding 列（语义召回）                                                                                                                        |
 
 **核心表说明**：
 
 - `characters`：角色档案（name/age/occupation/personality/traits/backstory）
 - `character_states`：角色实时状态（location/stamina/satiety/mood/money）
 - `action_records`：行为历史（按月分区，存储每次 Action 执行记录）
-- `memory_episodes`：记忆流（含 1536 维向量，HNSW 索引）
+- `memory_episodes`：记忆流（halfvec 向量，维度与 EMBEDDING_DIM 对齐，HNSW 索引）
 - `plans`：角色计划
 - `reflections`：反思记录
 - `world_events`：世界事件（差分记录）
@@ -953,7 +970,7 @@ permission denied for relation characters
 vector dimension does not match
 ```
 
-解决：确保 `.env` 中的 `EMBEDDING_DIM` 与迁移脚本一致（默认 1536）。如需修改维度，执行 `alembic downgrade base` 后修改 `EMBEDDING_DIM` 再 `alembic upgrade head`。
+解决：确保 `.env` 中的 `EMBEDDING_DIM` 与模型输出维度一致（默认 2048，上限 4000）。改维度无需手动迁移——后端启动时 `sync_embedding_dim` 会自动对齐向量列维度到 `EMBEDDING_DIM`。
 
 ### 4.4 启动后端
 

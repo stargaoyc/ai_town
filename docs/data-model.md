@@ -529,13 +529,14 @@ WITH candidates AS (
     LIMIT :top_k * 3
 )
 SELECT id, content,
-       sim_score * 0.6
-       + importance * 0.05
-       + EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 * (-0.05) AS final_score
+       (sim_score * 0.6 + importance * 0.25)
+       * (0.25 + 0.75 * exp(-GREATEST(0, EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0)) AS final_score
 FROM candidates
 ORDER BY final_score DESC
 LIMIT :top_k;
 ```
+
+> **评分公式说明**（`memory_repo.py` `_HYBRID_SCORE_SQL` 单一真相源）：`final_score = (sim_score × 0.6 + importance × 0.25) × (0.25 + 0.75 × e^(−天数/30))`。`importance` 权重 0.25（审查记忆-03），指数衰减设 25% 下限，`GREATEST(0, ·)` 钳制时钟回拨。
 
 ### 5.3 反思层检索
 
