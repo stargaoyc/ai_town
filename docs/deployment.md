@@ -178,8 +178,10 @@ DB_MAX_OVERFLOW=10
 # PG18 内建 uuidv7() 函数直接生成, 应用层用 uuid6 库兜底
 
 # pgvector
-EMBEDDING_DIM=2048
+EMBEDDING_DIM=4000          # 与 halfvec 列对齐（halfvec 上限 4000，启动自动同步）
 MODEL_EMBEDDING=text-embedding-3-small
+EMBEDDING_MODEL_URL=        # Embedding 专用 API URL（如本地 Qwen3-Embedding-8B / OpenRouter）
+EMBEDDING_MODEL_KEY=        # Embedding 专用 API Key
 
 # ===== Redis =====
 REDIS_URL=redis://localhost:6379/0
@@ -188,9 +190,11 @@ REDIS_URL=redis://localhost:6379/0
 OPENAI_API_KEY=xxx
 OPENAI_BASE_URL=https://api.openai.com/v1
 MODEL_CHAT=gpt-4o-mini
-MODEL_STRONG=gpt-4o
-MODEL_FLASH=gpt-3.5-turbo
-GROUP_JUDGE_MODEL=chat
+MODEL_IMAGE=agnes-image-2.1-flash   # 图像生成
+MODEL_VIDEO=agnes-video-v2.0        # 视频生成
+LLM_FALLBACK_SOURCES=[]             # 多源 fallback（chat/embed 共用）
+LLM_TIMEOUT=30
+LLM_MAX_RETRIES=2
 
 # ===== 本地工具 =====
 # 工具已内联到后端进程，无需独立服务地址。

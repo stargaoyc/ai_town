@@ -19,7 +19,7 @@ CREATE EXTENSION IF NOT EXISTS "vector";     -- pgvector 向量检索
 |----|------|
 | 主键 | `id UUID DEFAULT uuidv7()`（UUID v7，时间有序） |
 | 时间戳 | `created_at` / `updated_at TIMESTAMPTZ DEFAULT now()` |
-| 业务时间 | `timestamp` / `due_at` / `captured_at` 等统一为 `TIMESTAMPTZ` |
+| 业务时间 | `timestamp` / `deadline` / `captured_at` 等统一为 `TIMESTAMPTZ` |
 | 软删除 | `deleted_at TIMESTAMPTZ`（按需） |
 | 灵活字段 | 用 `JSONB`，不用 `JSON` |
 | 数组字段 | 用 `TEXT[]` / `UUID[]` |
@@ -183,7 +183,7 @@ CREATE TABLE memory_episodes (
     character_id       UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
                                                                       -- 分区键（外键引用 characters.id）
     content            TEXT NOT NULL,
-    embedding          halfvec(2048),                       -- 0005 迁移：1536→2048 半精度（R4-M1 文档对齐）
+    embedding          halfvec(4000),                       -- 与 EMBEDDING_DIM 对齐（启动自动同步，halfvec 上限 4000）
     importance         INT  NOT NULL DEFAULT 5 CHECK (importance BETWEEN 1 AND 10),
     timestamp          TIMESTAMPTZ NOT NULL DEFAULT now(),
     action_id          TEXT,
@@ -648,7 +648,7 @@ class MemoryEpisode(Base):
         ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
     )
     content: Mapped[str] = mapped_column(String)
-    embedding: Mapped[list[float] | None] = mapped_column(HALFVEC(2048))  # P3-3：与 0005 迁移对齐
+    embedding: Mapped[list[float] | None] = mapped_column(HALFVEC(settings.embedding_dim))  # 维度与 EMBEDDING_DIM 对齐：与 0005 迁移对齐
     importance: Mapped[int] = mapped_column(Integer, default=5)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     action_id: Mapped[str | None]

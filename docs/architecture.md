@@ -71,6 +71,16 @@
 └──────────────────────────────────┬──────────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼──────────────────────────────────────────┐
+│                       服务层 (Service Layer)                                 │
+│  ┌────────────┐ ┌─────────────┐ ┌────────────┐ ┌─────────────┐              │
+│  │WorldService│ │ActionService│ │MemoryService││CharacterService(P2-3 首组件) │
+│  │ 世界状态/   │ │ Action 查询 │ │ 记忆/角色名 │ │ 角色详情=    │              │
+│  │ 事件时间线  │ │ + 序列化    │ │ 列表+序列化 │ │ 档案+实时状态 │              │
+│  └────────────┘ └─────────────┘ └────────────┘ └─────────────┘              │
+│  查询编排下沉：路由退化为参数校验+响应组装；无 HTTP 概念（src/services/）      │
+└──────────────────────────────────┬──────────────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼──────────────────────────────────────────┐
 │                     世界引擎层 (World Engine Layer)                          │
 │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐ │
 │  │   World Tick         │  │  Character Tick      │  │   Evolution 链       │ │
@@ -476,9 +486,9 @@ await asyncio.sleep(character_tick_seconds * backoff_multiplier)
         │ 4. 检索相关记忆（可选）                      │
         │    RetrievalService.search(                  │
         │      character_id, query, top_k=10)         │
-        │    pgvector HNSW 检索 + 混合排序             │
-        │    （sim_score * 0.6 + importance * 0.05     │
-        │      + time_decay）                          │
+│    pgvector HNSW 检索 + 混合排序             │
+         │    （(sim_score * 0.6 + importance * 0.25)    │
+         │      * (0.25 + 0.75 * exp(-days/30))）        │
         └─────────────────────────────────────────────┘
                               │
                               ▼
@@ -1022,15 +1032,18 @@ LLM 客户端由 `LLMClient` 类实现（`src/llm/client.py`），统一封装 O
 openai_api_key: str
 openai_base_url: str = "https://api.openai.com/v1"
 model_chat: str = "gpt-4o-mini"           # 对话+结构化决策
-model_strong: str = "gpt-4o"              # 图像生成
-model_flash: str = "gpt-3.5-turbo"        # 视频生成
+model_image: str = "agnes-image-2.1-flash"   # 图像生成
+model_video: str = "agnes-video-v2.0"        # 视频生成
 model_embedding: str = "text-embedding-3-small"
 embedding_model_key: str | None = None    # Embedding 专用 API Key
 embedding_model_url: str | None = None    # Embedding 专用 URL
 llm_timeout: int = 30
 llm_max_retries: int = 2
-embedding_dim: int = 2048
+llm_fallback_sources: str = "[]"          # 多源 fallback（chat/embed 共用，失败冷却切换）
+embedding_dim: int = 2048                 # 与 pgvector halfvec 列对齐（halfvec 上限 4000）
 ```
+
+> **双栈说明（LLM-05 方案 B）**：chat/structured_output 走 LangChain `ChatOpenAI`，embed/图像/视频走原生 `AsyncOpenAI`。两条链路统一超时/重试/降级策略；embed 已纳入多源 fallback（`invoke_with_fallback` + `client_kind="openai"`）。`model_strong`/`model_flash` 已移除，图像/视频分别由 `model_image`/`model_video` 承担。
 
 ### 6.2 调用方式
 
@@ -1212,8 +1225,8 @@ class MemoryRepository:
                 LIMIT :limit
             )
             SELECT id, content,
-                   sim_score * 0.6 + importance * 0.05
-                   + EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 * (-0.05) AS final_score
+                   (sim_score * 0.6 + importance * 0.25)
+                   * (0.25 + 0.75 * exp(-GREATEST(0, EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0)) AS final_score
             FROM candidates
             ORDER BY final_score DESC
             LIMIT :top_k;

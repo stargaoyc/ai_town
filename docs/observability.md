@@ -349,7 +349,29 @@ Grafana 数据源配置：
 | `cost`       | 调用成本                                     |
 | `metadata`   | character_id / trace_id / session_id         |
 
-### 8.2 集成方式
+### 8.2 部署方式
+
+Langfuse 支持两种部署方式：
+
+**方式一：自托管（推荐）** — 通过 docker-compose observability profile 一键启动：
+
+```bash
+docker compose --profile observability up -d
+```
+
+包含 langfuse-db（PostgreSQL 18）、langfuse-web（端口 3001）、langfuse-worker 三件套。
+
+首次启动后需：
+1. 打开 http://localhost:3001 注册账号，创建 Organization 和 Project
+2. 在 Project Settings → API Keys 生成 `pk-lf-...` 和 `sk-lf-...`
+3. 写入 `.env`：`LANGFUSE_HOST=http://localhost:3001`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`
+4. 重启 backend 容器
+
+> **注意**：容器内 backend 必须通过 compose 服务名 `langfuse-web:3000` 访问（`.env` 的 localhost:3001 是宿主机视角）。docker-compose.yml 已自动覆盖此配置。
+
+**方式二：Langfuse Cloud** — 在 https://cloud.langfuse.com 注册获取公钥/私钥，写入 `.env` 的 `LANGFUSE_HOST`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`。
+
+### 8.3 集成方式
 
 实际实现（`src/observability/langfuse_tracing.py`）在每次 LLM 调用完成后
 手动上报 generation，并自动挂到当前 Tick 的根 trace 下：

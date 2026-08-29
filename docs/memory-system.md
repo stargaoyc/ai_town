@@ -44,7 +44,7 @@
 | 字段 | 说明 |
 |------|------|
 | `content` | 自然语言描述（"小明在咖啡店工作了 2 小时"） |
-| `embedding` | 2048 维半精度向量（halfvec(2048)，P3-3 维度口径与迁移 0005 对齐） |
+| `embedding` | 4000 维半精度向量（halfvec，与 EMBEDDING_DIM 对齐；启动时自动对齐，HNSW 索引上限 4000 维） |
 | `importance` | 1–10 重要程度，影响检索权重。默认固定为 5；启用 `MEMORY_LLM_SCORING_ENABLED=true` 后由 LLM 按情感强度/关系影响/稀缺性/后续影响评分 |
 | `source_type` | `action` / `conversation` / `gossip` / `archive`（传闻为第二手记忆，归档为压缩产物） |
 | `related_characters` | 涉及的其他角色 ID |
@@ -127,23 +127,29 @@ WITH candidates AS (
            1 - (embedding <=> :q_vec) AS sim_score
     FROM memory_episodes
     WHERE character_id = :cid
+      AND materialized = TRUE AND is_duplicate = FALSE
     ORDER BY embedding <=> :q_vec
-    LIMIT :top_k * 3
+    LIMIT :top_k * 4    -- 候选池放大 4 倍（RETRIEVAL_CANDIDATE_MULTIPLIER）
 )
 SELECT id, content,
-       sim_score * 0.6
-       + importance * 0.05
-       + EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0 * (-0.05) AS final_score
+       (sim_score * 0.6 + importance * 0.25)
+       * (0.25 + 0.75 * exp(-GREATEST(0, EXTRACT(EPOCH FROM (now() - timestamp)) / 86400.0) / 30.0)) AS final_score
 FROM candidates
 ORDER BY final_score DESC
 LIMIT :top_k;
 ```
 
+> **评分公式**（`memory_repo.py` `_HYBRID_SCORE_SQL` 单一真相源）：
+> `final_score = (sim_score × 0.6 + importance × 0.25) × (0.25 + 0.75 × e^(−天数/30))`
+> - `importance` 权重 0.25（审查记忆-03）：原 0.05 时 importance 1-10 仅贡献 0.45 分差而 sim 单项贡献 0.6，重要性对排序近乎无效；0.25 使 importance 10 分差 2.25，与语义相似度形成有效平衡
+> - 指数衰减设 25% 下限：老记忆得分永不为负、数月后仍可召回（原线性衰减 22 天后不可达）
+> - `GREATEST(0, ·)` 钳制时钟回拨
+
 ### 3.4 反思层检索
 
 ```sql
 -- 反思层语义检索 (高层认知)
-SELECT id, summary
+SELECT id, content
 FROM reflections
 WHERE character_id = :cid
 ORDER BY embedding <=> :q_vec
@@ -190,8 +196,10 @@ LIMIT 5;
 
 [任务]
 请基于以上记忆，归纳出 3 条关于该角色的高层认知。
-每条以 JSON 输出: { "summary": "...", "detail": "..." }
+每条以 JSON 输出: { "content": "...", "importance": <1-10> }
 ```
+
+> 反思落库字段：`content`（认知文本）、`tier`（1=批次主题反思，2=跨期元反思）、`importance`（1-10，按支撑记忆数/主题数推导）、`source_reflection_ids`（tier=2 元反思来源）。反思经 `reflection_sources` 中间表关联来源记忆。
 
 ---
 
