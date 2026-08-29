@@ -313,6 +313,13 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         # 1. 感知环境
         context = await self._perceive(character_id)
 
+        # 1.5 交互第二步：处理待回复的对话事件（其他角色发起的对话需要本方回应时，
+        # B 用自己的状态/记忆在本 Tick 生成回复，不等待发起方代打）
+        try:
+            await self._handle_pending_conversations(character_id, context)
+        except Exception as e:
+            logger.warning("pending_conversation_step_failed", character_id=str(character_id), error=str(e))
+
         # 2. 候选过滤
         candidates = self.registry.get_candidates(context["state"], scene=context["state"].get("location"))
 

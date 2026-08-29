@@ -235,19 +235,53 @@ class SocialMixin:
             "你们之间的共同经历：\n" + "\n".join(f"- {m}" for m in shared_memories) if shared_memories else ""
         )
 
+        # 社交会话实体（交互-02 方案）：跨 Tick 延续 + 三层终止防无休止。
+        # 会话状态持久化 Redis，轮数硬上限/LLM 软结束/超时死亡任一触发即终止。
+        from src.memory.social_conversation import SocialConversationService
+
+        conv_service = SocialConversationService()
+        conv = await conv_service.create_or_get(
+            str(character_id), str(target_id), str(state.get("location", "某处")), topic=decision.reason
+        )
+        # 超时检测：会话超过 N 个世界 Tick 无回应即死亡（防悬挂会话）
+        if await conv_service.check_timeout(conv):
+            # 超时死亡：本轮仍可开始一场新对话（会话已 ended，create_or_get 会新建）
+            conv = await conv_service.create_or_get(
+                str(character_id), str(target_id), str(state.get("location", "某处")), topic=decision.reason
+            )
+
         # 逐轮生成；任一句生成/解析失败即整场失败，调用方降级为 wait（保持既有语义）
+        # 轮数上限 = 会话硬上限 - 已累计轮数（跨 Tick 延续后剩余配额递减，防无休止）
         rounds = min(settings.chat_with_max_rounds, _CHAT_MAX_ROUNDS)
+        remaining_turns = max(1, conv_service.max_turns - conv.turn_count)
+        rounds = min(rounds, remaining_turns)
         transcript_lines: list[str] = []
+        conversation_ended = False
         try:
             for round_index in range(rounds):
                 for speaker, listener in ((character, target_char), (target_char, character)):
+                    # 交互第二步：B 的回复用 B 自己的实时状态生成（而非 A 的上下文）
+                    # ——读 B 的 Redis 状态真相源（情绪/精力/计划），让 B 的回应
+                    # 反映 B 自身的处境，而非被 A 的感知上下文代打
+                    speaker_state = state
+                    if speaker is target_char:
+                        try:
+                            redis_state = await self.redis.hgetall(f"char:{target_id_str}:state")
+                            if redis_state:
+                                from src.core.state_codec import decode_state_value
+
+                                speaker_state = {
+                                    str(k): decode_state_value(str(k), v) for k, v in redis_state.items()
+                                }
+                        except Exception as e:
+                            logger.debug("chat_target_state_load_failed_continue", error=str(e))
                     line = await self._generate_chat_turn(
                         speaker=speaker,
                         listener=listener,
                         relationship_desc=relationship_desc,
                         rel_strength=rel_strength,
                         topic_hint=decision.reason,
-                        state=state,
+                        state=speaker_state,
                         world=world,
                         transcript="\n".join(transcript_lines),
                         shared_memory_block=shared_memory_block,
@@ -269,6 +303,18 @@ class SocialMixin:
                         speaker=speaker.name,
                         listener=listener.name,
                     )
+                    # 三层终止机制（防无休止对话）：
+                    # 1. 软结束：任一方 LLM 输出结束意图即终止
+                    if await conv_service.soft_end_if_intended(conv, line):
+                        conversation_ended = True
+                        break
+                if conversation_ended:
+                    break
+            # 2. 硬上限：推进会话轮数（记录最后发言方），达到上限即结束
+            if not conversation_ended:
+                _conv, _ended = await conv_service.advance_turn(conv, speaker=str(character_id))
+                if _ended:
+                    conversation_ended = True
         except Exception as e:
             logger.error(
                 "chat_dialogue_generation_failed",
@@ -546,6 +592,60 @@ class SocialMixin:
             location=location,
         )
         return f"{names_text}在{location}聚会：{narrative}"
+
+    async def _handle_pending_conversations(self, character_id: UUID, context: dict[str, Any]) -> None:
+        """处理待回复的对话事件（交互第二步：B 在自己的 Tick 检测并回复）
+
+        当其他角色发起的对话需要本方回应时，在本 Tick 内用 B 自己的状态/记忆
+        生成回复，写入会话记录（不额外写记忆——会话记忆由发起方统一写入）。
+        """
+        try:
+            from src.memory.social_conversation import SocialConversationService
+
+            svc = SocialConversationService()
+            pending = await svc.pending_for(str(character_id))
+            if not pending:
+                return
+            character = context["character"]
+            world = context["world"]
+            for conv in pending:
+                # 确定对方角色
+                target_id_str = conv.char_b if conv.char_a == str(character_id) else conv.char_a
+                try:
+                    target_id = UUID(target_id_str)
+                except (ValueError, TypeError):
+                    continue
+                async with db.session() as session:
+                    char_repo = CharacterRepository(session)
+                    target_data = await char_repo.get_character_with_state(target_id)
+                if target_data is None:
+                    continue
+                target_char, _ = target_data
+                # 用 B 自己的状态生成回复
+                state = context["state"]
+                line = await self._generate_chat_turn(
+                    speaker=character,
+                    listener=target_char,
+                    relationship_desc="",
+                    rel_strength=0,
+                    topic_hint=conv.topic,
+                    state=state,
+                    world=world,
+                    transcript="",
+                    shared_memory_block="",
+                )
+                if line is not None:
+                    # B 回复后更新 last_speaker 防重复触发
+                    conv.last_speaker = str(character_id)
+                    await svc._save(conv)
+                    logger.info(
+                        "pending_conversation_replied",
+                        character_id=str(character_id),
+                        target_id=target_id_str,
+                        conv_id=conv.id,
+                    )
+        except Exception as e:
+            logger.warning("pending_conversation_handle_failed", character_id=str(character_id), error=str(e))
 
     async def _maybe_proactive_share(
         self, character_id: UUID, decision: DecisionResult, context: dict[str, Any]

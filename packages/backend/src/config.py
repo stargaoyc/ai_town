@@ -306,6 +306,10 @@ class Settings(BaseSettings):
     chat_with_max_rounds: int = 2
     # 对话结束后由 LLM 评估关系增量（替代固定 +5/+2）；关闭则回退固定值
     chat_quality_enabled: bool = True
+    # 社交会话终止（交互-02 防无休止）：会话累计轮数硬上限（跨 Tick 延续后剩余配额递减）
+    chat_max_turns: int = 6
+    # 会话超时：超过 N 个世界 Tick 无人回应即自动结束
+    chat_idle_ticks: int = 2
     # 用户对话链路注入反思/日记（默认关闭保持上下文精简；开启后角色在 QQ 对话中体现近期心境与长期倾向）
     chat_inject_cognition: bool = False
 
