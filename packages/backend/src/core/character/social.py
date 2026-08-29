@@ -270,9 +270,7 @@ class SocialMixin:
                             if redis_state:
                                 from src.core.state_codec import decode_state_value
 
-                                speaker_state = {
-                                    str(k): decode_state_value(str(k), v) for k, v in redis_state.items()
-                                }
+                                speaker_state = {str(k): decode_state_value(str(k), v) for k, v in redis_state.items()}
                         except Exception as e:
                             logger.debug("chat_target_state_load_failed_continue", error=str(e))
                     line = await self._generate_chat_turn(

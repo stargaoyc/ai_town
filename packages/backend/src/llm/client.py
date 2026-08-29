@@ -305,10 +305,7 @@ class LLMClient:
                 if is_openrouter:
                     return await client.embeddings.create(
                         model=settings.model_embedding,
-                        input=[
-                            {"content": [{"type": "text", "text": text}]}
-                            for text in texts
-                        ],
+                        input=[{"content": [{"type": "text", "text": text}]} for text in texts],
                         encoding_format="float",
                         extra_headers={
                             "HTTP-Referer": "https://github.com/ai-town",

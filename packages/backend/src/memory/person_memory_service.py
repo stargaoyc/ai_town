@@ -319,9 +319,7 @@ class PersonMemoryService:
         return "\n".join(parts) if parts else "（初次与该用户交流）"
 
     @staticmethod
-    def _bigram_select(
-        rows: list[tuple[str, Any]], query_hint: str
-    ) -> list[str]:
+    def _bigram_select(rows: list[tuple[str, Any]], query_hint: str) -> list[str]:
         """字符二元组重叠回退选择（无语义，仅供向量缺失时兜底）"""
         candidates = [c for c, _ in rows]
         hint_bigrams = _char_bigrams(query_hint)

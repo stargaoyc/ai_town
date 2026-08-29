@@ -29,8 +29,8 @@ _CONV_PREFIX = "social:conv:"
 _CONV_TTL = 180  # 会话 TTL（秒），超时自动死亡
 
 # 对话终止条件
-_CONV_MAX_TURNS = 6     # 默认，会被 settings.chat_max_turns 覆盖
-_CONV_IDLE_TICKS = 2    # 默认，会被 settings.chat_idle_ticks 覆盖
+_CONV_MAX_TURNS = 6  # 默认，会被 settings.chat_max_turns 覆盖
+_CONV_IDLE_TICKS = 2  # 默认，会被 settings.chat_idle_ticks 覆盖
 
 
 @dataclass
