@@ -277,6 +277,10 @@ class LLMClient:
             self._embed_cache[text] = embedding
             logger.debug("embedding_created", dim=len(embedding))
             return embedding
+        except asyncio.CancelledError:
+            # 取消也须释放 probe + 预留预算（CancelledError 是 BaseException，不被 except Exception 捕获）
+            await self._record_cost_control_failure()
+            raise
         except Exception:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -333,6 +337,9 @@ class LLMClient:
             embeddings = [self._fit_dim(e) for e in embeddings]
             logger.debug("embedding_batch_created", count=len(texts), dim=len(embeddings[0]))
             return embeddings
+        except asyncio.CancelledError:
+            await self._record_cost_control_failure()
+            raise
         except Exception:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -403,6 +410,9 @@ class LLMClient:
                 has_image=image_url is not None,
             )
             return embedding
+        except asyncio.CancelledError:
+            await self._record_cost_control_failure()
+            raise
         except Exception:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -503,6 +513,9 @@ class LLMClient:
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
             return content if isinstance(content, str) else str(content), usage
+        except asyncio.CancelledError:
+            await self._record_cost_control_failure()
+            raise
         except Exception as e:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -596,6 +609,9 @@ class LLMClient:
             )
             await self._record_cost_control_success(total_tokens, estimated_cost)
             return resp_content if isinstance(resp_content, str) else str(resp_content)
+        except asyncio.CancelledError:
+            await self._record_cost_control_failure()
+            raise
         except Exception as e:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -904,6 +920,9 @@ class LLMClient:
             if isinstance(result, BaseModel):
                 return result.model_dump(), usage
             return result, usage
+        except asyncio.CancelledError:
+            await self._record_cost_control_failure()
+            raise
         except Exception as e:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL
@@ -1005,6 +1024,9 @@ class LLMClient:
             if isinstance(parsed, BaseModel):
                 return parsed.model_dump()
             return dict(parsed)
+        except asyncio.CancelledError:
+            await self._record_cost_control_failure()
+            raise
         except Exception as e:
             await self._record_cost_control_failure()
             from src.observability.metrics import LLM_CALL_TOTAL

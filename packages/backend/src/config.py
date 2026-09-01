@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     llm_daily_budget_usd: float = 10.0
     llm_circuit_breaker_threshold: int = 5
     llm_circuit_breaker_recovery_timeout: int = 60
+    # HALF_OPEN 试探名额自过期时长（秒）：持有者失联后自动释放，熔断器可自愈。
+    # 需大于单次 LLM 调用的最坏耗时（超时 + 重试），默认 120s 覆盖 30s 超时 × 重试。
+    llm_circuit_breaker_probe_timeout: int = 120
 
     # 分域配额（审查 §4.8.2 成本-02）：此前只有全局+UTC 日一个维度，
     # QQ 是公开入口，单用户高频对话即可耗尽全局预算导致整个小镇停摆。

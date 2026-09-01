@@ -181,6 +181,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis,
         failure_threshold=settings.llm_circuit_breaker_threshold,
         recovery_timeout=settings.llm_circuit_breaker_recovery_timeout,
+        probe_timeout=settings.llm_circuit_breaker_probe_timeout,
     )
     rate_limiter = RateLimiter(redis)
     runtime.set_rate_limiter(rate_limiter)

@@ -81,10 +81,12 @@ class CircuitBreaker:
         redis: Redis,
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
+        probe_timeout: int = 120,
     ) -> None:
         self.redis = redis
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
+        self.probe_timeout = probe_timeout
 
     async def _read_state(self) -> tuple[CircuitState, int, float]:
         """从 Redis 读取当前状态
@@ -127,16 +129,48 @@ class CircuitBreaker:
         """
         return await self._read_state()
 
-    # P-3：HALF_OPEN 试探名额原子抢占。0→1 成功者获得唯一试探资格，
-    # 其余并发调用者在半开期被拒绝，避免试探流量涌入下游
+    # P-3：HALF_OPEN 试探名额原子抢占，带 TTL 自过期。0→1 成功者获得唯一试探资格，
+    # 其余并发调用者在半开期被拒绝，避免试探流量涌入下游。
+    # R9 死锁修复：此前名额为固定值 '1' 且无过期——持有者若在 LLM 调用期间被
+    # asyncio 取消（CancelledError 不被 except Exception 捕获）或进程崩溃，名额
+    # 永不释放，熔断器永久卡在 HALF_OPEN 拒绝全部调用（无法自愈）。
+    # 现改为记录抢占时间戳：未超过 probe_timeout 视为仍被持有；超过即视为持有者
+    # 已失联，允许重新抢占。ARGV[1]=当前 unix 秒，ARGV[2]=probe_timeout。
     _HALF_OPEN_PROBE_LUA = """
     local v = redis.call('hget', KEYS[1], 'half_open_probe')
-    if v == '1' then
-      return 0
+    if v then
+      local ts = tonumber(v)
+      local now = tonumber(ARGV[1])
+      local timeout = tonumber(ARGV[2])
+      if ts and (now - ts) < timeout then
+        return 0
+      end
     end
-    redis.call('hset', KEYS[1], 'half_open_probe', '1')
+    redis.call('hset', KEYS[1], 'half_open_probe', ARGV[1])
     return 1
     """
+
+    async def _try_acquire_probe(self, now: float) -> bool:
+        """原子抢占 HALF_OPEN 试探名额（带 probe_timeout 自过期）
+
+        Args:
+            now: 当前 unix 秒（调用方统一取 time.time()，避免 Lua 内取时开销）
+
+        Returns:
+            是否抢到试探名额
+        """
+        probe = int(
+            await self.redis.eval(
+                self._HALF_OPEN_PROBE_LUA,
+                1,
+                _CB_KEY,
+                str(now),
+                str(self.probe_timeout),
+            )
+        )
+        if probe:
+            logger.debug("circuit_breaker_probe_taken", failure_count=0)
+        return bool(probe)
 
     async def can_execute(self) -> bool:
         """检查是否允许调用
@@ -144,7 +178,8 @@ class CircuitBreaker:
         - CLOSED → True
         - OPEN 且已过 ``recovery_timeout`` → 转 HALF_OPEN，抢试探名额，抢到返回 True
         - OPEN 且未超时 → False
-        - HALF_OPEN → 仅持有试探名额的一个调用者返回 True
+        - HALF_OPEN → 仅持有试探名额的一个调用者返回 True（名额带 TTL 自过期，
+          持有者失联后自动释放，熔断器可自愈）
 
         Returns:
             是否允许执行
@@ -159,8 +194,8 @@ class CircuitBreaker:
             if now - last_failure_time >= self.recovery_timeout:
                 # 进入 HALF_OPEN 并原子抢占唯一试探名额
                 await self._write_state(CircuitState.HALF_OPEN, failure_count, last_failure_time)
-                probe = int(await self.redis.eval(self._HALF_OPEN_PROBE_LUA, 1, _CB_KEY))
-                if not probe:
+                acquired = await self._try_acquire_probe(now)
+                if not acquired:
                     logger.debug("circuit_breaker_probe_taken", failure_count=failure_count)
                     return False
                 logger.info(
@@ -172,8 +207,7 @@ class CircuitBreaker:
             return False
 
         # HALF_OPEN：已有状态转换者持有名额；其余调用走同一 Lua 原子判定
-        probe = int(await self.redis.eval(self._HALF_OPEN_PROBE_LUA, 1, _CB_KEY))
-        return bool(probe)
+        return await self._try_acquire_probe(now)
 
     async def record_success(self) -> None:
         """记录一次成功调用
@@ -242,10 +276,15 @@ class CircuitBreaker:
 _breaker: CircuitBreaker | None = None
 
 
-def set_circuit_breaker(redis: Redis, failure_threshold: int = 5, recovery_timeout: int = 60) -> None:
+def set_circuit_breaker(
+    redis: Redis,
+    failure_threshold: int = 5,
+    recovery_timeout: int = 60,
+    probe_timeout: int = 120,
+) -> None:
     """初始化全局熔断器单例（在 lifespan 中调用）"""
     global _breaker
-    _breaker = CircuitBreaker(redis, failure_threshold, recovery_timeout)
+    _breaker = CircuitBreaker(redis, failure_threshold, recovery_timeout, probe_timeout)
 
 
 def get_circuit_breaker() -> CircuitBreaker | None:
