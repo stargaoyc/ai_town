@@ -25,16 +25,23 @@ ARG PYPI_INDEX=https://pypi.org/simple
 RUN if [ "$USE_CN_MIRROR" = "true" ]; then export PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple; fi \
     && pip install --no-cache-dir -i "$PYPI_INDEX" uv
 
-ENV UV_DEFAULT_INDEX=$PYPI_INDEX \
-    UV_INDEX_URL=$PYPI_INDEX
-
 WORKDIR /app
 
 # 先复制依赖文件（利用 Docker 层缓存）
 COPY pyproject.toml uv.lock ./
 
 # 安装依赖到 .venv（--frozen 确保与 lockfile 一致）
-RUN uv sync --frozen --no-dev
+# 索引必须在与 uv sync 同一 RUN 层内 export：ENV 只能固化静态值（取 ARG 默认
+# 官方源），RUN 内的 export 仅对同层后续命令生效。此前 UV_DEFAULT_INDEX 用 ENV
+# 固化导致 USE_CN_MIRROR=true 时 uv sync 仍走官方源，镜像加速对主流程无效。
+RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
+        export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
+               UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
+    else \
+        export UV_DEFAULT_INDEX=https://pypi.org/simple \
+               UV_INDEX_URL=https://pypi.org/simple; \
+    fi \
+    && uv sync --frozen --no-dev
 
 # ===== 运行阶段 =====
 FROM python:3.13-slim
