@@ -8,7 +8,8 @@ CharacterTickEngine；本模块只承载感知装配，不含任何状态写入�
 _world_hour 在此定义，由 tick.py 导入复用。
 """
 
-from datetime import UTC, datetime
+import json
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -62,6 +63,31 @@ def _world_hour(world: dict[str, Any]) -> int:
     return hour if hour is not None else datetime.now(UTC).hour
 
 
+def _world_time_from_world(world: dict[str, Any]) -> datetime | None:
+    """从世界状态 dict 解析世界时间（R9 计划闭环用）；解析失败返回 None
+
+    world_time 来自 Redis world:state，由 TimeEvolution 生成时不含时区（naive），
+    但语义为东八区（+08:00，项目 locale 与 env TZ）。补时区以确保下游 aware 比较
+    不抛 TypeError 且与 DB 的 TIMESTAMPTZ 列对齐。
+    """
+    raw = str(world.get("world_time") or "")
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, str):
+            raw = parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
 class PerceptionMixin:
     """感知环境 Mixin。
 
@@ -90,34 +116,31 @@ class PerceptionMixin:
                 "nearby_characters": list[dict],  # 同场景其他角色（用于多智能体交互）
             }
         """
-        # 从数据库获取角色档案和状态
+        # 从 Redis 读取实时状态（缓存优先）
+        redis_state = await self.redis.hgetall(f"char:{character_id}:state")
+        state: dict[str, Any] = (
+            {str(k): decode_state_value(str(k), v) for k, v in redis_state.items()} if redis_state else {}
+        )
+
+        # 从 Redis 读取世界状态（hgetall 返回值可能含 bytes，统一解码为 str）
+        world_state = await self.redis.hgetall("world:state")
+        world: dict[str, Any] = {
+            str(k): v.decode() if isinstance(v, bytes) else v for k, v in (world_state or {}).items()
+        }
+
+        # 当前世界时间（R9 闭环：过滤 deadline 已过的计划，防角色复读过期计划）
+        world_now = _world_time_from_world(world)
+
+        # 从数据库获取角色档案 + 当前计划（同一 session，传 world_time 过滤过期计划）
         async with db.session() as session:
             char_repo = CharacterRepository(session)
             result = await char_repo.get_character_with_state(character_id)
             if result is None:
                 raise ValueError(f"角色不存在: {character_id}")
-
             character, char_state = result
 
             plan_repo = PlanRepository(session)
-            plans = await plan_repo.get_active_plans(character_id)
-
-        # 从 Redis 读取实时状态（缓存优先）
-        redis_state = await self.redis.hgetall(f"char:{character_id}:state")
-        state: dict[str, Any] = (
-            {str(k): decode_state_value(str(k), v) for k, v in redis_state.items()}
-            if redis_state
-            else {
-                "location": char_state.location,
-                "stamina": char_state.stamina,
-                "satiety": char_state.satiety,
-                "mood": char_state.mood,
-                "money": char_state.money,
-                "phone_battery": char_state.phone_battery,
-                "social_energy": char_state.social_energy,
-                "inventory": char_state.inventory,
-            }
-        )
+            plans = await plan_repo.get_active_plans(character_id, world_time=world_now)
 
         # 补齐 Redis 缺失的数值字段与 mood（新导入角色 Redis 可能未初始化完整）
         _NUMERIC_KEYS = {"stamina", "satiety", "money", "phone_battery", "social_energy"}
@@ -127,11 +150,16 @@ class PerceptionMixin:
         if "mood" not in state and char_state:
             state["mood"] = getattr(char_state, "mood", "calm")
 
-        # 从 Redis 读取世界状态（hgetall 返回值可能含 bytes，统一解码为 str）
-        world_state = await self.redis.hgetall("world:state")
-        world: dict[str, Any] = {
-            str(k): v.decode() if isinstance(v, bytes) else v for k, v in (world_state or {}).items()
-        }
+        # 当 Redis 无数据时从 PG 填充初始状态
+        if not redis_state and char_state:
+            state["location"] = char_state.location
+            state["stamina"] = char_state.stamina
+            state["satiety"] = char_state.satiety
+            state["mood"] = char_state.mood
+            state["money"] = char_state.money
+            state["phone_battery"] = char_state.phone_battery
+            state["social_energy"] = char_state.social_energy
+            state["inventory"] = char_state.inventory
 
         # 检索相关记忆（需要 db session 创建 RetrievalService）
         # embedding 失败时降级为空记忆列表，不阻断 Tick

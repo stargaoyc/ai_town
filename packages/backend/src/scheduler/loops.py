@@ -11,7 +11,7 @@
 import asyncio
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID
 
@@ -34,7 +34,7 @@ from src.db.models import (
     WorldEvent,
     WorldSnapshot,
 )
-from src.db.repositories import CharacterRepository, MemoryRepository
+from src.db.repositories import CharacterRepository, MemoryRepository, PlanRepository
 from src.db.session import db
 from src.memory.daily_plan_service import DailyPlanService
 from src.memory.diary_service import (
@@ -44,6 +44,31 @@ from src.memory.diary_service import (
 )
 
 logger = get_logger(__name__)
+
+
+def _parse_world_time(raw: str) -> datetime | None:
+    """从 world:state 的 world_time 字段解析带时区的世界时间
+
+    world_time 由 TimeEvolution 生成，无时区但语义为东八区（+08:00）。
+    补时区以确保下游 aware 比较（如 remedy_short_term_plans 中 plan.deadline
+    与 world_now 比较）不抛 TypeError。
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, str):
+            raw = parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+        return dt
+    except (ValueError, TypeError):
+        return None
+
 
 # 日记轮询间隔（真实秒）。夜间触发窗 22:00-06:00 共 8 个虚拟小时，
 # 按默认时钟倍率（10 虚拟分 / 30 真实秒 → 1 世界日 = 72 真实分）换算，
@@ -216,25 +241,25 @@ async def diary_scheduler_loop() -> None:
             if not world_time_raw:
                 continue
 
-            # 兼容 world_time 被 JSON 双重序列化的情况
             try:
-                parsed = json.loads(world_time_raw)
-                if isinstance(parsed, str):
-                    world_time_raw = parsed
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-            try:
-                world_now = datetime.fromisoformat(world_time_raw)
+                world_now = _parse_world_time(world_time_raw)
             except ValueError:
                 logger.warning("diary_scheduler_invalid_world_time", raw=world_time_raw)
+                continue
+            if world_now is None:
                 continue
 
             # 当日计划滚动过期（随世界时间检查，30 分钟粒度足够日级语义）
             try:
-                await expire_daily_plans()
+                await expire_daily_plans(world_now=world_now)
             except Exception as e:
                 logger.warning("daily_plan_expire_failed", error=str(e))
+
+            # R9 闭环：短期计划按世界时间过期（deadline 已过即失效，不再注入上下文）
+            try:
+                await expire_short_term_plans(world_now)
+            except Exception as e:
+                logger.warning("short_term_plan_expire_failed", error=str(e))
 
             periods_to_generate = diary_trigger_periods(world_now)
 
@@ -311,15 +336,11 @@ async def daily_plan_loop() -> None:
             if not world_time_raw:
                 continue
             try:
-                parsed = json.loads(world_time_raw)
-                if isinstance(parsed, str):
-                    world_time_raw = parsed
-            except (json.JSONDecodeError, TypeError):
-                pass
-            try:
-                world_now = datetime.fromisoformat(world_time_raw)
+                world_now = _parse_world_time(world_time_raw)
             except ValueError:
                 logger.warning("daily_plan_invalid_world_time", raw=world_time_raw)
+                continue
+            if world_now is None:
                 continue
 
             if not 6 <= world_now.hour < 9:
@@ -656,32 +677,70 @@ async def _delete_in_batches(
     return deleted_total
 
 
-async def expire_daily_plans(session_factory: Any | None = None) -> int:
-    """当日计划滚动过期：创建超过 TTL 的 active daily 计划置 expired（审查清单 B2）
+async def expire_daily_plans(session_factory: Any | None = None, world_now: datetime | None = None) -> int:
+    """当日计划滚动过期：已过世界日期的 active daily 计划置 expired（审查清单 B2）
 
-    以真实时间计龄（created_at 为服务端时间），避免虚拟时间倍率差异；
+    传 world_now 时按世界日期（plan_date < 世界日）过期——daily 计划的语义是
+    「当天有效」，世界时间推进 20x 时用真实时间 TTL（24h ≈ 20 世界天）会让
+    daily 计划滞留过长（R9 边界问题 B）。缺省（无 world_now）回落真实时间 TTL。
     过期区别于 abandoned（主动放弃）——语义是「当日已过，自然失效」。
 
     Args:
         session_factory: 会话上下文工厂；缺省用全局 db.session
+        world_now: 当前世界时间（带时区）。提供时按 plan_date 过期。
     """
-    cutoff = datetime.now(UTC) - timedelta(hours=settings.daily_plan_ttl_hours)
     factory = session_factory or db.session
     async with factory() as session:
-        stmt = (
-            update(Plan)
-            .where(
-                Plan.type == "daily",
-                Plan.status == "active",
-                Plan.created_at < cutoff,
-            )
-            .values(status="expired", updated_at=func.now())
-        )
+        stmt = update(Plan).where(Plan.type == "daily", Plan.status == "active")
+        if world_now is not None:
+            stmt = stmt.where(Plan.plan_date.is_not(None), Plan.plan_date < world_now.date())
+        else:
+            cutoff = datetime.now(UTC) - timedelta(hours=settings.daily_plan_ttl_hours)
+            stmt = stmt.where(Plan.created_at < cutoff)
+        stmt = stmt.values(status="expired", updated_at=func.now())
         result = cast("CursorResult[Any]", await session.execute(stmt))
         count = int(result.rowcount or 0)
         if count:
-            logger.info("daily_plans_expired", count=count)
+            logger.info("daily_plans_expired", count=count, by_world_date=world_now is not None)
         return count
+
+
+async def expire_short_term_plans(world_now: datetime) -> int:
+    """短期计划按世界时间审查（R9 闭环：可补救→顺延，不可补救→过期，防膨胀）
+
+    逐角色遍历：对每个活跃角色调用 remedy_short_term_plans，完成：
+    - 事件型计划（deadline 已过）→ expired
+    - 任务型计划（deadline 已过）→ deadline 顺延（同记录不新增行）
+    - 顺延达上限 → 强制 expired
+    - 该角色 active short_term 超上限 → 最旧计划 expired
+
+    Args:
+        world_now: 当前世界时间（从 world:state 读取）
+
+    Returns:
+        处理条数
+    """
+    from src.core.character.plan_applier import PlanChangeApplier
+
+    async with db.session() as session:
+        chars = await CharacterRepository(session).get_active_characters()
+    total = 0
+    for char in chars:
+        try:
+            async with db.session() as session:
+                plan_repo = PlanRepository(session)
+                handled = await PlanChangeApplier.remedy_short_term_plans(plan_repo, char.id, world_now)
+                await session.commit()
+                total += handled
+        except Exception as e:
+            logger.warning(
+                "short_term_remedy_failed",
+                character_id=str(char.id),
+                error=str(e),
+            )
+    if total:
+        logger.info("short_term_plans_remedied", total=total, world_now=world_now.isoformat())
+    return total
 
 
 async def memory_retention_loop() -> None:

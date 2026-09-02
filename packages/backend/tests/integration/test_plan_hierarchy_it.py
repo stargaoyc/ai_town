@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,3 +79,43 @@ class TestDailyPlanExpiryIT:
         assert stale.status == "expired"
         assert fresh.status == "active"
         assert long_term.status == "active"
+
+
+async def test_expire_daily_plans_by_world_date(
+    it_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R9 边界 B：按世界日期过期 daily 计划（plan_date < world_now.date()）"""
+    from src.scheduler.loops import expire_daily_plans
+
+    char = Character(id=uuid7(), name="世界日期过期测试")
+    it_session.add(char)
+    await it_session.flush()
+
+    yesterday = Plan(
+        character_id=char.id,
+        type="daily",
+        title="昨日计划",
+        status="active",
+        plan_date=datetime.now(UTC).date() - timedelta(days=1),
+    )
+    today = Plan(
+        character_id=char.id,
+        type="daily",
+        title="今日计划",
+        status="active",
+        plan_date=datetime.now(UTC).date(),
+    )
+    it_session.add_all([yesterday, today])
+    await it_session.flush()
+
+    expired = await expire_daily_plans(
+        lambda: _session_ctx(it_session),
+        world_now=datetime.now(UTC),
+    )
+    assert expired >= 1
+
+    await it_session.refresh(yesterday)
+    await it_session.refresh(today)
+    assert yesterday.status == "expired"
+    assert today.status == "active"

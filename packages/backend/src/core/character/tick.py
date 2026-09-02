@@ -32,6 +32,7 @@ from src.core.character.perception import (
     PerceptionMixin,
     _parse_world_hour,
     _world_hour,
+    _world_time_from_world,
 )
 from src.core.character.plan_applier import PlanChangeApplier
 from src.core.character.social import SocialMixin
@@ -596,6 +597,7 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                         "properties": {
                             "title": {"type": "string"},
                             "description": {"type": "string"},
+                            "reason": {"type": "string"},
                             "type": {"type": "string", "enum": ["long_term", "short_term", "daily"]},
                             "priority": {"type": "integer"},
                             "deadline": {"type": "string"},
@@ -973,6 +975,11 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
         return _parse_world_hour(str(context.get("world", {}).get("world_time") or ""))
 
     @staticmethod
+    def _world_time_from_context(context: dict[str, Any]) -> datetime | None:
+        """从上下文解析世界时间（R9 计划闭环决策用）；委托 perception 共享实现"""
+        return _world_time_from_world(context.get("world") or {})
+
+    @staticmethod
     def _current_is_workday(context: dict[str, Any]) -> bool:
         """从世界时钟推导是否工作日（周一至五），供 workday_only 场景开放判断（round-6 M9）
 
@@ -1268,6 +1275,10 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                     plan_repo = PlanRepository(session)
                     await PlanChangeApplier.apply_changes(plan_repo, character_id, decision.plan_changes)
 
+                # R9 计划闭环：统一计算世界时间，供 auto_progress / auto_complete /
+                # create_plans 三处过滤与去重（同一事务内一致口径）
+                plan_world_now = self._world_time_from_context(context)
+
                 # P1-13：计划-行动对账——LLM 未显式汇报进度时，按标题与本次
                 # 行为的字符重叠启发式推进，抑制「计划进度与实际行为无限漂移」。
                 # wait 不是有效行动证据；推进为尽力而为，失败仅告警不回滚主事务
@@ -1275,7 +1286,12 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                 if settings.plan_auto_progress_enabled and decision.action != "wait":
                     try:
                         plan_repo = PlanRepository(session)
-                        await PlanChangeApplier.auto_progress(plan_repo, character_id, decision)
+                        await PlanChangeApplier.auto_progress(
+                            plan_repo,
+                            character_id,
+                            decision,
+                            world_time=plan_world_now,
+                        )
                     except Exception as e:
                         logger.warning(
                             "plan_auto_progress_failed",
@@ -1283,10 +1299,36 @@ class CharacterTickEngine(PerceptionMixin, SocialMixin):
                             error=str(e),
                         )
 
+                # R9 闭环：行动→计划反馈——LLM 漏报 complete 时，按行动证据自动完成
+                # 匹配计划（仅 short_term/daily，long_term 需 LLM 显式判定）。
+                # wait 不是有效行动，其 reason 可能包含计划文本（如"今天在家休息，
+                # 明天去看画展"）→ 跳过，避免误完成计划。
+                try:
+                    if decision.action != "wait" and plan_world_now is not None:
+                        plan_repo = PlanRepository(session)
+                        await PlanChangeApplier.auto_complete(
+                            plan_repo,
+                            character_id,
+                            decision,
+                            location=new_state.get("location"),
+                            world_time=plan_world_now,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "plan_auto_complete_failed",
+                        character_id=str(character_id),
+                        error=str(e),
+                    )
+
                 # 应用 LLM 新建计划（层级体系 B3：character_id 服务端绑定，天然防越权）
                 if decision.create_plan_changes:
                     plan_repo = PlanRepository(session)
-                    await PlanChangeApplier.create_plans(plan_repo, character_id, decision.create_plan_changes)
+                    await PlanChangeApplier.create_plans(
+                        plan_repo,
+                        character_id,
+                        decision.create_plan_changes,
+                        world_time=plan_world_now,
+                    )
 
                 # 应用 ReAct 阶段暂存的工具产物（关系增量 R4-M11 / 工具记忆 R5-L11）：
                 # 与 ActionRecord 同事务提交，任一失败整体回滚

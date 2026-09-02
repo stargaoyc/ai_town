@@ -75,6 +75,7 @@ class DailyPlanService:
                                 "properties": {
                                     "title": {"type": "string"},
                                     "description": {"type": "string"},
+                                    "reason": {"type": "string"},
                                 },
                                 "required": ["title"],
                             },
@@ -95,10 +96,12 @@ class DailyPlanService:
             if not isinstance(title, str) or not title.strip():
                 continue
             description = item.get("description")
+            reason = item.get("reason")
             await plan_repo.create_plan(
                 char.id,
                 title=title.strip()[:180],
                 description=description.strip()[:1000] if isinstance(description, str) else None,
+                reason=reason.strip()[:2000] if isinstance(reason, str) and reason.strip() else None,
                 type="daily",
                 priority=3,
                 plan_date=plan_date,

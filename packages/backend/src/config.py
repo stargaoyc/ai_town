@@ -234,6 +234,20 @@ class Settings(BaseSettings):
     plan_auto_progress_enabled: bool = True
     plan_auto_progress_delta: int = 10
     plan_auto_progress_overlap: float = 0.34
+    # 计划自动完成（R9 闭环：Action 执行后匹配计划并完成）
+    plan_auto_complete_enabled: bool = True
+    plan_auto_complete_overlap: float = 0.5
+    # 短期计划补救（R9 闭环防膨胀）：deadline 已过且可补救时顺延 deadline（同一条记录
+    # 不新增行），达 extend_count 上限强制过期；事件型计划（一次性事件）直接过期。
+    plan_remedy_enabled: bool = True
+    plan_remedy_extend_hours: int = 24
+    plan_remedy_max_extends: int = 2
+    # 每角色 active short_term 计划上限：超限时最旧计划强制过期（硬防膨胀）
+    plan_max_active_short_term: int = 20
+    # 创建计划相似去重：标题 bigram 重叠超阈值 且 deadline 落在同时间窗内才算重复
+    # （仅标题相似但 deadline 不同是改期/不同日期的安排，不误伤）
+    plan_create_dedup_overlap: float = 0.6
+    plan_create_dedup_window_hours: int = 12
 
     # HNSW 索引维护（P1-1）：保留周期大量 DELETE 后索引项不被 VACUUM 回收，
     # 定期 REINDEX CONCURRENTLY 在线重建；间隔天数 0 关闭

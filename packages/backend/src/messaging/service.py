@@ -19,10 +19,11 @@ person_memory_entries），不写入 memory_episodes——角色间经历与
 
 from __future__ import annotations
 
+import json
 import random
 import re
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -64,6 +65,31 @@ _COGNITION_EMPTY_TEXT = "暂无"
 
 # 默认错误回复（LLM 失败时返回，避免用户会话阻塞）
 DEFAULT_ERROR_REPLY = "（角色陷入了沉思，未能给出回复，请稍后再试）"
+
+
+def _parse_world_time_from_state(world: dict[str, Any]) -> datetime | None:
+    """从世界状态 dict 解析世界时间（R9 计划闭环用）；解析失败返回 None
+
+    world_time 由 TimeEvolution 生成，无时区但语义为东八区（+08:00）。
+    补时区以与 DB 的 TIMESTAMPTZ 列对齐，避免 naive/aware 比较异常。
+    """
+    raw = str(world.get("world_time") or "")
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, str):
+            raw = parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+        return dt
+    except (ValueError, TypeError):
+        return None
+
 
 # LLM 输出无法解析出 response 字段时的兜底回复（R6-L12b）：
 # 直接把 raw JSON/blob 原文透传给用户会暴露工程噪音，改用固定歉意文案；
@@ -834,7 +860,10 @@ class MessageService:
                 )
 
             try:
-                plans = await PlanRepository(session).get_active_plans(character_id)
+                # R9 闭环：传世界时间过滤 deadline 已过的计划，角色不再复读过期计划
+                # （world 已在上方 world_events 块读取，此处仅解析时间，不重复读 Redis）
+                world_now = _parse_world_time_from_state(world)
+                plans = await PlanRepository(session).get_active_plans(character_id, world_time=world_now)
                 if plans:
                     plans_text = "\n".join(f"- {p.title}" for p in plans[:5])
             except Exception as e:
